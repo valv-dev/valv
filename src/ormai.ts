@@ -146,7 +146,8 @@ export class ORMAI<TContext = DefaultContext, TResources extends string = string
   private async vercelTools(
     ctx: TContext,
     options?: GetToolsOptions<TResources>
-  ): Promise<Record<string, unknown>> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): Promise<Record<string, any>> {
     let ai: { tool: (def: unknown) => unknown; jsonSchema: (schema: object) => unknown }
     try {
       const specifier = "ai"
@@ -158,7 +159,8 @@ export class ORMAI<TContext = DefaultContext, TResources extends string = string
     }
 
     const neutral = await this.neutralTools(ctx, options)
-    const tools: Record<string, unknown> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const tools: Record<string, any> = {}
     for (const t of neutral) {
       tools[t.name] = ai.tool({
         description: t.description,
