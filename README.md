@@ -66,24 +66,30 @@ const ormai = new ORMAI<DefaultContext, InferResources<typeof prisma>>({
 })
 ```
 
-`InferResources<typeof prisma>` is a type-level transform that converts your Prisma client's model keys (`orderItem`) to ormai resource names (`order_item`). It gives you autocomplete and type errors on policy keys — no manual type declarations needed
+`InferResources<typeof prisma>` is a type-level transform that converts your Prisma client's model keys (`orderItem`) to ormai resource names (`order_item`). It gives you autocomplete and type errors on policy keys — no manual type declarations needed.
+
 ---
 
 ## Schema annotations
 
-Annotate your Prisma schema with `///` doc comments to give the LLM better descriptions:
+Annotate your Prisma schema with `///` doc comments to give the LLM better context, and mark fields that should never leave the server:
 
 ```prisma
 /// @ormai:description "A customer purchase order"
 model Order {
-id     String      @id @default(uuid())
-status OrderStatus
+  id        String      @id @default(uuid())
+  status    OrderStatus
+  tenant_id String
+  user_id   String
 
-/// @ormai:description "Order total in cents"
-total  Decimal
+  /// @ormai:description "Order total in cents"
+  total     Decimal
 
-/// @ormai:sensitive
-internal_notes String?   // never exposed to LLM, regardless of policy
+  /// @ormai:sensitive
+  internal_notes String?  // stripped at introspection — never in tool schemas or results
+
+  customer  User        @relation(fields: [user_id], references: [id])
+  items     OrderItem[]
 }
 ```
 
@@ -91,50 +97,56 @@ internal_notes String?   // never exposed to LLM, regardless of policy
 
 ## Policies
 
-A policy function receives the current context and returns what's allowed for that resource:
+A policy function receives the current context and returns what's allowed for that resource. Here's a realistic multi-resource setup:
 
 ```ts
+// Baseline: every resource scoped to the caller's tenant.
+// With defaultPolicy: "deny-all", anything without a policy produces zero tools.
+ormai.policy("*", (ctx) => ({
+  read:   { tenant_id: ctx.tenant.id },
+  write:  { tenant_id: ctx.tenant.id }, // injected into INSERT data; AND-ed into UPDATE WHERE
+  delete: false,
+}))
+
+// order — role-dependent field access and relation expansion on top of the base
 ormai.policy("order", (ctx) => ({
-  read:   { tenant_id: ctx.tenant.id },  // WHERE clause always injected
-  write:  { tenant_id: ctx.tenant.id },  // forced into INSERT/UPDATE data
+  read:   { tenant_id: ctx.tenant.id },
+  write:  { tenant_id: ctx.tenant.id },
   delete: false,
   fields: {
-    deny: ["internal_notes"],            // never sent to LLM
+    deny: ctx.user.role === "support" ? ["user_id"] : [],
   },
   relations: {
-    items:    true,
-    customer: ctx.user.role === "admin", // support users can't include customer data
+    customer: ctx.user.role === "admin", // support can't expand to the full user record
+    items: true,
   },
 }))
+
+// user — read-only; no create_user / update_user tools generated at all
+ormai.policy("user", (ctx) => ({
+  read:   { tenant_id: ctx.tenant.id },
+  write:  false,
+  delete: false,
+}))
+
+// order_item — not directly queryable; only reachable as an order relation
+ormai.policy("order_item", () => ({ read: false }))
 ```
 
 **`read`, `write`, `delete`** accept:
 
 - `true` — allow
-- `false` — deny (no tools generated for this operation)
-- `{ field: value }` — for `read`/`delete`: row-level WHERE filter; for `write`: forced fields merged into data AND used as a WHERE guard on updates
+- `false` — deny (`false` on an operation means no tool for it is generated — there's nothing for the LLM to call)
+- `{ field: value }` — for `read`/`delete`: row-level WHERE filter always AND-ed with the query; for `write`: forced fields merged into data AND used as a WHERE guard on updates
 
-The policy filter is always AND-ed with whatever the LLM requests. It can't be overridden.
+The policy filter cannot be overridden. The LLM can pass `{ tenant_id: "other-tenant" }` in a filter — ormai's AND overwrites it.
 
-**Fields** marked `@ormai:sensitive` in the schema are excluded from all tools and query results regardless of what the policy says.
+**Fields** marked `@ormai:sensitive` are stripped at introspection time — they don't appear in tool schemas, arguments, or results, regardless of what the policy says.
 
-### Wildcard policy
-
-For resources you want to cover without individual policies:
-
-```ts
-ormai.policy("*", (ctx) => ({
-  read: { tenant_id: ctx.tenant.id },
-  write: false,
-  delete: false,
-}))
-```
-
-Or use `resolvePolicy` in the config for more control:
+For more control than the wildcard, use `resolvePolicy` in the config:
 
 ```ts
 new ORMAI({
-  // ...
   resolvePolicy: (resource, ctx) => ({
     read: { tenant_id: ctx.tenant.id },
     write: false,
@@ -147,78 +159,59 @@ new ORMAI({
 
 ## Tool formats / providers
 
-`ormai.tools.<provider>(ctx)` returns the tools formatted for that provider. Built-in providers: `anthropic`, `openai`, `gemini`, `vercel`.
+`ormai.tools.<provider>(ctx)` returns the tools formatted for that provider. Built-in: `anthropic`, `openai`, `gemini`, `vercel`.
 
-For `anthropic`, `openai`, and `gemini` you get an array of `{ definition, name, execute }`:
-
-- `definition` — the clean, provider-specific shape to hand to the model API
-- `name` — the tool name, for matching a tool call back to its handler
-- `execute(args)` — runs the call with policy enforced and results serialized (`Decimal` → number, `Date` → ISO string, `BigInt` → string)
-
-`vercel` is the exception — it returns a ready-to-use Vercel AI SDK `ToolSet` (see below).
-
-**OpenAI:**
-
-```ts
-const tools = await ormai.tools.openai(ctx)
-
-const res = await openai.chat.completions.create({
-  model: "gpt-4o",
-  messages,
-  tools: tools.map(t => t.definition),   // { type: "function", function: {...} }
-})
-
-// on a tool call:
-for (const call of res.choices[0].message.tool_calls ?? []) {
-  const handler = tools.find(t => t.name === call.function.name)
-  const result = await handler?.execute(JSON.parse(call.function.arguments))
-}
-```
-
-**Anthropic:**
-
-```ts
-const tools = await ormai.tools.anthropic(ctx)
-
-const res = await anthropic.messages.create({
-  model: "claude-opus-4-8",
-  max_tokens: 1024,
-  messages,
-  tools: tools.map(t => t.definition),   // { name, description, input_schema }
-})
-
-// on a tool_use block:
-const result = await tools.find(t => t.name === block.name)?.execute(block.input)
-```
-
-**Google Gemini:** `t.definition` is a function declaration — wrap the list in `{ functionDeclarations: [...] }`.
-
-**Vercel AI SDK:** `ormai.tools.vercel(ctx)` is special — it returns a ready-to-use `ToolSet` (a record keyed by tool name, each entry already built with `tool()` + `jsonSchema()` and `execute` wired). Drop it straight into `generateText`:
+**Vercel AI SDK** is the simplest — it returns a ready-to-use `ToolSet` that drops straight into `generateText`:
 
 ```ts
 const tools = await ormai.tools.vercel(ctx)
 
-const { text } = await generateText({
-  model,
-  tools,        // no tool()/jsonSchema() wrapping needed
-  maxSteps: 5,
-  prompt,
-})
+const { text } = await generateText({ model, tools, maxSteps: 5, prompt })
 ```
 
-Tool errors are caught and returned as `{ error }` so the agent can recover. Requires the optional peer dependency `ai` (`npm install ai`).
+Tool errors are caught and returned as `{ error }` so the agent can recover rather than abort. Requires `npm install ai`.
 
-**Any other provider** — pass a formatter to `ormai.tools.format(ctx, fn)`:
+**Every other provider** follows the same pattern: `.definition` is the provider-specific shape; `.execute(args)` runs the call with policy enforced and results serialized (`Decimal` → number, `Date` → ISO string, `BigInt` → string):
+
+```ts
+// Anthropic
+const tools = await ormai.tools.anthropic(ctx)
+await anthropic.messages.create({
+  model: "claude-opus-4-8",
+  messages,
+  tools: tools.map(t => t.definition), // { name, description, input_schema }
+})
+// dispatch a tool_use block:
+const result = await tools.find(t => t.name === block.name)!.execute(block.input)
+
+// OpenAI
+const tools = await ormai.tools.openai(ctx)
+await openai.chat.completions.create({
+  model: "gpt-4o",
+  messages,
+  tools: tools.map(t => t.definition), // { type: "function", function: {...} }
+})
+// dispatch:
+const result = await tools.find(t => t.name === call.function.name)!
+  .execute(JSON.parse(call.function.arguments))
+
+// Gemini: t.definition is a function declaration
+const tools = await ormai.tools.gemini(ctx)
+// wrap as: { functionDeclarations: tools.map(t => t.definition) }
+```
+
+**Any other provider** — pass a formatter:
 
 ```ts
 const tools = await ormai.tools.format(ctx, (t) => ({
+  // t: NeutralTool { name, description, parameters }
   name: t.name,
   description: t.description,
-  schema: t.parameters,   // t is a NeutralTool { name, description, parameters }
+  schema: t.parameters,
 }))
 ```
 
-> The original flat helpers are still available: `ormai.getTools(ctx)` (Anthropic `input_schema` shape) and `ormai.executableTools(ctx)` (the same, with `execute()` attached).
+> The original flat helpers are still available: `ormai.getTools(ctx)` (Anthropic `input_schema` shape) and `ormai.executableTools(ctx)` (same, with `execute()` attached).
 
 ---
 
@@ -268,12 +261,12 @@ const info = await ormai.describe()
 
 ## Security properties
 
-- The LLM never sees the raw schema or constructs queries directly
-- Policy row filters are merged server-side and cannot be overridden by the LLM
-- `update` and `delete` use `updateMany`/`deleteMany` with the full policy filter in the WHERE clause — guessing an ID from another tenant does nothing
-- `write: { tenant_id }` forces the value into created/updated data — the LLM can't write to a different tenant even if it tries
-- `belongsTo` includes enforce the related resource's row filter post-fetch
-- Sensitive fields are stripped at introspection time, before policy evaluation
+- Policy row filters are merged server-side and AND-ed into every query. The LLM can request `{ tenant_id: "other-tenant" }` — it gets overwritten.
+- `update` and `delete` run as `updateMany`/`deleteMany` with the full policy WHERE. A guessed cross-tenant ID affects 0 rows.
+- `write: { tenant_id }` is injected into INSERT data **and** AND-ed into UPDATE/DELETE WHERE clauses. There's no argument the LLM can pass to write to a different tenant.
+- `false` on any operation means no tool is generated. There's nothing to call.
+- `@ormai:sensitive` fields are stripped before policy runs — they never appear in tool schemas, call arguments, or results.
+- `belongsTo` relation includes enforce the related record's row filter post-fetch — no cross-tenant data through joins.
 
 ---
 
