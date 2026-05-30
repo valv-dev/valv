@@ -9,18 +9,6 @@ No query strings. No prompt-level access control. No per-endpoint boilerplate.
 
 ---
 
-## Why this matters
-
-**SQL injection is structurally impossible** — the agent calls typed tools with JSON arguments, never constructs queries.
-
-**Prompt injection can't escalate access** — row-level filters are AND-ed server-side at execution time. The LLM's output is input, not authority.
-
-**The tool list *is* the access control list** — `read: false` generates no tools. The LLM can't call what it can't see.
-
-**One policy, every query** — write it once per resource. It applies to every tool call, every operation, every relation expansion.
-
----
-
 ## Same prompt. Same agent. Different context
 
 ```
