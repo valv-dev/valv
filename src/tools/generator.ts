@@ -1,4 +1,4 @@
-import { SchemaMap, PolicyFn, ResourceSchema } from "../types"
+import { SchemaMap, PolicyFn, ResourceSchema, FieldSchema } from "../types"
 import { evaluatePolicy, EvaluatedPolicy } from "../policy/engine"
 import { LLMTool, GetToolsOptions } from "../ormai"
 
@@ -22,25 +22,25 @@ export function generateTools<TContext>(
     const writePolicy = evaluatePolicy(policies[resourceName], ctx, "write", defaultPolicy, resource)
     const deletePolicy = evaluatePolicy(policies[resourceName], ctx, "delete", defaultPolicy, resource)
 
-    // query_{resource} — find many
     tools.push(buildQueryTool(resourceName, resource, readPolicy))
-
-    // get_{resource} — find one by id
     tools.push(buildGetTool(resourceName, resource, readPolicy))
 
-    // create_{resource}
     if (writePolicy.allowed) {
       tools.push(buildCreateTool(resourceName, resource, writePolicy))
-    }
-
-    // update_{resource}
-    if (writePolicy.allowed) {
       tools.push(buildUpdateTool(resourceName, resource, writePolicy))
     }
 
-    // delete_{resource}
     if (deletePolicy.allowed) {
-      tools.push(buildDeleteTool(resourceName))
+      tools.push(buildDeleteTool(resourceName, resource))
+    }
+
+    // Aggregate tool if there are numeric fields
+    const numericFields = readPolicy.allowedFields.filter(f => {
+      const field = resource.fields[f]
+      return field && field.type === "number"
+    })
+    if (numericFields.length > 0) {
+      tools.push(buildAggregateTool(resourceName, resource, readPolicy, numericFields))
     }
 
     if (options?.maxTools && tools.length >= options.maxTools) break
@@ -88,6 +88,7 @@ function buildGetTool(
   policy: EvaluatedPolicy
 ): LLMTool {
   const idField = Object.values(resource.fields).find(f => f.isId)
+  const idSchema = idField ? buildFieldSchema(idField) : { type: "string" }
   const description = resource.description
     ? `Get a single ${resourceName} by ID. ${resource.description}`
     : `Get a single ${resourceName} by ID.`
@@ -98,10 +99,7 @@ function buildGetTool(
     input_schema: {
       type: "object",
       properties: {
-        id: {
-          type: "string",
-          description: `ID of the ${resourceName} to retrieve`,
-        },
+        id: { ...idSchema, description: `ID of the ${resourceName} to retrieve` },
         include: buildIncludeSchema(policy.allowedRelations),
       },
       required: ["id"],
@@ -127,7 +125,8 @@ function buildCreateTool(
     const field = resource.fields[fieldName]
     if (!field) continue
     properties[fieldName] = buildFieldSchema(field)
-    if (!field.isNullable) required.push(fieldName)
+    // Only required if not nullable and has no DB default
+    if (!field.isNullable && !field.hasDefaultValue) required.push(fieldName)
   }
 
   return {
@@ -147,13 +146,16 @@ function buildUpdateTool(
   resource: ResourceSchema,
   policy: EvaluatedPolicy
 ): LLMTool {
+  const idField = Object.values(resource.fields).find(f => f.isId)
+  const idSchema = idField ? buildFieldSchema(idField) : { type: "string" }
+
   const writableFields = policy.allowedFields.filter(f => {
     const field = resource.fields[f]
     return field && !field.isId
   })
 
   const properties: Record<string, unknown> = {
-    id: { type: "string", description: `ID of the ${resourceName} to update` },
+    id: { ...idSchema, description: `ID of the ${resourceName} to update` },
   }
 
   for (const fieldName of writableFields) {
@@ -174,16 +176,58 @@ function buildUpdateTool(
   }
 }
 
-function buildDeleteTool(resourceName: string): LLMTool {
+function buildDeleteTool(resourceName: string, resource: ResourceSchema): LLMTool {
+  const idField = Object.values(resource.fields).find(f => f.isId)
+  const idSchema = idField ? buildFieldSchema(idField) : { type: "string" }
+
   return {
     name: `delete_${resourceName}`,
     description: `Delete a ${resourceName} record by ID.`,
     input_schema: {
       type: "object",
       properties: {
-        id: { type: "string", description: `ID of the ${resourceName} to delete` },
+        id: { ...idSchema, description: `ID of the ${resourceName} to delete` },
       },
       required: ["id"],
+      additionalProperties: false,
+    },
+  }
+}
+
+function buildAggregateTool(
+  resourceName: string,
+  resource: ResourceSchema,
+  policy: EvaluatedPolicy,
+  numericFields: string[]
+): LLMTool {
+  return {
+    name: `aggregate_${resourceName}`,
+    description: `Aggregate ${resourceName} records (count, sum, avg, min, max with optional groupBy).`,
+    input_schema: {
+      type: "object",
+      properties: {
+        aggregations: {
+          type: "array",
+          description: "List of aggregation operations to perform",
+          items: {
+            type: "object",
+            properties: {
+              fn: { type: "string", enum: ["count", "sum", "avg", "min", "max"] },
+              field: { type: "string", enum: numericFields },
+              alias: { type: "string" },
+            },
+            required: ["fn", "field", "alias"],
+            additionalProperties: false,
+          },
+        },
+        filters: buildFiltersSchema(resource, policy.allowedFields),
+        groupBy: {
+          type: "array",
+          items: { type: "string", enum: policy.allowedFields },
+          description: "Fields to group by",
+        },
+      },
+      required: ["aggregations"],
       additionalProperties: false,
     },
   }
@@ -286,7 +330,7 @@ function buildSortSchema(allowedFields: string[]): Record<string, unknown> {
   }
 }
 
-function buildFieldSchema(field: { type: string; enumValues?: string[]; description?: string }): Record<string, unknown> {
+function buildFieldSchema(field: FieldSchema): Record<string, unknown> {
   const base: Record<string, unknown> = {}
   if (field.description) base.description = field.description
 

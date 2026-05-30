@@ -4,7 +4,6 @@ import { SchemaMap, ResourceSchema, FieldSchema, FieldType, RelationSchema } fro
 export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
   const dmmf = await getDMMF({ datamodelPath: schemaPath })
 
-  // Build enum lookup: enumName -> values[]
   const enumMap: Record<string, string[]> = {}
   for (const e of dmmf.datamodel.enums) {
     enumMap[e.name] = e.values.map(v => v.name)
@@ -17,12 +16,10 @@ export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
     const fields: Record<string, FieldSchema> = {}
     const relations: Record<string, RelationSchema> = {}
 
-    // Parse model-level documentation
     const modelDescription = parseDescription(model.documentation)
 
     for (const field of model.fields) {
       if (field.relationName) {
-        // Relation field
         const relation = buildRelationSchema(field, model.fields)
         if (relation) {
           relations[field.name] = relation
@@ -30,9 +27,8 @@ export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
         continue
       }
 
-      // Scalar field
-      const fieldType = mapPrismaType(field.type)
-      if (!fieldType) continue  // skip unsupported types
+      const fieldType = mapPrismaType(field.type, enumMap)
+      if (!fieldType) continue
 
       const doc = field.documentation ?? ""
       const fieldSchema: FieldSchema = {
@@ -40,6 +36,7 @@ export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
         type: fieldType,
         isNullable: !field.isRequired,
         isId: field.isId,
+        hasDefaultValue: field.hasDefaultValue || field.isUpdatedAt || false,
         description: parseDescription(doc) ?? undefined,
         sensitive: parseSensitive(doc),
       }
@@ -63,8 +60,7 @@ export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
   return { resources }
 }
 
-function toResourceName(modelName: string): string {
-  // Convert PascalCase model name to snake_case plural resource name
+export function toResourceName(modelName: string): string {
   return modelName
     .replace(/([A-Z])/g, (match, letter, offset) =>
       offset === 0 ? letter.toLowerCase() : `_${letter.toLowerCase()}`
@@ -73,7 +69,11 @@ function toResourceName(modelName: string): string {
     .toLowerCase()
 }
 
-function mapPrismaType(prismaType: string): FieldType | null {
+export function toClientKey(resourceName: string): string {
+  return resourceName.replace(/_([a-z])/g, (_, l) => l.toUpperCase())
+}
+
+function mapPrismaType(prismaType: string, enumMap: Record<string, string[]>): FieldType | null {
   switch (prismaType) {
     case "String":   return "string"
     case "Int":
@@ -84,8 +84,9 @@ function mapPrismaType(prismaType: string): FieldType | null {
     case "Json":     return "json"
     case "Bytes":    return "string"
     default:
-      // Could be an enum — caller checks
-      return "enum"
+      // Only treat as enum if it's actually in the enum map
+      if (enumMap[prismaType]) return "enum"
+      return null
   }
 }
 
@@ -93,12 +94,9 @@ function buildRelationSchema(
   field: { name: string; type: string; relationName?: string | null; isList: boolean; relationFromFields?: readonly string[]; relationToFields?: readonly string[] },
   allFields: readonly { name: string; type: string; isList: boolean; relationName?: string | null; relationFromFields?: readonly string[]; relationToFields?: readonly string[] }[]
 ): RelationSchema | null {
+  void allFields
   const targetResource = toResourceName(field.type)
 
-  // Determine relation type
-  // belongsTo: scalar FK is on this model (relationFromFields non-empty)
-  // hasMany: isList = true, FK is on the other side
-  // manyToMany: isList = true, no FK fields (implicit many-to-many)
   let relationType: "belongsTo" | "hasMany" | "manyToMany"
   let foreignKey = ""
 
@@ -106,9 +104,8 @@ function buildRelationSchema(
     relationType = "belongsTo"
     foreignKey = field.relationFromFields[0]
   } else if (field.isList) {
-    // Check if other model has explicit FK pointing here — approximate as hasMany
     relationType = "hasMany"
-    foreignKey = ""  // FK is on the other side
+    foreignKey = ""
   } else {
     relationType = "belongsTo"
     foreignKey = ""

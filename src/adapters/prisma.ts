@@ -16,25 +16,26 @@ export class PrismaAdapter implements ORMAIAdapter {
   }
 
   async execute(query: ResolvedQuery): Promise<unknown> {
+    // Convert snake_case resource name to camelCase for Prisma client accessor
+    const clientKey = toCamelCase(query.resource)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (this.prisma as any)[query.resource]
+    const model = (this.prisma as any)[clientKey]
     if (!model) {
-      throw new Error(`Prisma model not found for resource: ${query.resource}`)
+      throw new Error(`Prisma model not found for resource: ${query.resource} (tried key: ${clientKey})`)
     }
 
     const where = query.filters ? translateFilter(query.filters) : undefined
     const select = buildSelect(query.fields)
     const include = query.include ? buildInclude(query.include) : undefined
 
-    // Merge select and include — Prisma doesn't allow both at the top level.
-    // We use select everywhere: scalar fields + nested relation objects in one select.
-    const selectOrInclude = include
-      ? { select: { ...select, ...include } }
-      : { select }
+    // Prisma: use select for scalar fields, merge nested relation objects into the same select
+    const selectWithIncludes = include
+      ? { ...select, ...include }
+      : select
 
     switch (query.operation) {
       case "find": {
-        const args: Record<string, unknown> = { ...selectOrInclude }
+        const args: Record<string, unknown> = { select: selectWithIncludes }
         if (where) args.where = where
         if (query.sort) {
           args.orderBy = { [query.sort.field]: query.sort.direction }
@@ -43,41 +44,53 @@ export class PrismaAdapter implements ORMAIAdapter {
           if (query.pagination.limit !== undefined) args.take = query.pagination.limit
           if (query.pagination.offset !== undefined) args.skip = query.pagination.offset
         }
-        return model.findMany(args)
+        const results = await model.findMany(args)
+        return query.include ? applyBelongsToFilters(results, query.include) : results
       }
 
       case "findOne": {
-        const args: Record<string, unknown> = { ...selectOrInclude }
+        const args: Record<string, unknown> = { select: selectWithIncludes }
         if (where) args.where = where
-        return model.findFirst(args)
+        const result = await model.findFirst(args)
+        return result && query.include ? applyBelongsToFiltersOne(result, query.include) : result
       }
 
       case "create": {
         return model.create({
           data: query.data ?? {},
-          ...selectOrInclude,
+          select: selectWithIncludes,
         })
       }
 
       case "update": {
-        // Extract id from filters for the where clause
-        const updateWhere = extractIdWhere(query.filters)
-        return model.update({
-          where: updateWhere,
+        // Use updateMany with the full where (id + policy row filter) to enforce scoping.
+        // A row in a different tenant won't match and won't be updated.
+        const fullWhere = where ?? {}
+        const result = await model.updateMany({
+          where: fullWhere,
           data: query.data ?? {},
-          ...selectOrInclude,
         })
+        return result  // { count: N }
       }
 
       case "delete": {
-        const deleteWhere = extractIdWhere(query.filters)
-        return model.delete({ where: deleteWhere })
+        // Use deleteMany with the full where for the same scoping guarantee.
+        const fullWhere = where ?? {}
+        return model.deleteMany({ where: fullWhere })  // { count: N }
+      }
+
+      case "aggregate": {
+        return executeAggregate(model, query, where)
       }
 
       default:
         throw new Error(`Unsupported operation: ${query.operation}`)
     }
   }
+}
+
+function toCamelCase(snake: string): string {
+  return snake.replace(/_([a-z])/g, (_, l) => l.toUpperCase())
 }
 
 function buildSelect(fields: string[]): Record<string, true> {
@@ -97,13 +110,94 @@ function buildInclude(
     const relWhere = rel.filters ? translateFilter(rel.filters) : undefined
     result[name] = {
       select: relSelect,
-      // Prisma only supports where on toMany relations, not belongsTo
+      // Prisma supports `where` on toMany relations only.
+      // For belongsTo we enforce the filter post-fetch via applyBelongsToFilters.
       ...(relWhere && rel.type !== "belongsTo" ? { where: relWhere } : {}),
     }
   }
   return result
 }
 
+// For array results: null out any belongsTo includes that don't satisfy the relation's row filter
+function applyBelongsToFilters(
+  results: unknown[],
+  include: Record<string, ResolvedInclude>
+): unknown[] {
+  return results.map(r => applyBelongsToFiltersOne(r, include))
+}
+
+function applyBelongsToFiltersOne(
+  result: unknown,
+  include: Record<string, ResolvedInclude>
+): unknown {
+  if (!result || typeof result !== "object") return result
+  const out = { ...(result as Record<string, unknown>) }
+  for (const [relationName, rel] of Object.entries(include)) {
+    if (rel.type !== "belongsTo" || !rel.filters) continue
+    const related = out[relationName]
+    if (related && typeof related === "object") {
+      if (!matchesFilter(related as Record<string, unknown>, rel.filters)) {
+        out[relationName] = null
+      }
+    }
+  }
+  return out
+}
+
+// In-memory filter evaluation for post-fetch enforcement.
+// Covers eq/in/and/or which are the only filter types policy generates.
+function matchesFilter(obj: Record<string, unknown>, filter: FilterNode): boolean {
+  switch (filter.type) {
+    case "eq":  return obj[filter.field] === filter.value
+    case "in":  return (filter.values as unknown[]).includes(obj[filter.field])
+    case "and": return filter.filters.every(f => matchesFilter(obj, f))
+    case "or":  return filter.filters.some(f => matchesFilter(obj, f))
+    default:    return true  // conservative: pass unknown filter types
+  }
+}
+
+async function executeAggregate(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  model: any,
+  query: ResolvedQuery,
+  where: Record<string, unknown> | undefined
+): Promise<unknown> {
+  const aggs = query.aggregations ?? []
+  const groupBy = query.groupBy
+
+  if (groupBy && groupBy.length > 0) {
+    // Prisma groupBy
+    const _agg: Record<string, unknown> = {}
+    for (const a of aggs) {
+      if (!_agg[`_${a.fn}`]) _agg[`_${a.fn}`] = {}
+      ;(_agg[`_${a.fn}`] as Record<string, boolean>)[a.field] = true
+    }
+    const args: Record<string, unknown> = { by: groupBy, ..._agg }
+    if (where) args.where = where
+    return model.groupBy(args)
+  }
+
+  // Prisma aggregate
+  const _agg: Record<string, unknown> = {}
+  for (const a of aggs) {
+    if (a.fn === "count") {
+      _agg._count = _agg._count ? _agg._count : {}
+      if (a.field === "*") {
+        _agg._count = true
+      } else {
+        ;(_agg._count as Record<string, boolean>)[a.field] = true
+      }
+    } else {
+      if (!_agg[`_${a.fn}`]) _agg[`_${a.fn}`] = {}
+      ;(_agg[`_${a.fn}`] as Record<string, boolean>)[a.field] = true
+    }
+  }
+  if (Object.keys(_agg).length === 0) _agg._count = true
+
+  const args: Record<string, unknown> = { ..._agg }
+  if (where) args.where = where
+  return model.aggregate(args)
+}
 
 export function translateFilter(node: FilterNode): Record<string, unknown> {
   switch (node.type) {
@@ -139,25 +233,4 @@ export function translateFilter(node: FilterNode): Record<string, unknown> {
     case "not":
       return { NOT: translateFilter(node.filter) }
   }
-}
-
-function extractIdWhere(
-  filters: FilterNode | undefined
-): Record<string, unknown> {
-  if (!filters) return {}
-
-  // Look for an eq filter on "id"
-  if (filters.type === "eq" && filters.field === "id") {
-    return { id: filters.value }
-  }
-
-  if (filters.type === "and") {
-    for (const f of filters.filters) {
-      const result = extractIdWhere(f)
-      if (result.id !== undefined) return result
-    }
-  }
-
-  // Fallback: translate the whole filter
-  return translateFilter(filters)
 }

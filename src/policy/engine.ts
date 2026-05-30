@@ -3,9 +3,10 @@ import { FilterNode, AndFilter } from "../ir/types"
 
 export interface EvaluatedPolicy {
   allowed: boolean
-  rowFilter?: FilterNode       // injected into every query for this resource
-  allowedFields: string[]      // fields the LLM can see and query on
-  allowedRelations: string[]   // relation names allowed to include
+  rowFilter?: FilterNode
+  allowedFields: string[]
+  allowedRelations: string[]
+  forcedWriteFields?: Record<string, unknown>  // injected into data on create/update
 }
 
 export function evaluatePolicy<TContext>(
@@ -23,9 +24,9 @@ export function evaluatePolicy<TContext>(
 
   const opValue = result[operation]
 
-  // Determine if allowed
   let allowed: boolean
   let rowFilter: FilterNode | undefined
+  let forcedWriteFields: Record<string, unknown> | undefined
 
   if (opValue === undefined) {
     allowed = defaultPolicy === "allow-all"
@@ -34,16 +35,22 @@ export function evaluatePolicy<TContext>(
   } else if (opValue === false) {
     allowed = false
   } else {
-    // It's an object — row filter
+    // Object value: for write operations, it means "force these fields into data
+    // and use as a where guard on updates". For read/delete, it's a row filter.
     allowed = true
-    rowFilter = rowFilterFromObject(opValue as Record<string, unknown>)
+    const obj = opValue as Record<string, unknown>
+    if (operation === "write") {
+      forcedWriteFields = obj
+      rowFilter = rowFilterFromObject(obj)
+    } else {
+      rowFilter = rowFilterFromObject(obj)
+    }
   }
 
   if (!allowed) {
     return { allowed: false, allowedFields: [], allowedRelations: [] }
   }
 
-  // Compute allowed fields
   const allFields = schema ? Object.keys(schema.fields) : []
   const sensitiveFields = schema
     ? Object.values(schema.fields).filter(f => f.sensitive).map(f => f.name)
@@ -53,18 +60,14 @@ export function evaluatePolicy<TContext>(
   const fieldPolicy = result.fields
 
   if (fieldPolicy?.allow) {
-    // Whitelist — still exclude sensitive
     allowedFields = fieldPolicy.allow.filter(f => !sensitiveFields.includes(f))
   } else if (fieldPolicy?.deny) {
-    // Blacklist — also exclude sensitive
     const denySet = new Set([...fieldPolicy.deny, ...sensitiveFields])
     allowedFields = allFields.filter(f => !denySet.has(f))
   } else {
-    // No field policy — exclude sensitive
     allowedFields = allFields.filter(f => !sensitiveFields.includes(f))
   }
 
-  // Compute allowed relations
   const allRelations = schema ? Object.keys(schema.relations) : []
   const relationsPolicy = result.relations
 
@@ -75,10 +78,10 @@ export function evaluatePolicy<TContext>(
     allowedRelations = allRelations
   }
 
-  return { allowed, rowFilter, allowedFields, allowedRelations }
+  return { allowed, rowFilter, allowedFields, allowedRelations, forcedWriteFields }
 }
 
-function rowFilterFromObject(obj: Record<string, unknown>): FilterNode {
+export function rowFilterFromObject(obj: Record<string, unknown>): FilterNode {
   const filters: FilterNode[] = Object.entries(obj).map(([field, value]) => ({
     type: "eq" as const,
     field,

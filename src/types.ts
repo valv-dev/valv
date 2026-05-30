@@ -16,9 +16,10 @@ export interface FieldSchema {
   type: FieldType
   isNullable: boolean
   isId: boolean
-  enumValues?: string[]   // if type is "enum"
-  description?: string    // from /// @ormai:description annotations
-  sensitive?: boolean     // from /// @ormai:sensitive annotations
+  hasDefaultValue?: boolean  // field has a DB/schema default (e.g. @default(now()), @default(uuid()))
+  enumValues?: string[]      // if type is "enum"
+  description?: string       // from /// @ormai:description annotations
+  sensitive?: boolean        // from /// @ormai:sensitive annotations
 }
 
 export type FieldType =
@@ -68,3 +69,25 @@ export interface DefaultContext {
   }
   [key: string]: unknown
 }
+
+// ── Type-level camelCase → snake_case ────────────────────────────────────────
+
+type _CamelToSnake<S extends string> =
+  S extends `${infer Head}${infer Tail}`
+    ? Head extends Uppercase<Head>
+      ? Head extends Lowercase<Head>  // digit or non-alpha — pass through
+        ? `${Head}${_CamelToSnake<Tail>}`
+        : `_${Lowercase<Head>}${_CamelToSnake<Tail>}`
+      : `${Head}${_CamelToSnake<Tail>}`
+    : S
+
+/**
+ * Derives ormai resource names (snake_case) from a Prisma client type.
+ *
+ * @example
+ * const ormai = new ORMAI<DefaultContext, InferResources<typeof prisma>>({ ... })
+ * // policy() and getTools() are now type-safe with autocomplete for resource names
+ */
+export type InferResources<TClient> = _CamelToSnake<
+  Exclude<keyof TClient, `$${string}` | symbol | number> & string
+>

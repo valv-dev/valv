@@ -1,10 +1,9 @@
-import { SchemaMap, PolicyFn } from "../types"
+import { SchemaMap, PolicyFn, FieldSchema } from "../types"
 import { ResolvedQuery, ResolvedInclude, FilterNode } from "./types"
-import { evaluatePolicy } from "../policy/engine"
-import { mergeFilters } from "../policy/engine"
+import { evaluatePolicy, mergeFilters, rowFilterFromObject } from "../policy/engine"
 import { PolicyViolationError, ValidationError } from "../errors"
 
-type OperationType = "find" | "findOne" | "create" | "update" | "delete"
+type OperationType = "find" | "findOne" | "create" | "update" | "delete" | "aggregate"
 
 function parseToolName(toolName: string): { operation: OperationType; resource: string } {
   const prefixes: Array<[string, OperationType]> = [
@@ -13,6 +12,7 @@ function parseToolName(toolName: string): { operation: OperationType; resource: 
     ["create_", "create"],
     ["update_", "update"],
     ["delete_", "delete"],
+    ["aggregate_", "aggregate"],
   ]
 
   for (const [prefix, operation] of prefixes) {
@@ -25,7 +25,7 @@ function parseToolName(toolName: string): { operation: OperationType; resource: 
 }
 
 function operationToPolicy(op: OperationType): "read" | "write" | "delete" {
-  if (op === "find" || op === "findOne") return "read"
+  if (op === "find" || op === "findOne" || op === "aggregate") return "read"
   if (op === "delete") return "delete"
   return "write"
 }
@@ -38,20 +38,16 @@ export function buildResolvedQuery<TContext>(
   ctx: TContext,
   defaultPolicy: "deny-all" | "allow-all"
 ): ResolvedQuery {
-  // 1. Parse toolName
   const { operation, resource } = parseToolName(toolName)
 
-  // 2. Validate resource exists
   const resourceSchema = schema.resources[resource]
   if (!resourceSchema) {
     throw new ValidationError(`Unknown resource: ${resource}`)
   }
 
-  // 3. Evaluate policy
   const policyOp = operationToPolicy(operation)
   const evaluated = evaluatePolicy(policies[resource], ctx, policyOp, defaultPolicy, resourceSchema)
 
-  // 4. Check allowed
   if (!evaluated.allowed) {
     throw new PolicyViolationError(
       `Operation "${operation}" on "${resource}" is not permitted by policy`
@@ -60,16 +56,16 @@ export function buildResolvedQuery<TContext>(
 
   const inp = (input ?? {}) as Record<string, unknown>
 
-  // 5. Parse filters from input
+  // Parse filters from LLM input
   let llmFilter: FilterNode | undefined
   if (inp.filters && typeof inp.filters === "object") {
-    llmFilter = parseFilters(inp.filters as Record<string, unknown>, evaluated.allowedFields, resource)
+    llmFilter = parseFilters(inp.filters as Record<string, unknown>, evaluated.allowedFields, resource, resourceSchema.fields)
   }
 
-  // 6. Merge policy row filter with LLM filter
-  const filters = mergeFilters(evaluated.rowFilter, llmFilter)
+  // Merge policy row filter + forced write fields (for update guard) + LLM filter
+  let baseFilter = mergeFilters(evaluated.rowFilter, llmFilter)
 
-  // 7. Resolve includes
+  // Resolve includes
   let include: Record<string, ResolvedInclude> | undefined
   if (inp.include && Array.isArray(inp.include)) {
     include = {}
@@ -85,8 +81,6 @@ export function buildResolvedQuery<TContext>(
       const relatedSchema = schema.resources[relation.targetResource]
       const relatedEvaluated = evaluatePolicy(policies[relation.targetResource], ctx, "read", defaultPolicy, relatedSchema)
 
-      // read:false on the related resource only blocks standalone tools — not include access,
-      // which is governed by the parent's relations policy. Fall back to all non-sensitive fields.
       const relatedFields = relatedEvaluated.allowed
         ? relatedEvaluated.allowedFields
         : relatedSchema
@@ -103,14 +97,12 @@ export function buildResolvedQuery<TContext>(
     }
   }
 
-  // 8. Resolve fields — strip denied fields
   const fields = evaluated.allowedFields
 
-  // 9. Build query
   const query: ResolvedQuery = {
     resource,
     operation,
-    filters,
+    filters: baseFilter,
     fields,
     include,
   }
@@ -132,7 +124,21 @@ export function buildResolvedQuery<TContext>(
   if (inp.limit !== undefined || inp.offset !== undefined) {
     query.pagination = {
       limit: typeof inp.limit === "number" ? Math.min(inp.limit, 100) : undefined,
-      offset: typeof inp.offset === "number" ? inp.offset : undefined,
+      offset: typeof inp.offset === "number" ? Math.max(0, inp.offset) : undefined,
+    }
+  }
+
+  // Aggregations
+  if (operation === "aggregate") {
+    if (inp.aggregations && Array.isArray(inp.aggregations)) {
+      query.aggregations = inp.aggregations as typeof query.aggregations
+    }
+    if (inp.groupBy && Array.isArray(inp.groupBy)) {
+      const disallowed = (inp.groupBy as string[]).filter(f => !evaluated.allowedFields.includes(f))
+      if (disallowed.length > 0) {
+        throw new ValidationError(`groupBy fields not allowed: ${disallowed.join(", ")}`)
+      }
+      query.groupBy = inp.groupBy as string[]
     }
   }
 
@@ -140,24 +146,33 @@ export function buildResolvedQuery<TContext>(
   if (operation === "create" || operation === "update") {
     const data: Record<string, unknown> = {}
 
-    // For update, extract id separately
     if (operation === "update" && inp.id !== undefined) {
-      query.filters = mergeFilters(filters, { type: "eq", field: "id", value: inp.id })
+      const idFilter: FilterNode = { type: "eq", field: "id", value: inp.id }
+      query.filters = mergeFilters(baseFilter, idFilter)
     }
 
     for (const [key, value] of Object.entries(inp)) {
-      if (key === "id" || key === "filters" || key === "include" || key === "sort" || key === "limit" || key === "offset") {
-        continue
-      }
+      if (["id", "filters", "include", "sort", "limit", "offset"].includes(key)) continue
       if (!evaluated.allowedFields.includes(key)) {
         throw new ValidationError(`Field "${key}" is not allowed for write`)
       }
       data[key] = value
     }
+
+    // Forced write fields override LLM input (policy wins)
+    if (evaluated.forcedWriteFields) {
+      Object.assign(data, evaluated.forcedWriteFields)
+      // Also add as where guard for update so only owned rows can be updated
+      if (operation === "update") {
+        const guardFilter = rowFilterFromObject(evaluated.forcedWriteFields)
+        query.filters = mergeFilters(query.filters, guardFilter)
+      }
+    }
+
     query.data = data
   }
 
-  // For findOne, use id as eq filter
+  // For findOne, use id as eq filter merged with policy filter
   if (operation === "findOne" && inp.id !== undefined) {
     const idFilter: FilterNode = { type: "eq", field: "id", value: inp.id }
     query.filters = mergeFilters(evaluated.rowFilter, idFilter)
@@ -169,7 +184,8 @@ export function buildResolvedQuery<TContext>(
 function parseFilters(
   filtersObj: Record<string, unknown>,
   allowedFields: string[],
-  resource: string
+  resource: string,
+  fieldSchemas: Record<string, FieldSchema>
 ): FilterNode | undefined {
   const nodes: FilterNode[] = []
 
@@ -180,6 +196,8 @@ function parseFilters(
       )
     }
 
+    const fieldSchema = fieldSchemas[field]
+
     if (value === null) {
       nodes.push({ type: "null", field, isNull: true })
       continue
@@ -188,13 +206,11 @@ function parseFilters(
     if (typeof value === "object" && !Array.isArray(value)) {
       const obj = value as Record<string, unknown>
 
-      // Range filter
       if ("gte" in obj || "lte" in obj || "gt" in obj || "lt" in obj) {
         nodes.push({ type: "range", field, ...obj })
         continue
       }
 
-      // Like filters
       if ("contains" in obj) {
         nodes.push({ type: "like", field, value: obj.contains as string, mode: "contains" })
         continue
@@ -208,19 +224,38 @@ function parseFilters(
         continue
       }
 
-      // In filter
       if ("in" in obj && Array.isArray(obj.in)) {
+        if (fieldSchema?.type === "enum" && fieldSchema.enumValues) {
+          for (const v of obj.in as unknown[]) {
+            if (!fieldSchema.enumValues.includes(v as string)) {
+              throw new ValidationError(`Invalid enum value "${v}" for field "${field}"`)
+            }
+          }
+        }
         nodes.push({ type: "in", field, values: obj.in })
         continue
       }
     }
 
     if (Array.isArray(value)) {
+      if (fieldSchema?.type === "enum" && fieldSchema.enumValues) {
+        for (const v of value) {
+          if (!fieldSchema.enumValues.includes(v as string)) {
+            throw new ValidationError(`Invalid enum value "${v}" for field "${field}"`)
+          }
+        }
+      }
       nodes.push({ type: "in", field, values: value })
       continue
     }
 
-    // Simple eq
+    // Validate enum scalar
+    if (fieldSchema?.type === "enum" && fieldSchema.enumValues) {
+      if (!fieldSchema.enumValues.includes(value as string)) {
+        throw new ValidationError(`Invalid enum value "${value}" for field "${field}"`)
+      }
+    }
+
     nodes.push({ type: "eq", field, value })
   }
 
