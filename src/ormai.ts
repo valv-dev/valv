@@ -1,8 +1,10 @@
 import { SchemaMap, PolicyFn, PolicyResult, DefaultContext } from "./types"
 import { ResolvedQuery } from "./ir/types"
 import { buildResolvedQuery } from "./ir/builder"
-import { generateTools } from "./tools/generator"
+import { generateTools, NeutralTool } from "./tools/generator"
 import { serializeResult } from "./serializer"
+import * as formats from "./formatters"
+import { ToolFormatter } from "./formatters"
 
 export interface ORMAIConfig<TContext = DefaultContext, TResources extends string = string> {
   adapter: ORMAIAdapter
@@ -36,6 +38,17 @@ export interface LLMTool {
 }
 
 export interface ExecutableTool extends LLMTool {
+  execute: (args: unknown) => Promise<unknown>
+}
+
+/**
+ * A provider-formatted tool. `definition` is the clean provider-specific shape
+ * to hand to the model API; `name` and `execute` are kept alongside it for
+ * dispatching tool calls regardless of where the provider nests the name.
+ */
+export interface FormattedTool<T = unknown> {
+  definition: T
+  name: string
   execute: (args: unknown) => Promise<unknown>
 }
 
@@ -89,10 +102,59 @@ export class ORMAI<TContext = DefaultContext, TResources extends string = string
     return this
   }
 
-  async getTools(ctx: TContext, options?: GetToolsOptions<TResources>): Promise<LLMTool[]> {
+  /**
+   * Provider-formatted tools. Each method returns `{ definition, name, execute }`
+   * where `definition` is the shape that provider's API expects. Use `format()`
+   * with a custom {@link ToolFormatter} for any provider not built in.
+   *
+   * ```ts
+   * const tools = await ormai.tools.openai(ctx)
+   * // tools.map(t => t.definition) → pass to the API
+   * // on a tool call: tools.find(t => t.name === call.name)!.execute(args)
+   * ```
+   */
+  get tools() {
+    return {
+      anthropic: (ctx: TContext, options?: GetToolsOptions<TResources>) =>
+        this.formatTools(ctx, formats.anthropic, options),
+      openai: (ctx: TContext, options?: GetToolsOptions<TResources>) =>
+        this.formatTools(ctx, formats.openai, options),
+      gemini: (ctx: TContext, options?: GetToolsOptions<TResources>) =>
+        this.formatTools(ctx, formats.gemini, options),
+      vercel: (ctx: TContext, options?: GetToolsOptions<TResources>) =>
+        this.formatTools(ctx, formats.vercel, options),
+      format: <T>(ctx: TContext, formatter: ToolFormatter<T>, options?: GetToolsOptions<TResources>) =>
+        this.formatTools(ctx, formatter, options),
+    }
+  }
+
+  /** Generate provider-neutral tool definitions shaped by the evaluated policy. */
+  private async neutralTools(ctx: TContext, options?: GetToolsOptions<TResources>): Promise<NeutralTool[]> {
     const schema = await this.loadSchema()
     this.validatePolicyKeys(schema)
     return generateTools(schema, this.buildEffectivePolicies(schema), ctx, this.defaultPolicy, options)
+  }
+
+  private async formatTools<T>(
+    ctx: TContext,
+    formatter: ToolFormatter<T>,
+    options?: GetToolsOptions<TResources>
+  ): Promise<FormattedTool<T>[]> {
+    const neutral = await this.neutralTools(ctx, options)
+    return neutral.map(t => ({
+      definition: formatter(t),
+      name: t.name,
+      execute: async (args: unknown) => serializeResult(await this.executeTool(t.name, args, ctx)),
+    }))
+  }
+
+  /**
+   * Generate Anthropic-shaped tool definitions (`{ name, description,
+   * input_schema }`). For other providers use the `tools` namespace.
+   */
+  async getTools(ctx: TContext, options?: GetToolsOptions<TResources>): Promise<LLMTool[]> {
+    const neutral = await this.neutralTools(ctx, options)
+    return neutral.map(t => formats.anthropic(t))
   }
 
   /** Returns tools with execute() attached and result serialization (Decimal/Date/BigInt) built in. */

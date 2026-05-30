@@ -1,6 +1,17 @@
 import { SchemaMap, PolicyFn, ResourceSchema, FieldSchema } from "../types"
 import { evaluatePolicy, EvaluatedPolicy } from "../policy/engine"
-import { LLMTool, GetToolsOptions } from "../ormai"
+import { GetToolsOptions } from "../ormai"
+
+/**
+ * Provider-neutral tool definition. This is the single source of truth from
+ * which every provider-specific shape (Anthropic, OpenAI, Gemini, …) is derived
+ * by a formatter. `parameters` is a JSON Schema object describing the input.
+ */
+export interface NeutralTool {
+  name: string
+  description: string
+  parameters: object
+}
 
 export function generateTools<TContext>(
   schema: SchemaMap,
@@ -8,8 +19,8 @@ export function generateTools<TContext>(
   ctx: TContext,
   defaultPolicy: "deny-all" | "allow-all",
   options?: GetToolsOptions
-): LLMTool[] {
-  const tools: LLMTool[] = []
+): NeutralTool[] {
+  const tools: NeutralTool[] = []
   const resourceNames = options?.resources ?? Object.keys(schema.resources)
 
   for (const resourceName of resourceNames) {
@@ -53,7 +64,7 @@ function buildQueryTool(
   resourceName: string,
   resource: ResourceSchema,
   policy: EvaluatedPolicy
-): LLMTool {
+): NeutralTool {
   const description = resource.description
     ? `Query multiple ${resourceName} records. ${resource.description}`
     : `Query multiple ${resourceName} records with filters, sorting, and pagination.`
@@ -61,7 +72,7 @@ function buildQueryTool(
   return {
     name: `query_${resourceName}`,
     description,
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         filters: buildFiltersSchema(resource, policy.allowedFields),
@@ -86,7 +97,7 @@ function buildGetTool(
   resourceName: string,
   resource: ResourceSchema,
   policy: EvaluatedPolicy
-): LLMTool {
+): NeutralTool {
   const idField = Object.values(resource.fields).find(f => f.isId)
   const idSchema = idField ? buildFieldSchema(idField) : { type: "string" }
   const description = resource.description
@@ -96,7 +107,7 @@ function buildGetTool(
   return {
     name: `get_${resourceName}`,
     description,
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         id: { ...idSchema, description: `ID of the ${resourceName} to retrieve` },
@@ -112,7 +123,7 @@ function buildCreateTool(
   resourceName: string,
   resource: ResourceSchema,
   policy: EvaluatedPolicy
-): LLMTool {
+): NeutralTool {
   const writableFields = policy.allowedFields.filter(f => {
     const field = resource.fields[f]
     return field && !field.isId
@@ -132,7 +143,7 @@ function buildCreateTool(
   return {
     name: `create_${resourceName}`,
     description: `Create a new ${resourceName} record.`,
-    input_schema: {
+    parameters: {
       type: "object",
       properties,
       required: required.length > 0 ? required : undefined,
@@ -145,7 +156,7 @@ function buildUpdateTool(
   resourceName: string,
   resource: ResourceSchema,
   policy: EvaluatedPolicy
-): LLMTool {
+): NeutralTool {
   const idField = Object.values(resource.fields).find(f => f.isId)
   const idSchema = idField ? buildFieldSchema(idField) : { type: "string" }
 
@@ -167,7 +178,7 @@ function buildUpdateTool(
   return {
     name: `update_${resourceName}`,
     description: `Update an existing ${resourceName} record by ID.`,
-    input_schema: {
+    parameters: {
       type: "object",
       properties,
       required: ["id"],
@@ -176,14 +187,14 @@ function buildUpdateTool(
   }
 }
 
-function buildDeleteTool(resourceName: string, resource: ResourceSchema): LLMTool {
+function buildDeleteTool(resourceName: string, resource: ResourceSchema): NeutralTool {
   const idField = Object.values(resource.fields).find(f => f.isId)
   const idSchema = idField ? buildFieldSchema(idField) : { type: "string" }
 
   return {
     name: `delete_${resourceName}`,
     description: `Delete a ${resourceName} record by ID.`,
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         id: { ...idSchema, description: `ID of the ${resourceName} to delete` },
@@ -199,11 +210,11 @@ function buildAggregateTool(
   resource: ResourceSchema,
   policy: EvaluatedPolicy,
   numericFields: string[]
-): LLMTool {
+): NeutralTool {
   return {
     name: `aggregate_${resourceName}`,
     description: `Aggregate ${resourceName} records (count, sum, avg, min, max with optional groupBy).`,
-    input_schema: {
+    parameters: {
       type: "object",
       properties: {
         aggregations: {
