@@ -1,25 +1,10 @@
 {
-  "name": "ormai",
-  "version": "0.2.0",
-  "description": "ORM + Access Control Layer for AI Agents",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "private": true,
+  "workspaces": ["packages/*", "examples/*"],
   "scripts": {
-    "build": "tsc",
+    "build": "npm run build -w packages/core && npm run build -w packages/prisma",
     "test": "vitest run",
     "test:watch": "vitest"
-  },
-  "dependencies": {
-    "@prisma/internals": "^5.0.0"
-  },
-  "peerDependencies": {
-    "@prisma/client": "^5.0.0",
-    "ai": "^3.0.0 || ^4.0.0"
-  },
-  "peerDependenciesMeta": {
-    "ai": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

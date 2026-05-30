@@ -16,9 +16,11 @@
   },
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^0.4.0",
+    "@ormai/prisma": "*",
     "@prisma/client": "^5.0.0",
+    "ai": "^4.0.0",
     "dotenv": "^16.0.0",
-    "ormai": "file:../.."
+    "ormai": "*"
   },
   "devDependencies": {
     "@types/node": "^20.19.41",

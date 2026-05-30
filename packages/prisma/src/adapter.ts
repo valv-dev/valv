@@ -1,8 +1,6 @@
 import type { PrismaClient } from "@prisma/client"
-import { ORMAIAdapter } from "../ormai"
-import { SchemaMap } from "../types"
-import { ResolvedQuery, FilterNode, ResolvedInclude } from "../ir/types"
-import { introspectPrisma } from "../introspection/prisma"
+import type { ORMAIAdapter, SchemaMap, ResolvedQuery, FilterNode, ResolvedInclude } from "ormai"
+import { introspectPrisma } from "./introspection"
 
 export class PrismaAdapter implements ORMAIAdapter {
   constructor(

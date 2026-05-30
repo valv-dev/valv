@@ -11,12 +11,12 @@ export type {
   ORMAIAdapter,
   ORMAIConfig,
 } from "./ormai"
-export { PrismaAdapter } from "./adapters/prisma"
 export { serializeResult } from "./serializer"
 
 // Tool formatters — turn a provider-neutral tool into a provider-specific shape.
 // Built-ins are also reachable via `ormai.tools.<provider>(ctx)`.
 export * as formats from "./formatters"
+export { anthropic, openai, gemini } from "./formatters"
 export type {
   ToolFormatter,
   AnthropicTool,
@@ -31,7 +31,9 @@ export type {
   SchemaMap,
   ResourceSchema,
   FieldSchema,
+  FieldType,
+  RelationSchema,
   InferResources,
 } from "./types"
-export type { ResolvedQuery, FilterNode } from "./ir/types"
+export type { ResolvedQuery, FilterNode, ResolvedInclude } from "./ir/types"
 export { PolicyViolationError, ValidationError } from "./errors"

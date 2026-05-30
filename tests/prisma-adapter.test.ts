@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
-import { translateFilter } from "../src/adapters/prisma"
-import { PrismaAdapter } from "../src/adapters/prisma"
-import { ResolvedQuery } from "../src/ir/types"
+import { translateFilter, PrismaAdapter } from "@ormai/prisma"
+import type { ResolvedQuery } from "ormai"
 
 describe("translateFilter", () => {
   it("EqFilter", () => {

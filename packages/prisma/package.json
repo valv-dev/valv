@@ -1,0 +1,18 @@
+{
+  "name": "@ormai/prisma",
+  "version": "0.2.0",
+  "description": "Prisma adapter for ormai",
+  "auhtor": "Nicolò D'Addabbo <nicolodaddabbo@gmail.com> (https://nicolod.com)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@prisma/internals": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^5.0.0",
+    "ormai": "^0.2.0"
+  }
+}

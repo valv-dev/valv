@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { buildResolvedQuery } from "../src/ir/builder"
-import { SchemaMap } from "../src/types"
-import { PolicyViolationError, ValidationError } from "../src/errors"
+import { buildResolvedQuery } from "../packages/core/src/ir/builder"
+import type { SchemaMap } from "ormai"
+import { PolicyViolationError, ValidationError } from "ormai"
 
 const schema: SchemaMap = {
   resources: {

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { anthropic, openai, gemini } from "../src/formatters"
-import { NeutralTool } from "../src/tools/generator"
+import { anthropic, openai, gemini } from "ormai"
+import type { NeutralTool } from "ormai"
 
 const tool: NeutralTool = {
   name: "query_orders",

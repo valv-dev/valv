@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { ORMAI, ORMAIAdapter } from "../src/ormai"
-import { SchemaMap } from "../src/types"
-import { ResolvedQuery } from "../src/ir/types"
+import { ORMAI } from "ormai"
+import type { ORMAIAdapter, SchemaMap, ResolvedQuery } from "ormai"
 
 const schema: SchemaMap = {
   resources: {
@@ -63,10 +62,14 @@ describe("ormai.tools namespace", () => {
     expect(g).toHaveProperty("parameters")
   })
 
-  it("vercel throws a helpful error when the 'ai' package is missing", async () => {
-    // `ai` is an optional peer dependency and is not installed in this repo.
+  it("vercel returns a Vercel AI SDK ToolSet (description + parameters + execute per tool)", async () => {
     const ormai = makeOrmai(new MockAdapter())
-    await expect(ormai.tools.vercel({})).rejects.toThrow(/requires the "ai" package/)
+    const tools = await ormai.tools.vercel({})
+    expect(tools).toHaveProperty("query_order")
+    const t = tools["query_order"]
+    expect(t).toHaveProperty("description")
+    expect(t).toHaveProperty("parameters")
+    expect(typeof t.execute).toBe("function")
   })
 
   it("execute() runs the policy-enforced query via the adapter", async () => {

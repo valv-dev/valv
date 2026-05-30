@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { evaluatePolicy, mergeFilters } from "../src/policy/engine"
-import { ResourceSchema } from "../src/types"
+import { evaluatePolicy, mergeFilters } from "../packages/core/src/policy/engine"
+import type { ResourceSchema } from "ormai"
 
 const mockResource: ResourceSchema = {
   name: "orders",

@@ -2,7 +2,8 @@ import "dotenv/config"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText } from "ai"
 import { PrismaClient } from "@prisma/client"
-import { ORMAI, PrismaAdapter } from "ormai"
+import { ORMAI } from "ormai"
+import { PrismaAdapter } from "@ormai/prisma"
 import type { DefaultContext, InferResources } from "ormai"
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
