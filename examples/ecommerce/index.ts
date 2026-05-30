@@ -15,15 +15,15 @@ const ormai = new ORMAI<DefaultContext, InferResources<typeof prisma>>({
   defaultPolicy: "deny-all",
   onQuery: ({ toolName, resource, durationMs, error }) => {
     if (error) console.warn(`  [audit] ${toolName} on ${resource} failed in ${durationMs}ms: ${error.message}`)
-    else       console.log (`  [audit] ${toolName} on ${resource} (${durationMs}ms)`)
+    else console.log(`  [audit] ${toolName} on ${resource} (${durationMs}ms)`)
   },
 })
 
 // ── Policies ──────────────────────────────────────────────────────────────────
 
 ormai.policy("order", (ctx) => ({
-  read:   { tenant_id: ctx.tenant!.id },
-  write:  { tenant_id: ctx.tenant!.id },
+  read: { tenant_id: ctx.tenant!.id },
+  write: { tenant_id: ctx.tenant!.id },
   delete: false,
   fields: {
     // internal_notes is @ormai:sensitive — auto-excluded from LLM
@@ -39,13 +39,13 @@ ormai.policy("user", (ctx) => ({
   read: { tenant_id: ctx.tenant!.id },
   // password_hash is @ormai:sensitive — always excluded
   fields: { deny: ctx.user.role === "support" ? ["email"] : [] },
-  write:  false,
+  write: false,
   delete: false,
 }))
 
 ormai.policy("product", (ctx) => ({
-  read:   { tenant_id: ctx.tenant!.id },
-  write:  { tenant_id: ctx.tenant!.id },
+  read: { tenant_id: ctx.tenant!.id },
+  write: { tenant_id: ctx.tenant!.id },
   delete: false,
 }))
 
@@ -111,22 +111,34 @@ async function run(
 
   const calls: RecordedCall[] = []
 
-  const { text } = await generateText({
-    model: openrouter("openrouter/owl-alpha"),
-    tools: aiTools,
-    maxSteps,
-    prompt,
-    onStepFinish({ toolCalls, toolResults }) {
-      for (const call of toolCalls) {
-        console.log(`\n  → ${call.toolName}(${JSON.stringify(call.args)})`)
-        const result = toolResults.find(r => r.toolCallId === call.toolCallId)
-        if (result) {
-          console.log(`    ${JSON.stringify(result.result)}`)
-          calls.push({ toolName: call.toolName, args: call.args, result: result.result })
+  let text = ""
+  try {
+    const result = await generateText({
+      model: openrouter("openrouter/owl-alpha"),
+      tools: aiTools,
+      maxSteps,
+      prompt,
+      onStepFinish({ toolCalls, toolResults }) {
+        for (const call of toolCalls) {
+          console.log(`\n  → ${call.toolName}(${JSON.stringify(call.args)})`)
+          const result = toolResults.find(r => r.toolCallId === call.toolCallId)
+          if (result) {
+            console.log(`    ${JSON.stringify(result.result)}`)
+            calls.push({ toolName: call.toolName, args: call.args, result: result.result })
+          }
         }
-      }
-    },
-  })
+      },
+    })
+    text = result.text
+  } catch (err: unknown) {
+    // Model hallucinated a call to a suppressed tool (e.g. create_order denied by policy).
+    // The assertions handle this case via the tool availability check.
+    if (err instanceof Error && err.constructor.name === "AI_NoSuchToolError") {
+      console.log(`\n[ormai] Model attempted to call a tool not in the allowed set — suppressed by policy.`)
+    } else {
+      throw err
+    }
+  }
 
   console.log(`\nAI:\n${text}`)
 
