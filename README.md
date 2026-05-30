@@ -1,116 +1,107 @@
 # ormai
 
 Give your LLM agent access to your database. Control exactly what it can see and do.
+Your agent never writes SQL. You write the policy. ormai handles the rest.
+
+ormai sits between your AI agent and your database. It reads your schema, generates typed tools the LLM can call, and enforces access control server-side — on every query, regardless of what the model was told to do.
+
+No query strings. No prompt-level access control. No per-endpoint boilerplate.
 
 ---
 
-## What it looks like
+## Why this matters
 
-Three users. Same prompt. Same agent. Radically different results.
+**SQL injection is structurally impossible** — the agent calls typed tools with JSON arguments, never constructs queries.
+
+**Prompt injection can't escalate access** — row-level filters are AND-ed server-side at execution time. The LLM's output is input, not authority.
+
+**The tool list *is* the access control list** — `read: false` generates no tools. The LLM can't call what it can't see.
+
+**One policy, every query** — write it once per resource. It applies to every tool call, every operation, every relation expansion.
+
+---
+
+## Same prompt. Same agent. Different context
 
 ```
-"Give me a summary of all orders. For each delivered order, show me the items purchased."
+"Summarize all orders. For each delivered order, show the items purchased."
 ```
 
-**Alice — admin**
-```
-→ query_order({"include": ["customer", "items"]})
+| | Alice · admin | Bob · support | Carol · admin, tenant-β |
+|---|---|---|---|
+| **Tools visible** | query, get, create, update, aggregate | query, get, aggregate | query, get, create, update, aggregate |
+| **Row filter** | `tenant_id = alpha` | `tenant_id = alpha` | `tenant_id = beta` |
+| **Hidden fields** | — | `user_id` | — |
+| **Customer relation** | ✓ | ✗ blocked | ✓ |
+| **Orders returned** | #1, #3 | #1, #3 | #5, #6 |
 
-Order #1 · Delivered · $1,549.98
-  Customer: Alice Admin (alice@alpha.com)
-  Items: Laptop ($1,299.99), Headset ($249.99)
-
-Order #3 · Delivered · $229.98
-  Customer: Alice Admin (alice@alpha.com)
-  Items: Keyboard ($149.99), Mouse ($79.99)
-```
-
-**Bob — support** *(same prompt, same agent)*
-```
-→ query_order({"include": ["items"]})
-
-Order #1 · Delivered · $1,549.98
-  Items: Laptop ($1,299.99), Headset ($249.99)
-  ↳ user_id: [hidden]   customer: [hidden]
-
-Order #3 · Delivered · $229.98
-  Items: Keyboard ($149.99), Mouse ($79.99)
-  ↳ user_id: [hidden]   customer: [hidden]
-```
-
-**Carol — admin @ tenant-beta** *(cross-tenant isolation)*
-```
-→ query_order({"include": ["customer", "items"]})
-
-Order #5 · Delivered · $2,199.99   ← tenant-beta only
-Order #6 · Pending   · $899.00     ← tenant-alpha orders: invisible
-```
-
-The policy that drives all of this is 30 lines of TypeScript.
+Alice gets full output. Bob gets no customer link and `user_id` stripped. Carol only sees her tenant — `tenant-alpha` orders are structurally invisible to her. All from one policy function.
 
 ---
 
 ## The code
 
 ```ts
-import { ORMAI, PrismaAdapter } from "ormai"
-import type { DefaultContext, InferResources } from "ormai"
-import { generateText } from "ai"
+import { ORMAI } from "ormai"
+import { PrismaAdapter } from "@ormai/prisma"
 
-const ormai = new ORMAI<DefaultContext, InferResources<typeof prisma>>({
+const ormai = new ORMAI<Ctx, InferResources<typeof prisma>>({
   adapter: new PrismaAdapter(prisma, "./prisma/schema.prisma"),
-  defaultPolicy: "deny-all",  // nothing is accessible unless you say so
+  defaultPolicy: "deny-all",
 })
 
 ormai.policy("order", (ctx) => ({
-  read:   { tenant_id: ctx.tenant.id },   // row-level filter, always AND-ed in
-  write:  { tenant_id: ctx.tenant.id },   // forced into INSERT data; guards UPDATE too
-  delete: false,                           // no delete_order tool generated. ever.
-  fields: {
-    deny: ctx.user.role === "support" ? ["user_id"] : [],
-  },
-  relations: {
-    customer: ctx.user.role === "admin",  // support can't expand to the user record
-    items: true,
-  },
+  read:   { tenant_id: ctx.tenant.id },  // row filter — AND-ed into every SELECT
+  write:  { tenant_id: ctx.tenant.id },  // force-injected on INSERT, guards UPDATE WHERE
+  delete: false,                          // delete_order tool never generated
+  fields:    { deny: ctx.user.role === "support" ? ["user_id"] : [] },
+  relations: { customer: ctx.user.role === "admin", items: true },
 }))
-
-// One line to get a ready-to-use ToolSet for the Vercel AI SDK
-const tools = await ormai.tools.vercel(ctx)
-
-const { text } = await generateText({ model, tools, maxSteps: 8, prompt })
 ```
 
-That's it. ormai reads your Prisma schema, evaluates the policy against the current user, and generates exactly the tools the LLM is allowed to call. When the LLM calls a tool, the policy filter is re-checked and merged server-side. The LLM cannot produce a query that escapes it.
+That policy produces exactly these tools:
 
----
+```
+admin                              support
+────────────────────────────────   ────────────────────────────────
+query_order   ← tenant filter      query_order   ← tenant filter
+get_order     ← tenant filter      get_order     ← tenant filter
+create_order  ← tenant injected    create_order  ← tenant injected
+update_order  ← tenant guard       update_order  ← tenant guard
+aggregate_order                    aggregate_order
+                                   ↳ user_id stripped from results
+                    ✗ delete_order not generated for either
+```
 
-## How it works
+Connect to your agent in one line:
 
-1. **Introspection** — parses `schema.prisma` via `@prisma/internals`. No DB connection needed at startup.
-2. **Policy evaluation** — for each request, evaluates the policy against the current context and determines which operations, fields, and relations are accessible.
-3. **Tool generation** — generates provider-neutral JSON Schema tool definitions shaped by the evaluated policy, then formats them for your provider. A resource with `read: false` produces no tools at all. A required field that's denied from writes means `create_` is suppressed entirely — not silently broken.
-4. **Execution** — when the LLM calls a tool, ormai re-evaluates policy, merges the policy filter into the IR, and executes via the adapter. Forced write fields are injected at execution time, not from LLM input.
+```ts
+const tools = await ormai.tools.vercel(ctx)
+const { text } = await generateText({ model, tools, maxSteps: 8, prompt })
+```
 
 ---
 
 ## Installation
 
 ```bash
-npm install ormai @prisma/client
-npm install -D @prisma/internals
+npm install ormai @ormai/prisma
 ```
 
-Requires Prisma 5+. The `ai` peer dependency is optional — only needed for `ormai.tools.vercel()`.
+| Package | Contents |
+|---|---|
+| `ormai` | Zero-dependency core — policies, tool generation, IR |
+| `@ormai/prisma` | Prisma adapter + schema introspection (requires Prisma 5+) |
+| `ai` | Optional — only needed for `ormai.tools.vercel()` |
 
 ---
 
 ## Setup
 
 ```ts
-import { ORMAI, PrismaAdapter } from "ormai"
+import { ORMAI } from "ormai"
+import { PrismaAdapter } from "@ormai/prisma"
 import type { DefaultContext, InferResources } from "ormai"
-import { PrismaClient } from "@prisma/client"
 
 const prisma = new PrismaClient()
 
@@ -120,41 +111,34 @@ const ormai = new ORMAI<DefaultContext, InferResources<typeof prisma>>({
 })
 ```
 
-`InferResources<typeof prisma>` converts your Prisma model keys (`orderItem`) to ormai resource names (`order_item`). You get autocomplete and type errors on policy keys with no manual type declarations.
+`InferResources<typeof prisma>` converts Prisma model keys (`orderItem`) to ormai resource names (`order_item`). Policy keys are type-checked — a typo is a compile error.
 
 ---
 
 ## Schema annotations
 
-Use `///` doc comments to give the LLM better context, and mark fields that must never leave the server:
+Use `///` doc comments to give the LLM better context and mark fields that must never leave the server:
 
 ```prisma
 /// @ormai:description "A customer purchase order"
 model Order {
-  id        String      @id @default(uuid())
-  status    OrderStatus
-  tenant_id String
-  user_id   String
+  id     String @id @default(uuid())
+  status OrderStatus
+  total  Decimal
 
   /// @ormai:description "Order total in cents"
-  total     Decimal
+  total  Decimal
 
   /// @ormai:sensitive
-  internal_notes String?  // stripped at introspection — never in tool schemas or results
+  internal_notes String?  // stripped at introspection — never in schemas, args, or results
 }
 ```
 
-`@ormai:sensitive` is enforced before policy runs. The field doesn't appear in tool schemas, call arguments, or query results — regardless of what the policy says.
+`@ormai:sensitive` is enforced before policy runs. The field doesn't exist as far as the LLM is concerned.
 
 ---
 
 ## Policies
-
-`read`, `write`, and `delete` each accept:
-
-- `true` — allow
-- `false` — deny (no tool generated, nothing to call)
-- `{ field: value }` — for `read`/`delete`: row-level WHERE always AND-ed in; for `write`: forced into INSERT data and AND-ed into UPDATE/DELETE WHERE
 
 ```ts
 // Everything defaults to the tenant scope
@@ -164,84 +148,65 @@ ormai.policy("*", (ctx) => ({
   delete: false,
 }))
 
-// order: role-dependent field access and relation expansion
+// Per-resource: override and extend
 ormai.policy("order", (ctx) => ({
   read:   { tenant_id: ctx.tenant.id },
   write:  { tenant_id: ctx.tenant.id },
   delete: false,
-  fields: {
-    deny: ctx.user.role === "support" ? ["user_id"] : [],
-  },
-  relations: {
-    customer: ctx.user.role === "admin",
-    items: true,
-  },
+  fields:    { deny: ctx.user.role === "support" ? ["user_id"] : [] },
+  relations: { customer: ctx.user.role === "admin", items: true },
 }))
-
-// user: read-only. No create_user / update_user tools generated at all.
-ormai.policy("user", (ctx) => ({
-  read:   { tenant_id: ctx.tenant.id },
-  write:  false,
-  delete: false,
-}))
-
-// order_item: not directly queryable — only reachable as an order relation
-ormai.policy("order_item", () => ({ read: false }))
 ```
 
-For dynamic policy resolution:
+`read`, `write`, and `delete` accept:
 
-```ts
-new ORMAI({
-  resolvePolicy: (resource, ctx) => ({ ... }),
-})
-```
+| Value | Meaning |
+|---|---|
+| `true` | allow |
+| `false` | deny — no tool generated |
+| `{ field: value }` | `read`/`delete`: WHERE always AND-ed in · `write`: force-injected on INSERT, AND-ed on UPDATE/DELETE WHERE |
 
 ---
 
 ## Generated tools
 
-For each resource, ormai generates up to six tools depending on what the policy allows:
+For each resource, ormai generates up to six tools based on what the policy allows:
 
 | Tool | Operation |
 |---|---|
-| `query_{resource}` | findMany with filters, sort, pagination, includes |
+| `query_{resource}` | findMany with filters, sort, pagination, relation includes |
 | `get_{resource}` | findOne by id |
 | `create_{resource}` | insert one row |
 | `update_{resource}` | update by id |
 | `delete_{resource}` | delete by id |
-| `aggregate_{resource}` | count/sum/avg/min/max with optional groupBy |
+| `aggregate_{resource}` | count / sum / avg / min / max with optional groupBy |
 
-Fields with database defaults (`@default(now())`, `@default(uuid())`) are not required in create tools. If a required field is denied by the policy and not covered by forced write fields, `create_` is suppressed entirely — the tool won't appear in the LLM's tool list.
+`delete: false` → no `delete_` tool. A required write field denied and not force-injected → `create_` suppressed entirely, not silently broken. Fields with `@default(...)` are not required in create tools.
 
 ---
 
-## Tool formats / providers
+## Providers
+
+| Method | Use with |
+|---|---|
+| `ormai.tools.vercel(ctx)` | Vercel AI SDK — drops straight into `generateText` / `streamText` |
+| `ormai.tools.anthropic(ctx)` | Anthropic Messages API |
+| `ormai.tools.openai(ctx)` | OpenAI / any OpenAI-compatible API |
+| `ormai.tools.gemini(ctx)` | Google Gemini |
+| `ormai.tools.format(ctx, fn)` | Any other provider — pass your own formatter |
 
 ```ts
-// Vercel AI SDK — drops straight into generateText / streamText
+// Vercel AI SDK
 const tools = await ormai.tools.vercel(ctx)
-const { text } = await generateText({ model, tools, maxSteps: 5, prompt })
+await generateText({ model, tools, maxSteps: 5, prompt })
 
 // Anthropic
 const tools = await ormai.tools.anthropic(ctx)
-await anthropic.messages.create({
-  tools: tools.map(t => t.definition), // { name, description, input_schema }
-})
+await anthropic.messages.create({ tools: tools.map(t => t.definition) })
 const result = await tools.find(t => t.name === block.name)!.execute(block.input)
 
-// OpenAI
-const tools = await ormai.tools.openai(ctx)
-await openai.chat.completions.create({
-  tools: tools.map(t => t.definition), // { type: "function", function: {...} }
-})
-
-// Any other provider
-const tools = await ormai.tools.format(ctx, (t) => ({
-  name: t.name,
-  description: t.description,
-  schema: t.parameters,
-}))
+// Custom provider
+const tools = await ormai.tools.format(ctx, (t) => ({ id: t.name, schema: t.parameters }))
 ```
 
 Tool errors are caught and returned as `{ error }` so the agent can recover rather than abort.
@@ -251,7 +216,7 @@ Tool errors are caught and returned as `{ error }` so the agent can recover rath
 ## Observability
 
 ```ts
-const ormai = new ORMAI({
+new ORMAI({
   onQuery: ({ toolName, resource, durationMs, error }) => {
     logger.info({ toolName, resource, durationMs })
     if (error) logger.error({ toolName, error: error.message })
@@ -263,38 +228,37 @@ const ormai = new ORMAI({
 
 ## Security properties
 
-- Policy row filters are AND-ed server-side into every query. The LLM can send `{ tenant_id: "other-tenant" }` in a filter — it gets overwritten.
-- `update` and `delete` run as `updateMany`/`deleteMany` with the full policy WHERE. A guessed cross-tenant ID affects 0 rows.
-- `write: { tenant_id }` is injected into INSERT data **and** AND-ed into UPDATE/DELETE WHERE. There is no argument the LLM can pass to write to a different tenant.
-- `false` on any operation means no tool is generated. Nothing to call.
-- `@ormai:sensitive` fields are stripped before policy runs — they never appear in schemas, arguments, or results.
-- `belongsTo` relation results enforce the related record's row filter post-fetch — no cross-tenant data through joins.
-- If a required DB field is denied in a write policy and not force-injected, the `create_` tool is suppressed, not silently broken.
+| Property | Guarantee |
+|---|---|
+| Row filters | AND-ed server-side into every query — the LLM can send conflicting filters, they get overwritten |
+| Write fields | `write: { tenant_id }` is injected into INSERT data and AND-ed into UPDATE/DELETE WHERE — no argument bypasses it |
+| Tool suppression | `false` on any operation → no tool generated, nothing to call |
+| Sensitive fields | Stripped at introspection, before policy runs — never in schemas, args, or results |
+| Relation joins | `belongsTo` results enforce the related record's row filter post-fetch |
+| Broken creates | If a required write field is denied and not force-injected, `create_` is suppressed, not silently broken |
 
 ---
 
-## Other ORMs
+## Other adapters
 
-Prisma is the only built-in adapter today. Everything above it — policies, tool generation, the query IR, serialization — is ORM-agnostic. An adapter is two methods:
+`@ormai/prisma` is the first adapter. Everything above it — policies, tool generation, the query IR — is ORM-agnostic. An adapter is two methods:
 
 ```ts
 import type { ORMAIAdapter, SchemaMap, ResolvedQuery } from "ormai"
 
-class MyOrmAdapter implements ORMAIAdapter {
-  async introspect(): Promise<SchemaMap> { /* describe your schema */ }
-  async execute(query: ResolvedQuery): Promise<unknown> { /* run the query */ }
+class MyAdapter implements ORMAIAdapter {
+  async introspect(): Promise<SchemaMap> { ... }
+  async execute(query: ResolvedQuery): Promise<unknown> { ... }
 }
-
-const ormai = new ORMAI({ adapter: new MyOrmAdapter() })
 ```
 
-`SchemaMap`, `ResolvedQuery`, and `FilterNode` are all exported. The [`PrismaAdapter`](src/adapters/prisma.ts) is a reference implementation.
+`SchemaMap`, `ResolvedQuery`, and `FilterNode` are all exported from `ormai`.
 
 ---
 
 ## Example
 
-[`examples/ecommerce/`](examples/ecommerce/) — a full working demo with three users (admin, support, cross-tenant) issuing the same prompts and getting back exactly what their context allows. Includes a stress-test suite that verifies tenant isolation, sensitive field exclusion, write policy enforcement, and role-based field denial.
+[`examples/ecommerce/`](examples/ecommerce/) — a full working demo with three users (admin, support, cross-tenant) issuing the same prompts against a live Postgres database. Includes a stress-test suite verifying tenant isolation, sensitive field exclusion, write policy enforcement, and role-based field denial.
 
 ---
 
