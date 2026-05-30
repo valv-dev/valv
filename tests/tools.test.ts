@@ -73,7 +73,7 @@ describe("generateTools", () => {
       orders: () => ({ read: true }),
     }, {}, "deny-all")
     const queryTool = tools.find(t => t.name === "query_orders")!
-    const schema_ = queryTool.input_schema as Record<string, unknown>
+    const schema_ = queryTool.parameters as Record<string, unknown>
     const filters = schema_.properties as Record<string, unknown>
     const statusFilter = (filters.filters as Record<string, unknown>)
     const statusProps = (statusFilter.properties as Record<string, unknown>)
@@ -88,14 +88,14 @@ describe("generateTools", () => {
       orders: () => ({ read: true, write: true }),
     }, {}, "deny-all")
     const queryTool = tools.find(t => t.name === "query_orders")!
-    const schema_ = queryTool.input_schema as Record<string, unknown>
+    const schema_ = queryTool.parameters as Record<string, unknown>
     const filters = schema_.properties as Record<string, unknown>
     const filterSchema = filters.filters as Record<string, unknown>
     const filterProps = filterSchema.properties as Record<string, unknown>
     expect(filterProps).not.toHaveProperty("secret_key")
 
     const createTool = tools.find(t => t.name === "create_orders")!
-    const createSchema = createTool.input_schema as Record<string, unknown>
+    const createSchema = createTool.parameters as Record<string, unknown>
     const createProps = createSchema.properties as Record<string, unknown>
     expect(createProps).not.toHaveProperty("secret_key")
   })
@@ -113,7 +113,7 @@ describe("generateTools", () => {
       orders: () => ({ read: true, relations: { customer: false, items: true } }),
     }, {}, "deny-all")
     const queryTool = tools.find(t => t.name === "query_orders")!
-    const schema_ = queryTool.input_schema as Record<string, unknown>
+    const schema_ = queryTool.parameters as Record<string, unknown>
     const props = schema_.properties as Record<string, unknown>
     const includeSchema = props.include as Record<string, unknown>
     const items = includeSchema.items as Record<string, unknown>
@@ -144,7 +144,7 @@ describe("generateTools", () => {
       orders: () => ({ read: true, write: true }),
     }, {}, "deny-all")
     const createTool = tools.find(t => t.name === "create_orders")!
-    const required = (createTool.input_schema as Record<string, unknown>).required as string[] ?? []
+    const required = (createTool.parameters as Record<string, unknown>).required as string[] ?? []
     // created_at has hasDefaultValue: true → should NOT be required
     expect(required).not.toContain("created_at")
     // amount has no default and is not nullable → should be required
@@ -164,7 +164,7 @@ describe("generateTools", () => {
       orders: () => ({ read: true }),
     }, {}, "deny-all")
     const aggTool = tools.find(t => t.name === "aggregate_orders")!
-    const props = (aggTool.input_schema as Record<string, unknown>).properties as Record<string, unknown>
+    const props = (aggTool.parameters as Record<string, unknown>).properties as Record<string, unknown>
     expect(props).toHaveProperty("aggregations")
     expect(props).toHaveProperty("groupBy")
   })
