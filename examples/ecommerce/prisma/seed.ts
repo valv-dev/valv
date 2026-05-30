@@ -10,7 +10,7 @@ async function main() {
   await prisma.product.deleteMany()
   await prisma.user.deleteMany()
 
-  // Users
+  // ── Users ────────────────────────────────────────────────────────────────
   const alice = await prisma.user.create({
     data: {
       id: "user-alice",
@@ -33,7 +33,7 @@ async function main() {
     },
   })
 
-  await prisma.user.create({
+  const carol = await prisma.user.create({
     data: {
       id: "user-carol",
       name: "Carol Admin",
@@ -44,7 +44,7 @@ async function main() {
     },
   })
 
-  // Products (tenant-alpha only)
+  // ── tenant-alpha products ─────────────────────────────────────────────────
   const laptop = await prisma.product.create({
     data: {
       id: "prod-laptop",
@@ -67,7 +67,7 @@ async function main() {
     },
   })
 
-  await prisma.product.create({
+  const keyboard = await prisma.product.create({
     data: {
       id: "prod-keyboard",
       name: "Mechanical Keyboard",
@@ -78,7 +78,7 @@ async function main() {
     },
   })
 
-  await prisma.product.create({
+  const mouse = await prisma.product.create({
     data: {
       id: "prod-mouse",
       name: "Wireless Mouse",
@@ -89,7 +89,30 @@ async function main() {
     },
   })
 
-  // Orders with items (tenant-alpha only)
+  // ── tenant-beta products ──────────────────────────────────────────────────
+  const tablet = await prisma.product.create({
+    data: {
+      id: "prod-beta-tablet",
+      name: "Beta Tablet",
+      description: "Tablet exclusive to tenant-beta",
+      price: 49999,
+      stock: 5,
+      tenant_id: "tenant-beta",
+    },
+  })
+
+  const monitor = await prisma.product.create({
+    data: {
+      id: "prod-beta-monitor",
+      name: "Beta Monitor",
+      description: "4K monitor for tenant-beta",
+      price: 39999,
+      stock: 8,
+      tenant_id: "tenant-beta",
+    },
+  })
+
+  // ── tenant-alpha orders ───────────────────────────────────────────────────
   // Order 1: alice's delivered order — has internal_notes to prove they never leak
   const order1 = await prisma.order.create({
     data: {
@@ -113,10 +136,21 @@ async function main() {
     },
   })
 
-  // Order 3: bob's processing order
+  // Order 3: alice's delivered order — second delivery to make analytics interesting
   const order3 = await prisma.order.create({
     data: {
       id: "order-3",
+      status: OrderStatus.delivered,
+      total: 22998,
+      tenant_id: "tenant-alpha",
+      user_id: alice.id,
+    },
+  })
+
+  // Order 4: bob's processing order
+  const order4 = await prisma.order.create({
+    data: {
+      id: "order-4",
       status: OrderStatus.processing,
       total: 24999,
       tenant_id: "tenant-alpha",
@@ -124,19 +158,49 @@ async function main() {
     },
   })
 
-  // Order items
+  // ── tenant-beta orders ────────────────────────────────────────────────────
+  // These must NEVER appear in tenant-alpha queries — the cross-tenant isolation test checks this.
+  const order5 = await prisma.order.create({
+    data: {
+      id: "order-5",
+      status: OrderStatus.delivered,
+      total: 89998,
+      internal_notes: "Beta tenant priority order",
+      tenant_id: "tenant-beta",
+      user_id: carol.id,
+    },
+  })
+
+  const order6 = await prisma.order.create({
+    data: {
+      id: "order-6",
+      status: OrderStatus.shipped,
+      total: 39999,
+      tenant_id: "tenant-beta",
+      user_id: carol.id,
+    },
+  })
+
+  // ── Order items ───────────────────────────────────────────────────────────
   await prisma.orderItem.createMany({
     data: [
-      { order_id: order1.id, product_id: laptop.id,  quantity: 1, unit_price: 129999 },
-      { order_id: order1.id, product_id: headset.id, quantity: 1, unit_price: 24999 },
-      { order_id: order2.id, product_id: laptop.id,  quantity: 1, unit_price: 129999 },
-      { order_id: order3.id, product_id: headset.id, quantity: 1, unit_price: 24999 },
+      // tenant-alpha
+      { order_id: order1.id, product_id: laptop.id,   quantity: 1, unit_price: 129999 },
+      { order_id: order1.id, product_id: headset.id,  quantity: 1, unit_price: 24999  },
+      { order_id: order2.id, product_id: laptop.id,   quantity: 1, unit_price: 129999 },
+      { order_id: order3.id, product_id: keyboard.id, quantity: 1, unit_price: 14999  },
+      { order_id: order3.id, product_id: mouse.id,    quantity: 1, unit_price: 7999   },
+      { order_id: order4.id, product_id: headset.id,  quantity: 1, unit_price: 24999  },
+      // tenant-beta
+      { order_id: order5.id, product_id: tablet.id,   quantity: 1, unit_price: 49999  },
+      { order_id: order5.id, product_id: monitor.id,  quantity: 1, unit_price: 39999  },
+      { order_id: order6.id, product_id: monitor.id,  quantity: 1, unit_price: 39999  },
     ],
   })
 
-  console.log("Seed complete: 3 users, 4 products, 3 orders, 4 order items")
-  console.log("  tenant-alpha: alice (admin), bob (support), 4 products, 3 orders")
-  console.log("  tenant-beta:  carol (admin), no data")
+  console.log("Seed complete:")
+  console.log("  tenant-alpha: alice (admin), bob (support), 4 products, 4 orders")
+  console.log("  tenant-beta:  carol (admin), 2 products, 2 orders (must not leak across tenant boundary)")
 }
 
 main()
