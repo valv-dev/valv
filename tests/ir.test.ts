@@ -11,7 +11,7 @@ const schema: SchemaMap = {
       fields: {
         id:        { name: "id",        type: "uuid",   isNullable: false, isId: true },
         tenant_id: { name: "tenant_id", type: "string", isNullable: false, isId: false },
-        status:    { name: "status",    type: "string", isNullable: false, isId: false },
+        status:    { name: "status",    type: "enum",   isNullable: false, isId: false, enumValues: ["pending", "shipped", "delivered"] },
         amount:    { name: "amount",    type: "number", isNullable: false, isId: false },
         secret:    { name: "secret",    type: "string", isNullable: true,  isId: false, sensitive: true },
       },
@@ -83,19 +83,18 @@ describe("buildResolvedQuery", () => {
   it("policy row filter always present regardless of LLM input", () => {
     const query = buildResolvedQuery(
       "query_orders",
-      { filters: { status: "active" } },
+      { filters: { status: "pending" } },
       schema,
       { orders: () => ({ read: { tenant_id: "tenant-123" } }) },
       {},
       "deny-all"
     )
-    // The merged filter must contain the policy filter
     expect(query.filters).toBeDefined()
     const filterStr = JSON.stringify(query.filters)
     expect(filterStr).toContain("tenant_id")
     expect(filterStr).toContain("tenant-123")
     expect(filterStr).toContain("status")
-    expect(filterStr).toContain("active")
+    expect(filterStr).toContain("pending")
   })
 
   it("disallowed relation in include → ValidationError", () => {
@@ -156,7 +155,7 @@ describe("buildResolvedQuery", () => {
     expect(() =>
       buildResolvedQuery(
         "create_orders",
-        { status: "new", tenant_id: "x", amount: 10 },
+        { status: "pending", tenant_id: "x", amount: 10 },
         schema,
         { orders: () => ({ read: true, write: false }) },
         {},
@@ -176,5 +175,97 @@ describe("buildResolvedQuery", () => {
         "deny-all"
       )
     ).toThrow(ValidationError)
+  })
+
+  it("invalid enum filter value → ValidationError", () => {
+    expect(() =>
+      buildResolvedQuery(
+        "query_orders",
+        { filters: { status: "invalid_value" } },
+        schema,
+        { orders: () => ({ read: true }) },
+        {},
+        "deny-all"
+      )
+    ).toThrow(ValidationError)
+  })
+
+  it("valid enum filter value passes", () => {
+    const query = buildResolvedQuery(
+      "query_orders",
+      { filters: { status: "pending" } },
+      schema,
+      { orders: () => ({ read: true }) },
+      {},
+      "deny-all"
+    )
+    expect(JSON.stringify(query.filters)).toContain("pending")
+  })
+
+  it("write: { tenant_id } forces tenant_id into create data and adds where guard for update", () => {
+    const ctx = { tenant: { id: "t1" } }
+
+    const createQuery = buildResolvedQuery(
+      "create_orders",
+      { amount: 100 },
+      schema,
+      { orders: () => ({ write: { tenant_id: ctx.tenant.id } }) },
+      ctx,
+      "deny-all"
+    )
+    expect(createQuery.data?.tenant_id).toBe("t1")
+
+    const updateQuery = buildResolvedQuery(
+      "update_orders",
+      { id: "o1", amount: 200 },
+      schema,
+      { orders: () => ({ write: { tenant_id: ctx.tenant.id } }) },
+      ctx,
+      "deny-all"
+    )
+    expect(updateQuery.data?.tenant_id).toBe("t1")
+    // Where filter must include tenant guard
+    const whereStr = JSON.stringify(updateQuery.filters)
+    expect(whereStr).toContain("tenant_id")
+    expect(whereStr).toContain("t1")
+  })
+
+  it("forced write fields override LLM-supplied values", () => {
+    const ctx = { tenant: { id: "t1" } }
+    const query = buildResolvedQuery(
+      "create_orders",
+      { amount: 100, tenant_id: "evil-tenant" },
+      schema,
+      { orders: () => ({ write: { tenant_id: ctx.tenant.id } }) },
+      ctx,
+      "deny-all"
+    )
+    // Policy wins over LLM input
+    expect(query.data?.tenant_id).toBe("t1")
+  })
+
+  it("aggregate operation is allowed under read policy", () => {
+    const query = buildResolvedQuery(
+      "aggregate_orders",
+      { aggregations: [{ fn: "sum", field: "amount", alias: "total" }] },
+      schema,
+      { orders: () => ({ read: true }) },
+      {},
+      "deny-all"
+    )
+    expect(query.operation).toBe("aggregate")
+    expect(query.aggregations).toBeDefined()
+  })
+
+  it("offset is bounded to 0 minimum", () => {
+    const query = buildResolvedQuery(
+      "query_orders",
+      { offset: -5, limit: 10 },
+      schema,
+      { orders: () => ({ read: true }) },
+      {},
+      "deny-all"
+    )
+    expect(query.pagination?.offset).toBe(0)
   })
 })

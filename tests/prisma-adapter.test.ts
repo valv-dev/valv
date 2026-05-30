@@ -83,17 +83,18 @@ describe("translateFilter", () => {
 
 describe("PrismaAdapter.execute", () => {
   function makeAdapter() {
-    const findMany  = vi.fn().mockResolvedValue([])
-    const findFirst = vi.fn().mockResolvedValue(null)
-    const create    = vi.fn().mockResolvedValue({ id: "1" })
-    const update    = vi.fn().mockResolvedValue({ id: "1" })
-    const del       = vi.fn().mockResolvedValue({ id: "1" })
+    const findMany    = vi.fn().mockResolvedValue([])
+    const findFirst   = vi.fn().mockResolvedValue(null)
+    const create      = vi.fn().mockResolvedValue({ id: "1" })
+    const updateMany  = vi.fn().mockResolvedValue({ count: 1 })
+    const deleteMany  = vi.fn().mockResolvedValue({ count: 1 })
 
     const prisma = {
-      orders: { findMany, findFirst, create, update, delete: del },
+      orders:    { findMany, findFirst, create, updateMany, deleteMany },
+      orderItem: { findMany, findFirst, create, updateMany, deleteMany },
     } as unknown as import("@prisma/client").PrismaClient
 
-    return { adapter: new PrismaAdapter(prisma), mocks: { findMany, findFirst, create, update, del } }
+    return { adapter: new PrismaAdapter(prisma), mocks: { findMany, findFirst, create, updateMany, deleteMany } }
   }
 
   it("find → prisma.findMany with where and select", async () => {
@@ -109,6 +110,17 @@ describe("PrismaAdapter.execute", () => {
       where: { tenant_id: "t1" },
       select: { id: true, status: true },
     })
+  })
+
+  it("multi-word resource name uses camelCase Prisma accessor (order_item → orderItem)", async () => {
+    const { adapter, mocks } = makeAdapter()
+    const query: ResolvedQuery = {
+      resource: "order_item",
+      operation: "find",
+      fields: ["id"],
+    }
+    await adapter.execute(query)
+    expect(mocks.findMany).toHaveBeenCalled()
   })
 
   it("findOne → prisma.findFirst", async () => {
@@ -137,34 +149,49 @@ describe("PrismaAdapter.execute", () => {
     )
   })
 
-  it("update → prisma.update with where and data", async () => {
+  it("update → prisma.updateMany with full where (enforces policy filter)", async () => {
     const { adapter, mocks } = makeAdapter()
     const query: ResolvedQuery = {
       resource: "orders",
       operation: "update",
       fields: ["id", "status"],
-      filters: { type: "eq", field: "id", value: "order-1" },
+      // Merged filter: id + tenant policy guard
+      filters: {
+        type: "and",
+        filters: [
+          { type: "eq", field: "id", value: "order-1" },
+          { type: "eq", field: "tenant_id", value: "t1" },
+        ],
+      },
       data: { status: "shipped" },
     }
     await adapter.execute(query)
-    expect(mocks.update).toHaveBeenCalledWith(
+    expect(mocks.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "order-1" },
+        where: { AND: [{ id: "order-1" }, { tenant_id: "t1" }] },
         data: { status: "shipped" },
       })
     )
   })
 
-  it("delete → prisma.delete with where", async () => {
+  it("delete → prisma.deleteMany with full where", async () => {
     const { adapter, mocks } = makeAdapter()
     const query: ResolvedQuery = {
       resource: "orders",
       operation: "delete",
       fields: [],
-      filters: { type: "eq", field: "id", value: "order-1" },
+      filters: {
+        type: "and",
+        filters: [
+          { type: "eq", field: "id", value: "order-1" },
+          { type: "eq", field: "tenant_id", value: "t1" },
+        ],
+      },
     }
     await adapter.execute(query)
-    expect(mocks.del).toHaveBeenCalledWith({ where: { id: "order-1" } })
+    expect(mocks.deleteMany).toHaveBeenCalledWith({
+      where: { AND: [{ id: "order-1" }, { tenant_id: "t1" }] },
+    })
   })
 
   it("find with sort → orderBy in args", async () => {
@@ -195,7 +222,7 @@ describe("PrismaAdapter.execute", () => {
     )
   })
 
-  it("find with include → include nested select + where", async () => {
+  it("find with include → nested select merged into parent select", async () => {
     const { adapter, mocks } = makeAdapter()
     const query: ResolvedQuery = {
       resource: "orders",
@@ -213,7 +240,36 @@ describe("PrismaAdapter.execute", () => {
     }
     await adapter.execute(query)
     const call = mocks.findMany.mock.calls[0][0]
-    expect(call.include.items.select).toEqual({ id: true, name: true })
-    expect(call.include.items.where).toEqual({ active: true })
+    // Relations are merged into select, not a separate include key
+    expect(call.select.items.select).toEqual({ id: true, name: true })
+    expect(call.select.items.where).toEqual({ active: true })
+  })
+
+  it("belongsTo included record is nulled out when it fails the relation's row filter", async () => {
+    const findManyWithCustomer = vi.fn().mockResolvedValue([
+      { id: "o1", customer: { id: "u1", tenant_id: "wrong-tenant" } },
+    ])
+    const prisma = {
+      orders: { findMany: findManyWithCustomer },
+    } as unknown as import("@prisma/client").PrismaClient
+    const adapter = new PrismaAdapter(prisma)
+
+    const query: ResolvedQuery = {
+      resource: "orders",
+      operation: "find",
+      fields: ["id"],
+      include: {
+        customer: {
+          resource: "users",
+          type: "belongsTo",
+          foreignKey: "user_id",
+          fields: ["id", "tenant_id"],
+          filters: { type: "eq", field: "tenant_id", value: "correct-tenant" },
+        },
+      },
+    }
+    const results = await adapter.execute(query) as Record<string, unknown>[]
+    // customer fails tenant filter → nulled out
+    expect(results[0].customer).toBeNull()
   })
 })

@@ -9,7 +9,7 @@ const schema: SchemaMap = {
       tableName: "Order",
       description: "Customer purchase orders",
       fields: {
-        id:     { name: "id",     type: "uuid",   isNullable: false, isId: true },
+        id:     { name: "id",     type: "uuid",   isNullable: false, isId: true,  hasDefaultValue: true },
         status: {
           name: "status",
           type: "enum",
@@ -18,9 +18,10 @@ const schema: SchemaMap = {
           enumValues: ["pending", "shipped", "delivered"],
           description: "Current order status",
         },
-        amount:    { name: "amount",    type: "number", isNullable: false, isId: false },
-        secret_key:{ name: "secret_key",type: "string", isNullable: true,  isId: false, sensitive: true },
-        notes:     { name: "notes",     type: "string", isNullable: true,  isId: false },
+        amount:     { name: "amount",     type: "number", isNullable: false, isId: false },
+        created_at: { name: "created_at", type: "date",   isNullable: false, isId: false, hasDefaultValue: true },
+        secret_key: { name: "secret_key", type: "string", isNullable: true,  isId: false, sensitive: true },
+        notes:      { name: "notes",      type: "string", isNullable: true,  isId: false },
       },
       relations: {
         items:    { name: "items",    targetResource: "items",    type: "hasMany",   foreignKey: "order_id" },
@@ -77,7 +78,6 @@ describe("generateTools", () => {
     const statusFilter = (filters.filters as Record<string, unknown>)
     const statusProps = (statusFilter.properties as Record<string, unknown>)
     const statusSchema = statusProps.status as Record<string, unknown>
-    // It's oneOf for enum
     const oneOf = statusSchema.oneOf as Array<Record<string, unknown>>
     const enumDef = oneOf.find((s: Record<string, unknown>) => s.enum !== undefined)
     expect(enumDef?.enum).toEqual(["pending", "shipped", "delivered"])
@@ -137,5 +137,35 @@ describe("generateTools", () => {
     const names = tools.map(t => t.name)
     expect(names).toContain("query_orders")
     expect(names).toContain("get_orders")
+  })
+
+  it("fields with hasDefaultValue not required in create tool", () => {
+    const tools = generateTools(schema, {
+      orders: () => ({ read: true, write: true }),
+    }, {}, "deny-all")
+    const createTool = tools.find(t => t.name === "create_orders")!
+    const required = (createTool.input_schema as Record<string, unknown>).required as string[] ?? []
+    // created_at has hasDefaultValue: true → should NOT be required
+    expect(required).not.toContain("created_at")
+    // amount has no default and is not nullable → should be required
+    expect(required).toContain("amount")
+  })
+
+  it("aggregate tool generated for resources with numeric fields", () => {
+    const tools = generateTools(schema, {
+      orders: () => ({ read: true }),
+    }, {}, "deny-all")
+    const names = tools.map(t => t.name)
+    expect(names).toContain("aggregate_orders")
+  })
+
+  it("aggregate tool input schema has aggregations and groupBy", () => {
+    const tools = generateTools(schema, {
+      orders: () => ({ read: true }),
+    }, {}, "deny-all")
+    const aggTool = tools.find(t => t.name === "aggregate_orders")!
+    const props = (aggTool.input_schema as Record<string, unknown>).properties as Record<string, unknown>
+    expect(props).toHaveProperty("aggregations")
+    expect(props).toHaveProperty("groupBy")
   })
 })

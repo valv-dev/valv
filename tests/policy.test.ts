@@ -123,6 +123,31 @@ describe("evaluatePolicy", () => {
     )
     expect(result.allowedFields).not.toContain("password_hash")
   })
+
+  it("write: { tenant_id } → forcedWriteFields set, rowFilter set as guard", () => {
+    const result = evaluatePolicy(
+      () => ({ write: { tenant_id: "t1" } }),
+      {},
+      "write",
+      "deny-all",
+      mockResource
+    )
+    expect(result.allowed).toBe(true)
+    expect(result.forcedWriteFields).toEqual({ tenant_id: "t1" })
+    expect(result.rowFilter).toEqual({ type: "eq", field: "tenant_id", value: "t1" })
+  })
+
+  it("write: false → not allowed, no forcedWriteFields", () => {
+    const result = evaluatePolicy(
+      () => ({ write: false }),
+      {},
+      "write",
+      "deny-all",
+      mockResource
+    )
+    expect(result.allowed).toBe(false)
+    expect(result.forcedWriteFields).toBeUndefined()
+  })
 })
 
 describe("mergeFilters", () => {
