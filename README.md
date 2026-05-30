@@ -25,8 +25,8 @@ ormai.policy("order", (ctx) => ({
   },
 }))
 
-const tools = await ormai.executableTools(ctx)
-// hand `tools` to your LLM framework of choice
+const tools = await ormai.tools.vercel(ctx)
+const { text } = await generateText({ model, tools, maxSteps: 5, prompt })
 ```
 
 ---
