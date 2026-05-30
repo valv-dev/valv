@@ -1,4 +1,4 @@
-export { ORMAI } from "./ormai"
+export { Vista } from "./vista"
 export type {
   LLMTool,
   ExecutableTool,
@@ -8,13 +8,13 @@ export type {
   ResourceDescriptor,
   ResourceField,
   ResourceRelation,
-  ORMAIAdapter,
-  ORMAIConfig,
-} from "./ormai"
+  VistaAdapter,
+  VistaConfig,
+} from "./vista"
 export { serializeResult } from "./serializer"
 
 // Tool formatters — turn a provider-neutral tool into a provider-specific shape.
-// Built-ins are also reachable via `ormai.tools.<provider>(ctx)`.
+// Built-ins are also reachable via `vista.tools.<provider>(ctx)`.
 export * as formats from "./formatters"
 export { anthropic, openai, gemini } from "./formatters"
 export type {

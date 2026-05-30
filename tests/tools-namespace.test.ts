@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { ORMAI } from "ormai"
-import type { ORMAIAdapter, SchemaMap, ResolvedQuery } from "ormai"
+import { Vista } from "@vista/core"
+import type { VistaAdapter, SchemaMap, ResolvedQuery } from "@vista/core"
 
 const schema: SchemaMap = {
   resources: {
@@ -17,7 +17,7 @@ const schema: SchemaMap = {
   },
 }
 
-class MockAdapter implements ORMAIAdapter {
+class MockAdapter implements VistaAdapter {
   lastQuery?: ResolvedQuery
   async introspect(): Promise<SchemaMap> {
     return schema
@@ -28,18 +28,18 @@ class MockAdapter implements ORMAIAdapter {
   }
 }
 
-function makeOrmai(adapter: MockAdapter) {
-  return new ORMAI({ adapter }).policy("order", () => ({
+function makeVista(adapter: MockAdapter) {
+  return new Vista({ adapter }).policy("order", () => ({
     read: { tenant_id: "t1" },
     write: false,
     delete: false,
   }))
 }
 
-describe("ormai.tools namespace", () => {
+describe("vista.tools namespace", () => {
   it("openai returns { type: 'function', function } definitions", async () => {
-    const ormai = makeOrmai(new MockAdapter())
-    const tools = await ormai.tools.openai({})
+    const vista = makeVista(new MockAdapter())
+    const tools = await vista.tools.openai({})
     const query = tools.find(t => t.name === "query_order")!
     expect(query.definition.type).toBe("function")
     expect(query.definition.function.name).toBe("query_order")
@@ -47,24 +47,24 @@ describe("ormai.tools namespace", () => {
   })
 
   it("anthropic returns input_schema definitions", async () => {
-    const ormai = makeOrmai(new MockAdapter())
-    const tools = await ormai.tools.anthropic({})
+    const vista = makeVista(new MockAdapter())
+    const tools = await vista.tools.anthropic({})
     const query = tools.find(t => t.name === "query_order")!
     expect(query.definition).toHaveProperty("input_schema")
     expect(query.definition.name).toBe("query_order")
   })
 
   it("gemini produces flat function declarations", async () => {
-    const ormai = makeOrmai(new MockAdapter())
-    const gemini = await ormai.tools.gemini({})
+    const vista = makeVista(new MockAdapter())
+    const gemini = await vista.tools.gemini({})
     const g = gemini.find(t => t.name === "query_order")!.definition
     expect(g.name).toBe("query_order")
     expect(g).toHaveProperty("parameters")
   })
 
   it("vercel returns a Vercel AI SDK ToolSet (description + parameters + execute per tool)", async () => {
-    const ormai = makeOrmai(new MockAdapter())
-    const tools = await ormai.tools.vercel({})
+    const vista = makeVista(new MockAdapter())
+    const tools = await vista.tools.vercel({})
     expect(tools).toHaveProperty("query_order")
     const t = tools["query_order"]
     expect(t).toHaveProperty("description")
@@ -74,8 +74,8 @@ describe("ormai.tools namespace", () => {
 
   it("execute() runs the policy-enforced query via the adapter", async () => {
     const adapter = new MockAdapter()
-    const ormai = makeOrmai(adapter)
-    const tools = await ormai.tools.openai({})
+    const vista = makeVista(adapter)
+    const tools = await vista.tools.openai({})
     const result = await tools.find(t => t.name === "query_order")!.execute({})
     expect(result).toEqual([{ id: "o1", amount: 10, tenant_id: "t1" }])
     // policy row filter is merged into the executed query
@@ -83,23 +83,23 @@ describe("ormai.tools namespace", () => {
   })
 
   it("format() honors a custom formatter", async () => {
-    const ormai = makeOrmai(new MockAdapter())
-    const tools = await ormai.tools.format({}, (t) => ({ id: t.name, schema: t.parameters }))
+    const vista = makeVista(new MockAdapter())
+    const tools = await vista.tools.format({}, (t) => ({ id: t.name, schema: t.parameters }))
     const query = tools.find(t => t.name === "query_order")!
     expect(query.definition.id).toBe("query_order")
     expect(query.definition).toHaveProperty("schema")
   })
 
   it("write: false → no create/update tools in any format", async () => {
-    const ormai = makeOrmai(new MockAdapter())
-    const names = (await ormai.tools.openai({})).map(t => t.name)
+    const vista = makeVista(new MockAdapter())
+    const names = (await vista.tools.openai({})).map(t => t.name)
     expect(names).not.toContain("create_order")
     expect(names).not.toContain("update_order")
   })
 
   it("getTools() still returns the legacy Anthropic input_schema shape", async () => {
-    const ormai = makeOrmai(new MockAdapter())
-    const tools = await ormai.getTools({})
+    const vista = makeVista(new MockAdapter())
+    const tools = await vista.getTools({})
     const query = tools.find(t => t.name === "query_order")!
     expect(query).toHaveProperty("input_schema")
     expect(query).not.toHaveProperty("parameters")

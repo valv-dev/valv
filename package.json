@@ -1,4 +1,5 @@
 {
+  "name": "vista",
   "private": true,
   "workspaces": ["packages/*", "examples/*"],
   "scripts": {

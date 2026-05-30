@@ -1,13 +1,13 @@
 {
-  "name": "ormai-ecommerce-example",
+  "name": "vista-ecommerce-example",
   "version": "0.0.1",
   "private": true,
-  "description": "End-to-end e-commerce example for ormai",
+  "description": "End-to-end e-commerce example for vista",
   "scripts": {
     "start": "tsx index.ts",
-    "db:start": "docker run -d --name ormai-postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=ormai_dev postgres:16-alpine || docker start ormai-postgres",
-    "db:stop": "docker stop ormai-postgres",
-    "db:reset": "docker stop ormai-postgres && docker rm ormai-postgres && npm run db:start",
+    "db:start": "docker run -d --name vista-postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=vista_dev postgres:16-alpine || docker start vista-postgres",
+    "db:stop": "docker stop vista-postgres",
+    "db:reset": "docker stop vista-postgres && docker rm vista-postgres && npm run db:start",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:push": "prisma db push",
@@ -16,11 +16,11 @@
   },
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^0.4.0",
-    "@ormai/prisma": "*",
+    "@vista/prisma": "*",
     "@prisma/client": "^5.0.0",
     "ai": "^4.0.0",
     "dotenv": "^16.0.0",
-    "ormai": "*"
+    "@vista/core": "*"
   },
   "devDependencies": {
     "@types/node": "^20.19.41",

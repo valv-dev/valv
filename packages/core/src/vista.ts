@@ -6,8 +6,8 @@ import { serializeResult } from "./serializer"
 import * as formats from "./formatters"
 import { ToolFormatter } from "./formatters"
 
-export interface ORMAIConfig<TContext = DefaultContext, TResources extends string = string> {
-  adapter: ORMAIAdapter
+export interface VistaConfig<TContext = DefaultContext, TResources extends string = string> {
+  adapter: VistaAdapter
   defaultPolicy?: "deny-all" | "allow-all"
   /** Warn (false, default) or throw (true) when policy() is called with an unknown resource name */
   strictPolicyKeys?: boolean
@@ -74,13 +74,13 @@ export interface ResourceDescriptor {
   policyStub: string
 }
 
-export interface ORMAIAdapter {
+export interface VistaAdapter {
   introspect(): Promise<SchemaMap>
   execute(query: ResolvedQuery): Promise<unknown>
 }
 
-export class ORMAI<TContext = DefaultContext, TResources extends string = string> {
-  private adapter: ORMAIAdapter
+export class Vista<TContext = DefaultContext, TResources extends string = string> {
+  private adapter: VistaAdapter
   private defaultPolicy: "deny-all" | "allow-all"
   private policies: Record<string, PolicyFn<TContext>> = {}
   private schemaCache: SchemaMap | null = null
@@ -88,7 +88,7 @@ export class ORMAI<TContext = DefaultContext, TResources extends string = string
   private resolvePolicyFn?: (resource: TResources, ctx: TContext) => PolicyResult
   private onQueryFn?: (event: QueryEvent<TContext, TResources>) => void
 
-  constructor(config: ORMAIConfig<TContext, TResources>) {
+  constructor(config: VistaConfig<TContext, TResources>) {
     this.adapter = config.adapter
     this.defaultPolicy = config.defaultPolicy ?? "deny-all"
     this.strictPolicyKeys = config.strictPolicyKeys ?? false
@@ -114,11 +114,11 @@ export class ORMAI<TContext = DefaultContext, TResources extends string = string
    * and `execute` already wired) so it drops straight into `generateText`.
    *
    * ```ts
-   * const tools = await ormai.tools.openai(ctx)
+   * const tools = await vista.tools.openai(ctx)
    * // tools.map(t => t.definition) → pass to the API
    * // on a tool call: tools.find(t => t.name === call.name)!.execute(args)
    *
-   * const tools = await ormai.tools.vercel(ctx)
+   * const tools = await vista.tools.vercel(ctx)
    * await generateText({ model, tools, prompt })   // no wrapping needed
    * ```
    */
@@ -154,7 +154,7 @@ export class ORMAI<TContext = DefaultContext, TResources extends string = string
       ai = await import(specifier)
     } catch {
       throw new Error(
-        '[ormai] tools.vercel() requires the "ai" package (Vercel AI SDK). Install it with: npm install ai'
+        '[vista] tools.vercel() requires the "ai" package (Vercel AI SDK). Install it with: npm install ai'
       )
     }
 
@@ -314,7 +314,7 @@ export class ORMAI<TContext = DefaultContext, TResources extends string = string
     for (const key of Object.keys(this.policies)) {
       if (key === "*") continue
       if (!resourceNames.has(key)) {
-        const msg = `[ormai] policy() called with unknown resource "${key}". Known resources: ${[...resourceNames].join(", ")}. Use await ormai.describe() to list them.`
+        const msg = `[vista] policy() called with unknown resource "${key}". Known resources: ${[...resourceNames].join(", ")}. Use await vista.describe() to list them.`
         if (this.strictPolicyKeys) throw new Error(msg)
         else console.warn(msg)
       }
@@ -324,7 +324,7 @@ export class ORMAI<TContext = DefaultContext, TResources extends string = string
 
 function buildPolicyStub(resourceName: string): string {
   return [
-    `ormai.policy("${resourceName}", (ctx) => ({`,
+    `vista.policy("${resourceName}", (ctx) => ({`,
     `  read: true,    // or false, or { field: ctx.value } for row-level filter`,
     `  write: false,  // or true, or { field: ctx.value } to auto-inject forced fields`,
     `  delete: false,`,

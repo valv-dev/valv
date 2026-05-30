@@ -1,5 +1,5 @@
 import { getDMMF } from "@prisma/internals"
-import type { SchemaMap, ResourceSchema, FieldSchema, FieldType, RelationSchema } from "ormai"
+import type { SchemaMap, ResourceSchema, FieldSchema, FieldType, RelationSchema } from "@vista/core"
 
 export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
   const dmmf = await getDMMF({ datamodelPath: schemaPath })
@@ -121,10 +121,10 @@ function buildRelationSchema(
 
 function parseDescription(doc?: string): string | null {
   if (!doc) return null
-  const match = doc.match(/@ormai:description\s+"([^"]+)"/)
+  const match = doc.match(/@vista:description\s+"([^"]+)"/)
   return match ? match[1] : null
 }
 
 function parseSensitive(doc: string): boolean {
-  return /@ormai:sensitive/.test(doc)
+  return /@vista:sensitive/.test(doc)
 }

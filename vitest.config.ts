@@ -4,8 +4,8 @@ import path from "path"
 export default defineConfig({
   resolve: {
     alias: {
-      "ormai": path.resolve(__dirname, "packages/core/src/index.ts"),
-      "@ormai/prisma": path.resolve(__dirname, "packages/prisma/src/index.ts"),
+      "@vista/core": path.resolve(__dirname, "packages/core/src/index.ts"),
+      "@vista/prisma": path.resolve(__dirname, "packages/prisma/src/index.ts"),
     },
   },
 })

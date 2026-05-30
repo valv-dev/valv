@@ -1,2 +1,2 @@
 export { PrismaAdapter, translateFilter } from "./adapter"
-export { createOrmai } from "./create"
+export { createVista } from "./create"

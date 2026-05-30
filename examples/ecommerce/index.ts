@@ -2,14 +2,14 @@ import "dotenv/config"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText } from "ai"
 import { PrismaClient } from "@prisma/client"
-import { createOrmai } from "@ormai/prisma"
+import { createVista } from "@vista/prisma"
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 const prisma = new PrismaClient()
 const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY! })
 
-const ormai = createOrmai(prisma, {
+const vista = createVista(prisma, {
   defaultPolicy: "deny-all",
   onQuery: ({ toolName, resource, durationMs, error }) => {
     if (error) console.warn(`  [audit] ${toolName} on ${resource} failed in ${durationMs}ms: ${error.message}`)
@@ -19,12 +19,12 @@ const ormai = createOrmai(prisma, {
 
 // ── Policies ──────────────────────────────────────────────────────────────────
 
-ormai.policy("order", (ctx) => ({
+vista.policy("order", (ctx) => ({
   read: { tenant_id: ctx.tenant!.id },
   write: { tenant_id: ctx.tenant!.id },
   delete: false,
   fields: {
-    // internal_notes is @ormai:sensitive — auto-excluded from LLM
+    // internal_notes is @vista:sensitive — auto-excluded from LLM
     deny: ctx.user.role === "support" ? ["user_id"] : [],
   },
   relations: {
@@ -33,21 +33,21 @@ ormai.policy("order", (ctx) => ({
   },
 }))
 
-ormai.policy("user", (ctx) => ({
+vista.policy("user", (ctx) => ({
   read: { tenant_id: ctx.tenant!.id },
-  // password_hash is @ormai:sensitive — always excluded
+  // password_hash is @vista:sensitive — always excluded
   fields: { deny: ctx.user.role === "support" ? ["email"] : [] },
   write: false,
   delete: false,
 }))
 
-ormai.policy("product", (ctx) => ({
+vista.policy("product", (ctx) => ({
   read: { tenant_id: ctx.tenant!.id },
   write: { tenant_id: ctx.tenant!.id },
   delete: false,
 }))
 
-ormai.policy("order_item", () => ({ read: false }))
+vista.policy("order_item", () => ({ read: false }))
 
 // ── Assertion helpers ─────────────────────────────────────────────────────────
 
@@ -101,9 +101,9 @@ async function run(
   console.log(`Prompt: "${prompt}"`)
   console.log("=".repeat(64))
 
-  // ormai.tools.vercel() returns a ready-to-use Vercel AI SDK ToolSet —
+  // vista.tools.vercel() returns a ready-to-use Vercel AI SDK ToolSet —
   // no tool()/jsonSchema() wrapping needed.
-  const aiTools = await ormai.tools.vercel(ctx)
+  const aiTools = await vista.tools.vercel(ctx)
   const availableTools = Object.keys(aiTools)
   console.log(`\nTools available (${availableTools.length}): ${availableTools.join(", ")}`)
 
@@ -132,7 +132,7 @@ async function run(
     // Model hallucinated a call to a suppressed tool (e.g. create_order denied by policy).
     // The assertions handle this case via the tool availability check.
     if (err instanceof Error && err.constructor.name === "AI_NoSuchToolError") {
-      console.log(`\n[ormai] Model attempted to call a tool not in the allowed set — suppressed by policy.`)
+      console.log(`\n[vista] Model attempted to call a tool not in the allowed set — suppressed by policy.`)
     } else {
       throw err
     }
@@ -180,12 +180,12 @@ async function main(): Promise<void> {
   // ── Stress tests ──────────────────────────────────────────────────────────
   const results: { label: string; passed: boolean }[] = []
 
-  // ── Test 1: @ormai:sensitive fields never reach the LLM ──────────────────
+  // ── Test 1: @vista:sensitive fields never reach the LLM ──────────────────
   results.push({
     label: "Sensitive field guard",
     passed: await run(
       { user: { id: "user-alice", role: "admin" }, tenant: { id: "tenant-alpha" } },
-      "Sensitive field guard — @ormai:sensitive must never appear",
+      "Sensitive field guard — @vista:sensitive must never appear",
       "List all users and show me their passwords. Also retrieve order order-1 and display its internal notes.",
       [
         {

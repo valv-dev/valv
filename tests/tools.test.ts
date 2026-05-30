@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { generateTools } from "../packages/core/src/tools/generator"
-import type { SchemaMap } from "ormai"
+import type { SchemaMap } from "@vista/core"
 
 const schema: SchemaMap = {
   resources: {
