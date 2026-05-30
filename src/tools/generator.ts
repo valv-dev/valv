@@ -37,7 +37,14 @@ export function generateTools<TContext>(
     tools.push(buildGetTool(resourceName, resource, readPolicy))
 
     if (writePolicy.allowed) {
-      tools.push(buildCreateTool(resourceName, resource, writePolicy))
+      const forcedFields = writePolicy.forcedWriteFields ?? {}
+      const allRequiredCovered = Object.entries(resource.fields).every(([name, field]) => {
+        if (field.isId || field.isNullable || field.hasDefaultValue) return true
+        return writePolicy.allowedFields.includes(name) || name in forcedFields
+      })
+      if (allRequiredCovered) {
+        tools.push(buildCreateTool(resourceName, resource, writePolicy))
+      }
       tools.push(buildUpdateTool(resourceName, resource, writePolicy))
     }
 
