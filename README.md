@@ -2,9 +2,16 @@
 
 **The authorization layer for AI agents.**
 
-Give your LLM agent access to your database. Control exactly what it can see and do.
+[![npm](https://img.shields.io/npm/v/@vistal/core?label=%40vistal%2Fcore)](https://www.npmjs.com/package/@vistal/core) [![npm](https://img.shields.io/npm/v/@vistal/prisma?label=%40vistal%2Fprisma)](https://www.npmjs.com/package/@vistal/prisma) [![license](https://img.shields.io/npm/l/@vistal/core)](./LICENSE) [![TypeScript](https://img.shields.io/badge/types-TypeScript-blue)](./packages/core)
 
-vistal reads your ORM schema, generates typed tools the model can call, and enforces access control server-side — on every query, regardless of what the model was told to do.
+Row-level security, field-level permissions, and per-user access control for LLM agents — enforced server-side in code, not prompts. Give your AI agent access to your database without giving it access to *everything*.
+
+- **Auto-generated typed tools** — reads your ORM schema and builds `query_`, `get_`, `create_`, `update_`, `delete_`, `aggregate_` tools per resource
+- **Row filters that can't be bypassed** — `{ tenant_id: ctx.tenant.id }` is AND-ed server-side into every query, regardless of what the model sends
+- **Field-level control** — mark fields `@vistal:sensitive` and they never appear in tool schemas, arguments, or results
+- **Tool suppression** — `delete: false` means no delete tool is generated, nothing to call
+- **Multi-provider** — Vercel AI SDK, Anthropic, OpenAI, Gemini, or bring your own formatter
+- **Multi-tenant by default** — one policy function handles all roles; context drives what each user sees
 
 ```ts
 const tools = await vistal.tools.vercel(ctx)
@@ -282,9 +289,9 @@ new Vistal({
 `@vistal/prisma` is the first adapter. Everything above it — policies, tool generation, the query IR — is ORM-agnostic. An adapter is two methods:
 
 ```ts
-import type { VistaAdapter, SchemaMap, ResolvedQuery } from "/core"
+import type { VistalAdapter, SchemaMap, ResolvedQuery } from "@vistal/core"
 
-class MyAdapter implements VistaAdapter {
+class MyAdapter implements VistalAdapter {
   async introspect(): Promise<SchemaMap> { ... }
   async execute(query: ResolvedQuery): Promise<unknown> { ... }
 }

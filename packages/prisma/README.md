@@ -1,6 +1,10 @@
 # @vistal/prisma
 
-Prisma adapter for [vistal](https://github.com/vista-libs/vista) — reads your Prisma schema, generates typed LLM tools, and enforces access-control policies server-side on every query.
+**Row-level security and access control for AI agents — Prisma adapter.**
+
+[![npm](https://img.shields.io/npm/v/@vistal/prisma)](https://www.npmjs.com/package/@vistal/prisma) [![license](https://img.shields.io/npm/l/@vistal/prisma)](../../LICENSE) [![TypeScript](https://img.shields.io/badge/types-TypeScript-blue)](./src/index.ts)
+
+Reads your Prisma schema, generates typed LLM tools, and enforces row-level security and field-level access control server-side on every query — in code, not prompts.
 
 ---
 

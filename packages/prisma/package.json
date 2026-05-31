@@ -1,7 +1,22 @@
 {
   "name": "@vistal/prisma",
   "version": "0.1.0",
-  "description": "Prisma adapter for vistal",
+  "description": "Prisma adapter for vistal — row-level security and access control for AI agents",
+  "keywords": [
+    "prisma",
+    "ai agent",
+    "llm",
+    "access control",
+    "authorization",
+    "row-level security",
+    "multi-tenant",
+    "tool use",
+    "function calling",
+    "vercel ai sdk",
+    "anthropic",
+    "openai",
+    "typescript"
+  ],
   "author": "Nicolò D'Addabbo <nicolodaddabbo@gmail.com> (https://nicolod.com)",
   "license": "MIT",
   "repository": {

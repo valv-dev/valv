@@ -1,8 +1,10 @@
 # @vistal/core
 
-The zero-dependency core of [vistal](https://github.com/vista-libs/vista) — the authorization layer for AI agents.
+**The authorization layer for AI agents — zero-dependency core.**
 
-Reads an ORM schema, generates typed tools the LLM can call, and enforces access-control policies server-side on every query. Works with any ORM or database through a two-method adapter interface.
+[![npm](https://img.shields.io/npm/v/@vistal/core)](https://www.npmjs.com/package/@vistal/core) [![license](https://img.shields.io/npm/l/@vistal/core)](../../LICENSE) [![TypeScript](https://img.shields.io/badge/types-TypeScript-blue)](./src/index.ts)
+
+Reads an ORM schema, generates typed LLM tools, and enforces row-level security and field-level access control server-side on every query — in code, not prompts. Adapter-agnostic: works with any ORM or database through a two-method interface.
 
 > **Most users should install [`@vistal/prisma`](https://www.npmjs.com/package/@vistal/prisma)**, which wraps this package with a Prisma adapter and schema introspection. Use `@vistal/core` directly only if you're building a custom adapter.
 
