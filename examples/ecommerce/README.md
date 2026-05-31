@@ -35,7 +35,8 @@ cp .env.example .env
 
 # 4. Start Postgres, migrate, seed
 npm run db:start
-npm run db:migrate   # runs prisma migrate dev (creates tables)
+npm run db:push   # runs prisma migrate dev (creates tables)
+npm run db:generate
 npm run db:seed      # inserts fixture data
 
 # 5. Run the demo
