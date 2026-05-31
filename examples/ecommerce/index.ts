@@ -3,6 +3,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText } from "ai"
 import { PrismaClient } from "@prisma/client"
 import { createVistal } from "@vistal/prisma"
+import { DefaultContext } from "@vistal/core"
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
