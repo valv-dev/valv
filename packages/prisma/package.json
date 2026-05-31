@@ -2,9 +2,24 @@
   "name": "@vistal/prisma",
   "version": "0.1.0",
   "description": "Prisma adapter for vistal",
-  "auhtor": "Nicolò D'Addabbo <nicolodaddabbo@gmail.com> (https://nicolod.com)",
+  "author": "Nicolò D'Addabbo <nicolodaddabbo@gmail.com> (https://nicolod.com)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vista-libs/vista.git",
+    "directory": "packages/prisma"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc"
   },
