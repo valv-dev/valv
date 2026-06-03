@@ -1,160 +1,39 @@
 # vistal
 
-**The authorization layer for AI agents.**
+**Connect your agent to your database. No SQL. No leaks.**
 
 [![npm](https://img.shields.io/npm/v/@vistal/core?label=%40vistal%2Fcore)](https://www.npmjs.com/package/@vistal/core) [![npm](https://img.shields.io/npm/v/@vistal/prisma?label=%40vistal%2Fprisma)](https://www.npmjs.com/package/@vistal/prisma) [![license](https://img.shields.io/npm/l/@vistal/core)](./LICENSE) [![TypeScript](https://img.shields.io/badge/types-TypeScript-blue)](./packages/core)
 
-Row-level security, field-level permissions, and per-user access control for LLM agents — enforced server-side in code, not prompts. Give your AI agent access to your database without giving it access to *everything*.
-
-- **Auto-generated typed tools** — reads your ORM schema and builds `query_`, `get_`, `create_`, `update_`, `delete_`, `aggregate_` tools per resource
-- **Row filters that can't be bypassed** — `{ tenant_id: ctx.tenant.id }` is AND-ed server-side into every query, regardless of what the model sends
-- **Field-level control** — mark fields `@vistal:sensitive` and they never appear in tool schemas, arguments, or results
-- **Tool suppression** — `delete: false` means no delete tool is generated, nothing to call
-- **Multi-provider** — Vercel AI SDK, Anthropic, OpenAI, Gemini, or bring your own formatter
-- **Multi-tenant by default** — one policy function handles all roles; context drives what each user sees
+Three lines wire your agent to your data. The model never writes SQL, never sees a field you hid, and never reads a row the current user isn't allowed to read. Enforcement lives in code, not in the prompt.
 
 ```ts
-const tools = await vistal.tools.vercel(ctx)
-await generateText({ model, tools, maxSteps: 5, prompt })
-```
-
-The agent sees only what the current user is allowed to see. No SQL generation. No prompt-based permissions. No per-endpoint wrappers.
-
----
-
-## The problem
-
-Most agents reach your data through one of these:
-
-```
-LLM → SQL          LLM → ORM          LLM → API endpoints
-```
-
-…and authorization usually lives in the prompt:
-
-> "Only return data for the current tenant."
-
-That holds right up until the model ignores the instruction, a prompt injection lands, a tool is misconfigured, or someone forgets a filter. A prompt is not a security boundary. One slip leaks customer data.
-
-## The solution
-
-With vistal, permissions live in code — not prompts.
-
-```ts
-vistal.policy("order", (ctx) => ({
-  read: { tenant_id: ctx.tenant.id },
-}))
-```
-
-That filter is AND-ed into every read, server-side, after the tool call is parsed. The model cannot widen it, override it, or talk its way around it — the filtered query is the only query that runs.
-
----
-
-## Same prompt. Same agent. Different context
-
-```
-"Summarize all orders. For each delivered order, show the items purchased."
-```
-
-| | Alice · admin | Bob · support | Carol · admin, tenant-β |
-|---|---|---|---|
-| **Tools visible** | query, get, create, update, aggregate | query, get, aggregate | query, get, create, update, aggregate |
-| **Row filter** | `tenant_id = alpha` | `tenant_id = alpha` | `tenant_id = beta` |
-| **Hidden fields** | — | `user_id` | — |
-| **Customer relation** | ✓ | ✗ blocked | ✓ |
-| **Orders returned** | #1, #3 | #1, #3 | #5, #6 |
-
-Alice gets full output. Bob gets no customer link and `user_id` stripped. Carol only sees her tenant — `tenant-alpha` orders are structurally invisible to her. All from one policy function, no branching in your prompt.
-
----
-
-## The policy
-
-```ts
-import { createVistal } from "@vistal/prisma"
-
 const vistal = createVistal(prisma, { defaultPolicy: "deny-all" })
-
-vistal.policy("order", (ctx) => ({
-  read:   { tenant_id: ctx.tenant.id },  // row filter — AND-ed into every read
-  write:  { tenant_id: ctx.tenant.id },  // force-injected on INSERT, guards UPDATE WHERE
-  delete: false,                          // delete_order tool never generated
-  fields:    { deny: ctx.user.role === "support" ? ["user_id"] : [] },
-  relations: { customer: ctx.user.role === "admin", items: true },
-}))
-```
-
-That policy produces exactly these tools:
-
-```
-admin                              support
-────────────────────────────────   ────────────────────────────────
-query_order   ← tenant filter      query_order   ← tenant filter
-get_order     ← tenant filter      get_order     ← tenant filter
-create_order  ← tenant injected    create_order  ← tenant injected
-update_order  ← tenant guard       update_order  ← tenant guard
-aggregate_order                    aggregate_order
-                                   ↳ user_id stripped from results
-                    ✗ delete_order not generated for either
-```
-
-Connect to your agent in one line:
-
-```ts
 const tools = await vistal.tools.vercel(ctx)
-const { text } = await generateText({ model, tools, maxSteps: 8, prompt })
+await generateText({ model, tools, prompt })
 ```
 
----
+That's it. No SQL generation. No per-endpoint wrappers. No "please only return the current tenant" in your system prompt.
 
-## How it works
+## Three lines, three guarantees
 
-```
-LLM
- ↓   tool call (no SQL, just arguments)
-vistal policy engine        ← row filters, write injection, field stripping, tool suppression
- ↓
-your ORM
- ↓
-database
-```
+The whole library is three ideas. Learn these and you know vistal.
 
-The model never writes a query. It calls a typed tool with arguments; vistal resolves that into an ORM operation, applies the policy *before* execution, and runs it. Enforcement happens on the server, in your process — not in the prompt and not on the model's honor.
+### 1. Connect
 
----
-
-## Installation
-
-```bash
-npm install @vistal/core @vistal/prisma
-```
-
-| Package | Contents |
-|---|---|
-| `@vistal/core` | Zero-dependency core — policies, tool generation, IR |
-| `@vistal/prisma` | Prisma adapter + schema introspection (requires Prisma 5+) |
-| `ai` | Optional — only needed for `vistal.tools.vercel()` |
-
----
-
-## Setup
+`createVistal` reads your ORM schema and generates a typed tool per operation per resource: `query_`, `get_`, `create_`, `update_`, `delete_`, `aggregate_`. Hand them to any provider and the agent can work your data through structured tool calls instead of raw SQL.
 
 ```ts
 import { PrismaClient } from "@prisma/client"
 import { createVistal } from "@vistal/prisma"
 
-const prisma = new PrismaClient()
-
-const vistal = createVistal(prisma, { defaultPolicy: "deny-all" })
+const vistal = createVistal(new PrismaClient(), { defaultPolicy: "deny-all" })
 ```
 
-`createVistal` infers the resource types from your Prisma client — policy keys are type-checked, so a typo is a compile error. Pass `schemaPath` if your schema isn't at the default `./prisma/schema.prisma`.
+Resource types are inferred from your Prisma client, so a typo in a policy key is a compile error.
 
----
+### 2. Declare your schema
 
-## Schema annotations
-
-Use `///` doc comments to give the LLM better context and mark fields that must never leave the server:
+Annotate your Prisma schema with `///` doc comments. Describe resources so the model uses them correctly, and mark fields that must never leave the server.
 
 ```prisma
 /// @vistal:description "A customer purchase order"
@@ -166,47 +45,128 @@ model Order {
   total  Decimal
 
   /// @vistal:sensitive
-  internal_notes String?  // stripped at introspection — never in schemas, args, or results
+  internal_notes String?
 }
 ```
 
-`@vistal:sensitive` is enforced before policy runs. The field doesn't exist as far as the LLM is concerned.
+`@vistal:sensitive` is stripped at introspection, before any policy runs. The field does not exist as far as the LLM is concerned: not in schemas, not in arguments, not in results.
 
----
+### 3. Write typed policies
 
-## Policies
+One typed function decides what each user can touch. Row filters, field visibility, relation access, and which tools exist at all, driven entirely by your runtime context.
 
 ```ts
-// Everything defaults to the tenant scope
-vistal.policy("*", (ctx) => ({
-  read:   { tenant_id: ctx.tenant.id },
-  write:  { tenant_id: ctx.tenant.id },
-  delete: false,
-}))
-
-// Per-resource: override and extend
 vistal.policy("order", (ctx) => ({
-  read:   { tenant_id: ctx.tenant.id },
-  write:  { tenant_id: ctx.tenant.id },
-  delete: false,
+  read:   { tenant_id: ctx.tenant.id },  // AND-ed into every read
+  write:  { tenant_id: ctx.tenant.id },  // injected on create, guards update
+  delete: false,                          // delete_order tool never generated
   fields:    { deny: ctx.user.role === "support" ? ["user_id"] : [] },
   relations: { customer: ctx.user.role === "admin", items: true },
 }))
 ```
 
-`read`, `write`, and `delete` accept:
+The read filter is AND-ed into the WHERE clause server-side, after the tool call is parsed. The model can send a conflicting filter and it gets overwritten. It cannot widen the filter, override it, or talk its way around it. The scoped query is the only query that runs.
+
+## Same prompt. Same agent. Different context
+
+```
+"Summarize all orders. For each delivered order, show the items purchased."
+```
+
+| | Alice · admin | Bob · support | Carol · admin, tenant-β |
+|---|---|---|---|
+| **Tools visible** | query, get, create, update, aggregate | query, get, aggregate | query, get, create, update, aggregate |
+| **Row filter** | `tenant_id = alpha` | `tenant_id = alpha` | `tenant_id = beta` |
+| **Hidden fields** | none | `user_id` | none |
+| **Customer relation** | ✓ | ✗ blocked | ✓ |
+| **Orders returned** | #1, #3 | #1, #3 | #5, #6 |
+
+Alice gets full output. Bob gets no customer link and `user_id` stripped. Carol only sees her tenant; `tenant-alpha` orders are structurally invisible to her. One policy function, no branching in your prompt.
+
+## How it works
+
+```
+LLM
+ ↓   tool call (no SQL, just arguments)
+vistal policy engine     ← row filters, write injection, field stripping, tool suppression
+ ↓
+your ORM
+ ↓
+database
+```
+
+The model calls a typed tool with arguments. vistal resolves it into an ORM operation, applies the policy before execution, and runs it. Enforcement happens in your process, on the server, not on the model's honor.
+
+## Install
+
+```bash
+npm install @vistal/core @vistal/prisma
+```
+
+| Package | Contents |
+|---|---|
+| `@vistal/core` | Zero-dependency core: policies, tool generation, query IR |
+| `@vistal/prisma` | Prisma adapter + schema introspection (Prisma 5+) |
+| `ai` | Optional, only for `vistal.tools.vercel()` |
+
+Pass `schemaPath` to `createVistal` if your schema isn't at `./prisma/schema.prisma`.
+
+## Policy reference
+
+### Operation keys
+
+| Key | Covers | Falls back to |
+|---|---|---|
+| `read` | `query` / `get` | nothing |
+| `aggregate` | `aggregate` | `read` |
+| `write` | `create` **and** `update` (shorthand) | nothing |
+| `create` | inserts | `write` |
+| `update` | updates | `write` |
+| `delete` | deletes | nothing |
+
+Split `write` into `create` / `update` when they differ, e.g. allow inserts but make records immutable (`create: true, update: false`), or allow analytics without row reads (`read: false, aggregate: true`).
+
+```ts
+// Default everything to tenant scope
+vistal.policy("*", (ctx) => ({
+  read:   { tenant_id: ctx.tenant.id },
+  write:  { tenant_id: ctx.tenant.id },
+  delete: false,
+}))
+```
+
+### Rule values
 
 | Value | Meaning |
 |---|---|
 | `true` | allow |
-| `false` | deny — no tool generated |
-| `{ field: value }` | `read`/`delete`: WHERE always AND-ed in · `write`: force-injected on INSERT, AND-ed on UPDATE/DELETE WHERE |
+| `false` | deny, no tool generated |
+| predicate object | a row condition |
 
----
+Predicates use the same operator vocabulary the LLM filter schema exposes, plus `OR` / `AND` / `NOT`:
+
+```ts
+vistal.policy("order", (ctx) => ({
+  read:   { tenant_id: ctx.tenant.id, total: { lt: 100_000 } },
+  update: { OR: [{ user_id: ctx.user.id }, { shared: true }] },
+}))
+```
+
+- **read / delete / aggregate**: the predicate is AND-ed into the WHERE clause.
+- **write (create / update)**: scalar equalities (`tenant_id: x`) are force-injected into the row; the full predicate guards the UPDATE/DELETE WHERE so only matching rows are touched. An operator filter on a *required* create field is rejected at build time, since an insert can't satisfy it.
+
+### Field rules
+
+| Key | Effect |
+|---|---|
+| `allow` | whitelist (read + write) |
+| `deny` | blacklist (read + write) |
+| `readOnly` | readable, never writable (e.g. `id`, `created_at`) |
+| `writeOnly` | writable, never returned (e.g. a settable secret) |
+
+`@vistal:sensitive` fields are stripped regardless.
 
 ## Generated tools
-
-For each resource, vistal generates up to six tools based on what the policy allows:
 
 | Tool | Operation |
 |---|---|
@@ -217,46 +177,33 @@ For each resource, vistal generates up to six tools based on what the policy all
 | `delete_{resource}` | delete by id |
 | `aggregate_{resource}` | count / sum / avg / min / max with optional groupBy |
 
-`delete: false` → no `delete_` tool. A required write field denied and not force-injected → `create_` suppressed entirely, not silently broken. Fields with `@default(...)` are not required in create tools.
-
----
+`delete: false` suppresses the `delete_` tool. A required write field that is denied and not force-injected suppresses `create_` entirely, rather than generating a tool that always fails. Fields with `@default(...)` are not required in create tools.
 
 ## Providers
 
 | Method | Use with |
 |---|---|
-| `vistal.tools.vercel(ctx)` | Vercel AI SDK — drops straight into `generateText` / `streamText` |
+| `vistal.tools.vercel(ctx)` | Vercel AI SDK, drops into `generateText` / `streamText` |
 | `vistal.tools.anthropic(ctx)` | Anthropic Messages API |
 | `vistal.tools.openai(ctx)` | OpenAI / any OpenAI-compatible API |
 | `vistal.tools.gemini(ctx)` | Google Gemini |
-| `vistal.tools.format(ctx, fn)` | Any other provider — pass your own formatter |
+| `vistal.tools.format(ctx, fn)` | Any other provider, pass your own formatter |
 
 ```ts
 // OpenAI
 const tools = await vistal.tools.openai(ctx)
-
-await openai.responses.create({
-  model: "gpt-5",
-  tools,
-  input: "Show this customer's recent orders",
-})
-
-// Vercel AI SDK
-const tools = await vistal.tools.vercel(ctx)
-await generateText({ model, tools, maxSteps: 5, prompt })
+await openai.responses.create({ model: "gpt-5", tools, input: prompt })
 
 // Anthropic
 const tools = await vistal.tools.anthropic(ctx)
 await anthropic.messages.create({ tools: tools.map(t => t.definition) })
 const result = await tools.find(t => t.name === block.name)!.execute(block.input)
 
-// Custom provider
+// Custom
 const tools = await vistal.tools.format(ctx, (t) => ({ id: t.name, schema: t.parameters }))
 ```
 
-Tool errors are caught and returned as `{ error }` so the agent can recover rather than abort.
-
----
+Tool errors are caught and returned as `{ error }` so the agent can recover instead of aborting.
 
 ## Observability
 
@@ -269,24 +216,9 @@ new Vistal({
 })
 ```
 
----
-
-## Security properties
-
-| Property | Guarantee |
-|---|---|
-| Row filters | AND-ed server-side into every query — the LLM can send conflicting filters, they get overwritten |
-| Write fields | `write: { tenant_id }` is injected into INSERT data and AND-ed into UPDATE/DELETE WHERE — no argument bypasses it |
-| Tool suppression | `false` on any operation → no tool generated, nothing to call |
-| Sensitive fields | Stripped at introspection, before policy runs — never in schemas, args, or results |
-| Relation joins | `belongsTo` results enforce the related record's row filter post-fetch |
-| Broken creates | If a required write field is denied and not force-injected, `create_` is suppressed, not silently broken |
-
----
-
 ## Other adapters
 
-`@vistal/prisma` is the first adapter. Everything above it — policies, tool generation, the query IR — is ORM-agnostic. An adapter is two methods:
+`@vistal/prisma` is the first adapter. Everything above it (policies, tool generation, the query IR) is ORM-agnostic. An adapter is two methods:
 
 ```ts
 import type { VistalAdapter, SchemaMap, ResolvedQuery } from "@vistal/core"
@@ -297,15 +229,11 @@ class MyAdapter implements VistalAdapter {
 }
 ```
 
-`SchemaMap`, `ResolvedQuery`, and `FilterNode` are all exported from `/core`.
-
----
+`SchemaMap`, `ResolvedQuery`, and `FilterNode` are exported from `/core`.
 
 ## Example
 
-[`examples/ecommerce/`](examples/ecommerce/) — a full working demo with three users (admin, support, cross-tenant) issuing the same prompts against a live Postgres database. Includes a stress-test suite verifying tenant isolation, sensitive field exclusion, write policy enforcement, and role-based field denial.
-
----
+[`examples/ecommerce/`](examples/ecommerce/) is a full working demo: three users (admin, support, cross-tenant) issuing the same prompts against a live Postgres database, plus a stress-test suite for tenant isolation, sensitive field exclusion, write policy enforcement, and role-based field denial.
 
 ## License
 
