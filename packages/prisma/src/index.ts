@@ -1,2 +1,2 @@
-export { PrismaAdapter, translateFilter } from "./adapter"
+export { PrismaAdapter, translateFilter, matchesFilter } from "./adapter"
 export { createVistal } from "./create"

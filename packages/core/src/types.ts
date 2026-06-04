@@ -43,18 +43,32 @@ export interface RelationSchema {
 export type PolicyFn<TContext = DefaultContext> =
   (ctx: TContext) => PolicyResult
 
+// An operation rule: `true` = allow, `false` = deny, or an object describing a
+// predicate. Object values use the same operator vocabulary the LLM filter
+// schema exposes — `{ total: { lt: 1000 } }`, `{ status: { in: [...] } }`,
+// `{ owner_id: ctx.user.id }` — plus the boolean combinators `OR` / `AND` /
+// `NOT` for disjunctive rules. For reads/deletes the predicate is AND-ed into
+// the WHERE clause; for writes its scalar equalities are force-injected into the
+// row and the full predicate guards UPDATE/DELETE.
+export type PolicyRule = boolean | Record<string, unknown>
+
 export interface PolicyResult {
-  read?: boolean | Record<string, unknown>    // true = allow all, false = deny, object = row filter
-  write?: boolean | Record<string, unknown>
-  delete?: boolean | Record<string, unknown>
+  read?: PolicyRule
+  write?: PolicyRule      // shorthand: applies to both create and update
+  create?: PolicyRule     // overrides `write` for inserts
+  update?: PolicyRule     // overrides `write` for updates
+  delete?: PolicyRule
+  aggregate?: PolicyRule  // overrides `read` for aggregations
   fields?: FieldPolicy
   relations?: Record<string, boolean>
 }
 
 export interface FieldPolicy {
-  allow?: string[]    // whitelist
-  deny?: string[]     // blacklist
-  // if neither specified: all fields allowed
+  allow?: string[]      // whitelist
+  deny?: string[]       // blacklist
+  readOnly?: string[]   // readable but never writable (e.g. id, created_at, status)
+  writeOnly?: string[]  // writable but never returned (e.g. a settable secret)
+  // if none specified: all (non-sensitive) fields allowed for both read and write
 }
 
 export interface DefaultContext {

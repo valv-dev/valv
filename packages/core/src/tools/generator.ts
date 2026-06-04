@@ -2,6 +2,10 @@ import { SchemaMap, PolicyFn, ResourceSchema, FieldSchema } from "../types"
 import { evaluatePolicy, EvaluatedPolicy } from "../policy/engine"
 import { GetToolsOptions } from "../vistal"
 
+export const CONSOLIDATED_VERBS = ["query", "get", "create", "update", "delete", "aggregate"] as const
+export const CONSOLIDATED_META = ["list_resources", "describe_resource"] as const
+export const RESERVED_TOOL_NAMES = [...CONSOLIDATED_VERBS, ...CONSOLIDATED_META] as string[]
+
 /**
  * Provider-neutral tool definition. This is the single source of truth from
  * which every provider-specific shape (Anthropic, OpenAI, Gemini, …) is derived
@@ -11,6 +15,17 @@ export interface NeutralTool {
   name: string
   description: string
   parameters: object
+}
+
+// A create tool is only generated if every required field (non-id, non-nullable,
+// no default) is either writable by the caller or force-injected by policy —
+// otherwise the LLM could never produce a valid insert.
+function createIsSatisfiable(resource: ResourceSchema, createPolicy: EvaluatedPolicy): boolean {
+  const forcedFields = createPolicy.forcedWriteFields ?? {}
+  return Object.entries(resource.fields).every(([name, field]) => {
+    if (field.isId || field.isNullable || field.hasDefaultValue) return true
+    return createPolicy.allowedFields.includes(name) || name in forcedFields
+  })
 }
 
 export function generateTools<TContext>(
@@ -28,37 +43,34 @@ export function generateTools<TContext>(
     if (!resource) continue
 
     const readPolicy = evaluatePolicy(policies[resourceName], ctx, "read", defaultPolicy, resource)
-    if (!readPolicy.allowed) continue
-
-    const writePolicy = evaluatePolicy(policies[resourceName], ctx, "write", defaultPolicy, resource)
+    const createPolicy = evaluatePolicy(policies[resourceName], ctx, "create", defaultPolicy, resource)
+    const updatePolicy = evaluatePolicy(policies[resourceName], ctx, "update", defaultPolicy, resource)
     const deletePolicy = evaluatePolicy(policies[resourceName], ctx, "delete", defaultPolicy, resource)
+    const aggregatePolicy = evaluatePolicy(policies[resourceName], ctx, "aggregate", defaultPolicy, resource)
 
-    tools.push(buildQueryTool(resourceName, resource, readPolicy))
-    tools.push(buildGetTool(resourceName, resource, readPolicy))
+    if (readPolicy.allowed) {
+      tools.push(buildQueryTool(resourceName, resource, readPolicy))
+      tools.push(buildGetTool(resourceName, resource, readPolicy))
+    }
 
-    if (writePolicy.allowed) {
-      const forcedFields = writePolicy.forcedWriteFields ?? {}
-      const allRequiredCovered = Object.entries(resource.fields).every(([name, field]) => {
-        if (field.isId || field.isNullable || field.hasDefaultValue) return true
-        return writePolicy.allowedFields.includes(name) || name in forcedFields
-      })
-      if (allRequiredCovered) {
-        tools.push(buildCreateTool(resourceName, resource, writePolicy))
-      }
-      tools.push(buildUpdateTool(resourceName, resource, writePolicy))
+    if (createPolicy.allowed && createIsSatisfiable(resource, createPolicy)) {
+      tools.push(buildCreateTool(resourceName, resource, createPolicy))
+    }
+
+    if (updatePolicy.allowed) {
+      tools.push(buildUpdateTool(resourceName, resource, updatePolicy))
     }
 
     if (deletePolicy.allowed) {
       tools.push(buildDeleteTool(resourceName, resource))
     }
 
-    // Aggregate tool if there are numeric fields
-    const numericFields = readPolicy.allowedFields.filter(f => {
-      const field = resource.fields[f]
-      return field && field.type === "number"
-    })
-    if (numericFields.length > 0) {
-      tools.push(buildAggregateTool(resourceName, resource, readPolicy, numericFields))
+    // Aggregate tool if there are numeric fields the caller may read.
+    if (aggregatePolicy.allowed) {
+      const numericFields = aggregatePolicy.allowedFields.filter(f => resource.fields[f]?.type === "number")
+      if (numericFields.length > 0) {
+        tools.push(buildAggregateTool(resourceName, resource, aggregatePolicy, numericFields))
+      }
     }
 
     if (options?.maxTools && tools.length >= options.maxTools) break
@@ -346,6 +358,206 @@ function buildSortSchema(allowedFields: string[]): Record<string, unknown> {
     additionalProperties: false,
     description: "Sort order",
   }
+}
+
+export function generateConsolidatedTools<TContext>(
+  schema: SchemaMap,
+  policies: Record<string, PolicyFn<TContext>>,
+  ctx: TContext,
+  defaultPolicy: "deny-all" | "allow-all",
+  options?: GetToolsOptions
+): NeutralTool[] {
+  const tools: NeutralTool[] = []
+  const candidateNames = options?.resources ?? Object.keys(schema.resources)
+
+  const queryResources: string[] = []
+  const createResources: string[] = []
+  const updateResources: string[] = []
+  const deleteResources: string[] = []
+  const aggregateResources: string[] = []
+
+  for (const resourceName of candidateNames) {
+    const resource = schema.resources[resourceName]
+    if (!resource) continue
+
+    const readPolicy = evaluatePolicy(policies[resourceName], ctx, "read", defaultPolicy, resource)
+    if (readPolicy.allowed) queryResources.push(resourceName)
+
+    const aggregatePolicy = evaluatePolicy(policies[resourceName], ctx, "aggregate", defaultPolicy, resource)
+    if (aggregatePolicy.allowed) {
+      const numericFields = aggregatePolicy.allowedFields.filter(f => resource.fields[f]?.type === "number")
+      if (numericFields.length > 0) aggregateResources.push(resourceName)
+    }
+
+    const createPolicy = evaluatePolicy(policies[resourceName], ctx, "create", defaultPolicy, resource)
+    if (createPolicy.allowed && createIsSatisfiable(resource, createPolicy)) {
+      createResources.push(resourceName)
+    }
+
+    const updatePolicy = evaluatePolicy(policies[resourceName], ctx, "update", defaultPolicy, resource)
+    if (updatePolicy.allowed) updateResources.push(resourceName)
+
+    const deletePolicy = evaluatePolicy(policies[resourceName], ctx, "delete", defaultPolicy, resource)
+    if (deletePolicy.allowed) deleteResources.push(resourceName)
+  }
+
+  const allAccessible = [
+    ...new Set([...queryResources, ...createResources, ...updateResources, ...deleteResources]),
+  ]
+  if (allAccessible.length === 0) return tools
+
+  tools.push({
+    name: "list_resources",
+    description: "List all accessible resources and which operations are available for each.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  })
+
+  tools.push({
+    name: "describe_resource",
+    description:
+      "Return the field schema and allowed operations for a specific resource. Call this before query/create/update to learn valid field names.",
+    parameters: {
+      type: "object",
+      properties: {
+        resource: {
+          type: "string",
+          enum: allAccessible,
+          description: "The resource to describe",
+        },
+      },
+      required: ["resource"],
+      additionalProperties: false,
+    },
+  })
+
+  if (queryResources.length > 0) {
+    tools.push({
+      name: "query",
+      description:
+        "Query multiple records of a resource. Call describe_resource first to learn valid filter/sort field names.",
+      parameters: {
+        type: "object",
+        properties: {
+          resource: { type: "string", enum: queryResources, description: "The resource to query" },
+          filters: { type: "object", additionalProperties: true, description: "Filter conditions (use field names from describe_resource)" },
+          sort: {
+            type: "object",
+            properties: {
+              field: { type: "string", description: "Field to sort by" },
+              direction: { type: "string", enum: ["asc", "desc"] },
+            },
+            required: ["field", "direction"],
+            additionalProperties: false,
+          },
+          include: { type: "array", items: { type: "string" }, description: "Relation names to include" },
+          limit: { type: "number", description: "Maximum number of records to return (max 100)", maximum: 100 },
+          offset: { type: "number", description: "Number of records to skip" },
+        },
+        required: ["resource"],
+        additionalProperties: false,
+      },
+    })
+
+    tools.push({
+      name: "get",
+      description: "Get a single record of a resource by ID.",
+      parameters: {
+        type: "object",
+        properties: {
+          resource: { type: "string", enum: queryResources, description: "The resource to fetch" },
+          id: { description: "ID of the record to retrieve" },
+          include: { type: "array", items: { type: "string" }, description: "Relation names to include" },
+        },
+        required: ["resource", "id"],
+        additionalProperties: false,
+      },
+    })
+  }
+
+  if (createResources.length > 0) {
+    tools.push({
+      name: "create",
+      description:
+        "Create a new record. Call describe_resource first to learn required and optional field names.",
+      parameters: {
+        type: "object",
+        properties: {
+          resource: { type: "string", enum: createResources, description: "The resource to create" },
+          data: { type: "object", additionalProperties: true, description: "Field values for the new record" },
+        },
+        required: ["resource", "data"],
+        additionalProperties: false,
+      },
+    })
+  }
+
+  if (updateResources.length > 0) {
+    tools.push({
+      name: "update",
+      description:
+        "Update an existing record by ID. Call describe_resource first to learn valid field names.",
+      parameters: {
+        type: "object",
+        properties: {
+          resource: { type: "string", enum: updateResources, description: "The resource to update" },
+          id: { description: "ID of the record to update" },
+          data: { type: "object", additionalProperties: true, description: "Fields to update" },
+        },
+        required: ["resource", "id", "data"],
+        additionalProperties: false,
+      },
+    })
+  }
+
+  if (deleteResources.length > 0) {
+    tools.push({
+      name: "delete",
+      description: "Delete a record by ID.",
+      parameters: {
+        type: "object",
+        properties: {
+          resource: { type: "string", enum: deleteResources, description: "The resource to delete from" },
+          id: { description: "ID of the record to delete" },
+        },
+        required: ["resource", "id"],
+        additionalProperties: false,
+      },
+    })
+  }
+
+  if (aggregateResources.length > 0) {
+    tools.push({
+      name: "aggregate",
+      description:
+        "Aggregate records (count, sum, avg, min, max with optional groupBy). Call describe_resource first to learn valid field names.",
+      parameters: {
+        type: "object",
+        properties: {
+          resource: { type: "string", enum: aggregateResources, description: "The resource to aggregate" },
+          aggregations: {
+            type: "array",
+            description: "List of aggregation operations to perform",
+            items: {
+              type: "object",
+              properties: {
+                fn: { type: "string", enum: ["count", "sum", "avg", "min", "max"] },
+                field: { type: "string", description: "Field to aggregate (use numeric fields from describe_resource)" },
+                alias: { type: "string" },
+              },
+              required: ["fn", "field", "alias"],
+              additionalProperties: false,
+            },
+          },
+          filters: { type: "object", additionalProperties: true, description: "Filter conditions" },
+          groupBy: { type: "array", items: { type: "string" }, description: "Fields to group by" },
+        },
+        required: ["resource", "aggregations"],
+        additionalProperties: false,
+      },
+    })
+  }
+
+  return tools
 }
 
 function buildFieldSchema(field: FieldSchema): Record<string, unknown> {

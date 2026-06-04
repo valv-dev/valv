@@ -1,6 +1,7 @@
 import { SchemaMap, PolicyFn, FieldSchema } from "../types"
 import { ResolvedQuery, ResolvedInclude, FilterNode } from "./types"
-import { evaluatePolicy, mergeFilters, rowFilterFromObject } from "../policy/engine"
+import { evaluatePolicy, mergeFilters, PolicyOperation } from "../policy/engine"
+import { objectToFilterNode } from "./filters"
 import { PolicyViolationError, ValidationError } from "../errors"
 
 type OperationType = "find" | "findOne" | "create" | "update" | "delete" | "aggregate"
@@ -24,10 +25,15 @@ function parseToolName(toolName: string): { operation: OperationType; resource: 
   throw new ValidationError(`Unknown tool name format: ${toolName}`)
 }
 
-function operationToPolicy(op: OperationType): "read" | "write" | "delete" {
-  if (op === "find" || op === "findOne" || op === "aggregate") return "read"
-  if (op === "delete") return "delete"
-  return "write"
+function operationToPolicy(op: OperationType): PolicyOperation {
+  switch (op) {
+    case "find":
+    case "findOne": return "read"
+    case "aggregate": return "aggregate"
+    case "create": return "create"
+    case "update": return "update"
+    case "delete": return "delete"
+  }
 }
 
 export function buildResolvedQuery<TContext>(
@@ -131,6 +137,11 @@ export function buildResolvedQuery<TContext>(
   // Aggregations
   if (operation === "aggregate") {
     if (inp.aggregations && Array.isArray(inp.aggregations)) {
+      for (const agg of inp.aggregations as Array<{ fn: string; field: string; alias: string }>) {
+        if (agg.fn !== "count" && agg.field !== "*" && !evaluated.allowedFields.includes(agg.field)) {
+          throw new ValidationError(`Aggregation field "${agg.field}" is not allowed on resource "${resource}"`)
+        }
+      }
       query.aggregations = inp.aggregations as typeof query.aggregations
     }
     if (inp.groupBy && Array.isArray(inp.groupBy)) {
@@ -159,14 +170,11 @@ export function buildResolvedQuery<TContext>(
       data[key] = value
     }
 
-    // Forced write fields override LLM input (policy wins)
+    // Forced write fields override LLM input (policy wins). The UPDATE WHERE
+    // guard is already carried by evaluated.rowFilter (merged into baseFilter
+    // above and then with the id below), so only the data injection happens here.
     if (evaluated.forcedWriteFields) {
       Object.assign(data, evaluated.forcedWriteFields)
-      // Also add as where guard for update so only owned rows can be updated
-      if (operation === "update") {
-        const guardFilter = rowFilterFromObject(evaluated.forcedWriteFields)
-        query.filters = mergeFilters(query.filters, guardFilter)
-      }
     }
 
     query.data = data
@@ -187,79 +195,16 @@ function parseFilters(
   resource: string,
   fieldSchemas: Record<string, FieldSchema>
 ): FilterNode | undefined {
-  const nodes: FilterNode[] = []
-
-  for (const [field, value] of Object.entries(filtersObj)) {
-    if (!allowedFields.includes(field)) {
-      throw new ValidationError(
-        `Field "${field}" is not allowed for filtering on resource "${resource}"`
-      )
-    }
-
-    const fieldSchema = fieldSchemas[field]
-
-    if (value === null) {
-      nodes.push({ type: "null", field, isNull: true })
-      continue
-    }
-
-    if (typeof value === "object" && !Array.isArray(value)) {
-      const obj = value as Record<string, unknown>
-
-      if ("gte" in obj || "lte" in obj || "gt" in obj || "lt" in obj) {
-        nodes.push({ type: "range", field, ...obj })
-        continue
+  // LLM-supplied filters share the policy filter language but are confined to
+  // the policy's allowed fields and don't get boolean combinators.
+  return objectToFilterNode(filtersObj, {
+    fieldSchemas,
+    allowField: (field) => {
+      if (!allowedFields.includes(field)) {
+        throw new ValidationError(
+          `Field "${field}" is not allowed for filtering on resource "${resource}"`
+        )
       }
-
-      if ("contains" in obj) {
-        nodes.push({ type: "like", field, value: obj.contains as string, mode: "contains" })
-        continue
-      }
-      if ("startsWith" in obj) {
-        nodes.push({ type: "like", field, value: obj.startsWith as string, mode: "startsWith" })
-        continue
-      }
-      if ("endsWith" in obj) {
-        nodes.push({ type: "like", field, value: obj.endsWith as string, mode: "endsWith" })
-        continue
-      }
-
-      if ("in" in obj && Array.isArray(obj.in)) {
-        if (fieldSchema?.type === "enum" && fieldSchema.enumValues) {
-          for (const v of obj.in as unknown[]) {
-            if (!fieldSchema.enumValues.includes(v as string)) {
-              throw new ValidationError(`Invalid enum value "${v}" for field "${field}"`)
-            }
-          }
-        }
-        nodes.push({ type: "in", field, values: obj.in })
-        continue
-      }
-    }
-
-    if (Array.isArray(value)) {
-      if (fieldSchema?.type === "enum" && fieldSchema.enumValues) {
-        for (const v of value) {
-          if (!fieldSchema.enumValues.includes(v as string)) {
-            throw new ValidationError(`Invalid enum value "${v}" for field "${field}"`)
-          }
-        }
-      }
-      nodes.push({ type: "in", field, values: value })
-      continue
-    }
-
-    // Validate enum scalar
-    if (fieldSchema?.type === "enum" && fieldSchema.enumValues) {
-      if (!fieldSchema.enumValues.includes(value as string)) {
-        throw new ValidationError(`Invalid enum value "${value}" for field "${field}"`)
-      }
-    }
-
-    nodes.push({ type: "eq", field, value })
-  }
-
-  if (nodes.length === 0) return undefined
-  if (nodes.length === 1) return nodes[0]
-  return { type: "and", filters: nodes }
+    },
+  })
 }

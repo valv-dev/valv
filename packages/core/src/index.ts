@@ -27,6 +27,8 @@ export type { NeutralTool } from "./tools/generator"
 export type {
   PolicyFn,
   PolicyResult,
+  PolicyRule,
+  FieldPolicy,
   DefaultContext,
   SchemaMap,
   ResourceSchema,

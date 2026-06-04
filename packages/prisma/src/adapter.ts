@@ -142,15 +142,39 @@ function applyBelongsToFiltersOne(
   return out
 }
 
-// In-memory filter evaluation for post-fetch enforcement.
-// Covers eq/in/and/or which are the only filter types policy generates.
-function matchesFilter(obj: Record<string, unknown>, filter: FilterNode): boolean {
+// In-memory filter evaluation for post-fetch enforcement of belongsTo policy
+// filters. Mirrors the full FilterNode vocabulary so rich/disjunctive policy
+// predicates are enforced rather than silently passed.
+export function matchesFilter(obj: Record<string, unknown>, filter: FilterNode): boolean {
   switch (filter.type) {
     case "eq":  return obj[filter.field] === filter.value
     case "in":  return (filter.values as unknown[]).includes(obj[filter.field])
+    case "range": {
+      const v = obj[filter.field] as number | string | Date | null | undefined
+      if (v === null || v === undefined) return false
+      if (filter.gte !== undefined && !(v >= (filter.gte as typeof v))) return false
+      if (filter.lte !== undefined && !(v <= (filter.lte as typeof v))) return false
+      if (filter.gt  !== undefined && !(v >  (filter.gt  as typeof v))) return false
+      if (filter.lt  !== undefined && !(v <  (filter.lt  as typeof v))) return false
+      return true
+    }
+    case "like": {
+      const v = obj[filter.field]
+      if (typeof v !== "string") return false
+      const hay = v.toLowerCase()
+      const needle = filter.value.toLowerCase()
+      if (filter.mode === "startsWith") return hay.startsWith(needle)
+      if (filter.mode === "endsWith")   return hay.endsWith(needle)
+      return hay.includes(needle)
+    }
+    case "null": {
+      const v = obj[filter.field]
+      const isNull = v === null || v === undefined
+      return filter.isNull ? isNull : !isNull
+    }
     case "and": return filter.filters.every(f => matchesFilter(obj, f))
     case "or":  return filter.filters.some(f => matchesFilter(obj, f))
-    default:    return true  // conservative: pass unknown filter types
+    case "not": return !matchesFilter(obj, filter.filter)
   }
 }
 
