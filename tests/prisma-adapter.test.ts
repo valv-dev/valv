@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { translateFilter, PrismaAdapter } from "@vistal/prisma"
+import { translateFilter, matchesFilter, PrismaAdapter } from "@vistal/prisma"
 import type { ResolvedQuery } from "@vistal/core"
 
 describe("translateFilter", () => {
@@ -450,6 +450,75 @@ describe("PrismaAdapter.execute", () => {
     }
     const results = await adapter.execute(query) as Record<string, unknown>[]
     // customer fails tenant filter → nulled out
+    expect(results[0].customer).toBeNull()
+  })
+})
+
+describe("matchesFilter (post-fetch belongsTo enforcement)", () => {
+  it("range: passes within bounds, fails outside", () => {
+    const f = { type: "range" as const, field: "amount", lt: 1000 }
+    expect(matchesFilter({ amount: 500 }, f)).toBe(true)
+    expect(matchesFilter({ amount: 5000 }, f)).toBe(false)
+  })
+
+  it("range: missing value fails", () => {
+    expect(matchesFilter({}, { type: "range", field: "amount", gte: 0 })).toBe(false)
+  })
+
+  it("like: case-insensitive contains/startsWith/endsWith", () => {
+    expect(matchesFilter({ name: "Hello World" }, { type: "like", field: "name", value: "WORLD", mode: "contains" })).toBe(true)
+    expect(matchesFilter({ name: "Hello World" }, { type: "like", field: "name", value: "hello", mode: "startsWith" })).toBe(true)
+    expect(matchesFilter({ name: "Hello World" }, { type: "like", field: "name", value: "xyz", mode: "endsWith" })).toBe(false)
+  })
+
+  it("null: matches null/undefined and its negation", () => {
+    expect(matchesFilter({ deleted_at: null }, { type: "null", field: "deleted_at", isNull: true })).toBe(true)
+    expect(matchesFilter({ deleted_at: "2026-01-01" }, { type: "null", field: "deleted_at", isNull: true })).toBe(false)
+    expect(matchesFilter({ deleted_at: "2026-01-01" }, { type: "null", field: "deleted_at", isNull: false })).toBe(true)
+  })
+
+  it("not: negates the inner filter", () => {
+    const f = { type: "not" as const, filter: { type: "eq" as const, field: "status", value: "draft" } }
+    expect(matchesFilter({ status: "shipped" }, f)).toBe(true)
+    expect(matchesFilter({ status: "draft" }, f)).toBe(false)
+  })
+
+  it("or/and compose rich nodes", () => {
+    const f = {
+      type: "or" as const,
+      filters: [
+        { type: "range" as const, field: "amount", gt: 100 },
+        { type: "eq" as const, field: "vip", value: true },
+      ],
+    }
+    expect(matchesFilter({ amount: 50, vip: true }, f)).toBe(true)
+    expect(matchesFilter({ amount: 50, vip: false }, f)).toBe(false)
+  })
+
+  it("nulls out a belongsTo include failing a range policy filter", async () => {
+    const adapter = new PrismaAdapter({
+      order: {
+        findMany: vi.fn().mockResolvedValue([
+          { id: "o1", customer: { id: "c1", credit: 5000 } },
+        ]),
+      },
+    } as unknown as import("@prisma/client").PrismaClient)
+
+    const query: ResolvedQuery = {
+      resource: "order",
+      operation: "find",
+      fields: ["id"],
+      include: {
+        customer: {
+          resource: "users",
+          type: "belongsTo",
+          foreignKey: "user_id",
+          fields: ["id", "credit"],
+          filters: { type: "range", field: "credit", lt: 1000 },
+        },
+      },
+    }
+    const results = await adapter.execute(query) as Record<string, unknown>[]
     expect(results[0].customer).toBeNull()
   })
 })

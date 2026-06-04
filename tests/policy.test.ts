@@ -148,6 +148,143 @@ describe("evaluatePolicy", () => {
     expect(result.allowed).toBe(false)
     expect(result.forcedWriteFields).toBeUndefined()
   })
+
+  // ── Rich predicates + OR ────────────────────────────────────────────────
+
+  it("read with operator predicate → range row filter", () => {
+    const result = evaluatePolicy(
+      () => ({ read: { amount: { lt: 1000 } } }),
+      {},
+      "read",
+      "deny-all",
+      mockResource
+    )
+    expect(result.allowed).toBe(true)
+    expect(result.rowFilter).toEqual({ type: "range", field: "amount", lt: 1000 })
+  })
+
+  it("read with OR combinator → or row filter", () => {
+    const result = evaluatePolicy(
+      () => ({ read: { OR: [{ user_id: "u1" }, { status: "public" }] } }),
+      {},
+      "read",
+      "deny-all",
+      mockResource
+    )
+    expect(result.rowFilter).toEqual({
+      type: "or",
+      filters: [
+        { type: "eq", field: "user_id", value: "u1" },
+        { type: "eq", field: "status", value: "public" },
+      ],
+    })
+  })
+
+  it("read with multiple keys + operator → AND of eq and range", () => {
+    const result = evaluatePolicy(
+      () => ({ read: { tenant_id: "t1", amount: { gte: 10 } } }),
+      {},
+      "read",
+      "deny-all",
+      mockResource
+    )
+    expect(result.rowFilter).toEqual({
+      type: "and",
+      filters: [
+        { type: "eq", field: "tenant_id", value: "t1" },
+        { type: "range", field: "amount", gte: 10 },
+      ],
+    })
+  })
+
+  // ── Write inject-vs-guard split ─────────────────────────────────────────
+
+  it("update with scalar + operator → only scalar forced, full predicate guards", () => {
+    const result = evaluatePolicy(
+      () => ({ update: { tenant_id: "t1", amount: { lt: 1000 } } }),
+      {},
+      "update",
+      "deny-all",
+      mockResource
+    )
+    // Only the scalar equality is injected into the row.
+    expect(result.forcedWriteFields).toEqual({ tenant_id: "t1" })
+    // The full predicate (including the operator) becomes the WHERE guard.
+    expect(result.rowFilter).toEqual({
+      type: "and",
+      filters: [
+        { type: "eq", field: "tenant_id", value: "t1" },
+        { type: "range", field: "amount", lt: 1000 },
+      ],
+    })
+  })
+
+  it("create with operator on required field → ValidationError", () => {
+    expect(() =>
+      evaluatePolicy(
+        () => ({ create: { amount: { gt: 0 } } }),
+        {},
+        "create",
+        "deny-all",
+        mockResource
+      )
+    ).toThrow(/operator filter on required field/)
+  })
+
+  it("create with operator on nullable field → entry dropped, no throw", () => {
+    const result = evaluatePolicy(
+      () => ({ create: { tenant_id: "t1", internal_notes: { contains: "x" } } }),
+      {},
+      "create",
+      "deny-all",
+      mockResource
+    )
+    expect(result.allowed).toBe(true)
+    expect(result.forcedWriteFields).toEqual({ tenant_id: "t1" })
+  })
+
+  // ── Operation granularity ───────────────────────────────────────────────
+
+  it("create allowed but update denied via separate keys", () => {
+    const policy = () => ({ create: true, update: false })
+    expect(evaluatePolicy(policy, {}, "create", "deny-all", mockResource).allowed).toBe(true)
+    expect(evaluatePolicy(policy, {}, "update", "deny-all", mockResource).allowed).toBe(false)
+  })
+
+  it("write shorthand sets both create and update", () => {
+    const policy = () => ({ write: true })
+    expect(evaluatePolicy(policy, {}, "create", "deny-all", mockResource).allowed).toBe(true)
+    expect(evaluatePolicy(policy, {}, "update", "deny-all", mockResource).allowed).toBe(true)
+  })
+
+  it("aggregate allowed but row reads denied", () => {
+    const policy = () => ({ read: false, aggregate: true })
+    expect(evaluatePolicy(policy, {}, "read", "deny-all", mockResource).allowed).toBe(false)
+    expect(evaluatePolicy(policy, {}, "aggregate", "deny-all", mockResource).allowed).toBe(true)
+  })
+
+  it("aggregate falls back to read when unspecified", () => {
+    const policy = () => ({ read: true })
+    expect(evaluatePolicy(policy, {}, "aggregate", "deny-all", mockResource).allowed).toBe(true)
+  })
+
+  // ── Read-only / write-only fields ───────────────────────────────────────
+
+  it("readOnly field present on read, absent on write", () => {
+    const policy = () => ({ read: true, write: true, fields: { readOnly: ["status"] } })
+    const read = evaluatePolicy(policy, {}, "read", "deny-all", mockResource)
+    const create = evaluatePolicy(policy, {}, "create", "deny-all", mockResource)
+    expect(read.allowedFields).toContain("status")
+    expect(create.allowedFields).not.toContain("status")
+  })
+
+  it("writeOnly field present on write, absent on read", () => {
+    const policy = () => ({ read: true, write: true, fields: { writeOnly: ["internal_notes"] } })
+    const read = evaluatePolicy(policy, {}, "read", "deny-all", mockResource)
+    const update = evaluatePolicy(policy, {}, "update", "deny-all", mockResource)
+    expect(read.allowedFields).not.toContain("internal_notes")
+    expect(update.allowedFields).toContain("internal_notes")
+  })
 })
 
 describe("mergeFilters", () => {

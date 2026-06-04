@@ -168,4 +168,69 @@ describe("generateTools", () => {
     expect(props).toHaveProperty("aggregations")
     expect(props).toHaveProperty("groupBy")
   })
+
+  it("create allowed but update denied → only create tool", () => {
+    const tools = generateTools(schema, {
+      orders: () => ({ read: true, create: true, update: false }),
+    }, {}, "deny-all")
+    const names = tools.map(t => t.name)
+    expect(names).toContain("create_orders")
+    expect(names).not.toContain("update_orders")
+  })
+
+  it("update allowed but create denied → only update tool", () => {
+    const tools = generateTools(schema, {
+      orders: () => ({ read: true, create: false, update: true }),
+    }, {}, "deny-all")
+    const names = tools.map(t => t.name)
+    expect(names).not.toContain("create_orders")
+    expect(names).toContain("update_orders")
+  })
+
+  it("aggregate denied while read allowed → no aggregate tool", () => {
+    const tools = generateTools(schema, {
+      orders: () => ({ read: true, aggregate: false }),
+    }, {}, "deny-all")
+    const names = tools.map(t => t.name)
+    expect(names).toContain("query_orders")
+    expect(names).not.toContain("aggregate_orders")
+  })
+
+  it("aggregate allowed while row reads denied → aggregate tool but no query/get", () => {
+    const tools = generateTools(schema, {
+      orders: () => ({ read: false, aggregate: true }),
+    }, {}, "deny-all")
+    const names = tools.map(t => t.name)
+    expect(names).toContain("aggregate_orders")
+    expect(names).not.toContain("query_orders")
+    expect(names).not.toContain("get_orders")
+  })
+
+  it("readOnly field is filterable but not writable", () => {
+    const tools = generateTools(schema, {
+      orders: () => ({ read: true, write: true, fields: { readOnly: ["notes"] } }),
+    }, {}, "deny-all")
+
+    const queryTool = tools.find(t => t.name === "query_orders")!
+    const filterProps = (((queryTool.parameters as any).properties.filters) as any).properties
+    expect(filterProps).toHaveProperty("notes")
+
+    const createTool = tools.find(t => t.name === "create_orders")!
+    expect((createTool.parameters as any).properties).not.toHaveProperty("notes")
+    const updateTool = tools.find(t => t.name === "update_orders")!
+    expect((updateTool.parameters as any).properties).not.toHaveProperty("notes")
+  })
+
+  it("writeOnly field is writable but not readable", () => {
+    const tools = generateTools(schema, {
+      orders: () => ({ read: true, write: true, fields: { writeOnly: ["notes"] } }),
+    }, {}, "deny-all")
+
+    const queryTool = tools.find(t => t.name === "query_orders")!
+    const filterProps = (((queryTool.parameters as any).properties.filters) as any).properties
+    expect(filterProps).not.toHaveProperty("notes")
+
+    const createTool = tools.find(t => t.name === "create_orders")!
+    expect((createTool.parameters as any).properties).toHaveProperty("notes")
+  })
 })

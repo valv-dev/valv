@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest"
 import { Vistal } from "@vistal/core"
-import type { VistalAdapter, SchemaMap, ResolvedQuery } from "@vistal/core"
+import type { VistalAdapter, SchemaMap, ResolvedQuery, DefaultContext } from "@vistal/core"
+
+const ctx: DefaultContext = { user: { id: "u1", role: "admin" } }
 
 const schema: SchemaMap = {
   resources: {
@@ -39,7 +41,7 @@ function makeVista(adapter: MockAdapter) {
 describe("vistal.tools namespace", () => {
   it("openai returns { type: 'function', function } definitions", async () => {
     const vistal = makeVista(new MockAdapter())
-    const tools = await vistal.tools.openai({})
+    const tools = await vistal.tools.openai(ctx)
     const query = tools.find(t => t.name === "query_order")!
     expect(query.definition.type).toBe("function")
     expect(query.definition.function.name).toBe("query_order")
@@ -48,7 +50,7 @@ describe("vistal.tools namespace", () => {
 
   it("anthropic returns input_schema definitions", async () => {
     const vistal = makeVista(new MockAdapter())
-    const tools = await vistal.tools.anthropic({})
+    const tools = await vistal.tools.anthropic(ctx)
     const query = tools.find(t => t.name === "query_order")!
     expect(query.definition).toHaveProperty("input_schema")
     expect(query.definition.name).toBe("query_order")
@@ -56,7 +58,7 @@ describe("vistal.tools namespace", () => {
 
   it("gemini produces flat function declarations", async () => {
     const vistal = makeVista(new MockAdapter())
-    const gemini = await vistal.tools.gemini({})
+    const gemini = await vistal.tools.gemini(ctx)
     const g = gemini.find(t => t.name === "query_order")!.definition
     expect(g.name).toBe("query_order")
     expect(g).toHaveProperty("parameters")
@@ -64,7 +66,7 @@ describe("vistal.tools namespace", () => {
 
   it("vercel returns a Vercel AI SDK ToolSet (description + parameters + execute per tool)", async () => {
     const vistal = makeVista(new MockAdapter())
-    const tools = await vistal.tools.vercel({})
+    const tools = await vistal.tools.vercel(ctx)
     expect(tools).toHaveProperty("query_order")
     const t = tools["query_order"]
     expect(t).toHaveProperty("description")
@@ -75,7 +77,7 @@ describe("vistal.tools namespace", () => {
   it("execute() runs the policy-enforced query via the adapter", async () => {
     const adapter = new MockAdapter()
     const vistal = makeVista(adapter)
-    const tools = await vistal.tools.openai({})
+    const tools = await vistal.tools.openai(ctx)
     const result = await tools.find(t => t.name === "query_order")!.execute({})
     expect(result).toEqual([{ id: "o1", amount: 10, tenant_id: "t1" }])
     // policy row filter is merged into the executed query
@@ -84,22 +86,22 @@ describe("vistal.tools namespace", () => {
 
   it("format() honors a custom formatter", async () => {
     const vistal = makeVista(new MockAdapter())
-    const tools = await vistal.tools.format({}, (t) => ({ id: t.name, schema: t.parameters }))
+    const tools = await vistal.tools.format(ctx, (t) => ({ id: t.name, schema: t.parameters }))
     const query = tools.find(t => t.name === "query_order")!
-    expect(query.definition.id).toBe("query_order")
+    expect((query.definition as any).id).toBe("query_order")
     expect(query.definition).toHaveProperty("schema")
   })
 
   it("write: false → no create/update tools in any format", async () => {
     const vistal = makeVista(new MockAdapter())
-    const names = (await vistal.tools.openai({})).map(t => t.name)
+    const names = (await vistal.tools.openai(ctx)).map(t => t.name)
     expect(names).not.toContain("create_order")
     expect(names).not.toContain("update_order")
   })
 
   it("getTools() still returns the legacy Anthropic input_schema shape", async () => {
     const vistal = makeVista(new MockAdapter())
-    const tools = await vistal.getTools({})
+    const tools = await vistal.getTools(ctx)
     const query = tools.find(t => t.name === "query_order")!
     expect(query).toHaveProperty("input_schema")
     expect(query).not.toHaveProperty("parameters")

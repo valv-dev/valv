@@ -257,6 +257,92 @@ describe("buildResolvedQuery", () => {
     expect(query.aggregations).toBeDefined()
   })
 
+  it("rich read policy → operator predicate AND-ed into filters", () => {
+    const query = buildResolvedQuery(
+      "query_orders",
+      {},
+      schema,
+      { orders: () => ({ read: { amount: { lt: 1000 } } }) },
+      {},
+      "deny-all"
+    )
+    expect(query.filters).toEqual({ type: "range", field: "amount", lt: 1000 })
+  })
+
+  it("rich update policy forces scalar into data and guards with full predicate", () => {
+    const query = buildResolvedQuery(
+      "update_orders",
+      { id: "o1", status: "shipped" },
+      schema,
+      { orders: () => ({ update: { tenant_id: "t1", amount: { lt: 1000 } } }) },
+      {},
+      "deny-all"
+    )
+    // Only the scalar equality is injected into the row…
+    expect(query.data?.tenant_id).toBe("t1")
+    expect(query.data).not.toHaveProperty("amount")
+    // …while the operator predicate guards which rows may be updated.
+    const whereStr = JSON.stringify(query.filters)
+    expect(whereStr).toContain("tenant_id")
+    expect(whereStr).toContain("range")
+    expect(whereStr).toContain("o1") // id guard still present
+  })
+
+  it("create policy with operator on required field → ValidationError", () => {
+    expect(() =>
+      buildResolvedQuery(
+        "create_orders",
+        { tenant_id: "t1", status: "pending", amount: 5 },
+        schema,
+        { orders: () => ({ create: { amount: { gt: 0 } } }) },
+        {},
+        "deny-all"
+      )
+    ).toThrow(ValidationError)
+  })
+
+  it("LLM cannot widen a disjunctive policy guard — OR stays AND-ed", () => {
+    const query = buildResolvedQuery(
+      "query_orders",
+      { filters: { status: "pending" } },
+      schema,
+      { orders: () => ({ read: { OR: [{ tenant_id: "t1" }, { status: "shipped" }] } }) },
+      {},
+      "deny-all"
+    )
+    // Top level must be an AND wrapping the policy OR; the LLM filter cannot
+    // escape the disjunctive scope.
+    expect(query.filters).toEqual({
+      type: "and",
+      filters: [
+        {
+          type: "or",
+          filters: [
+            { type: "eq", field: "tenant_id", value: "t1" },
+            { type: "eq", field: "status", value: "shipped" },
+          ],
+        },
+        { type: "eq", field: "status", value: "pending" },
+      ],
+    })
+  })
+
+  it("create allowed but update denied → only create builds, update throws", () => {
+    const policies = { orders: () => ({ create: { tenant_id: "t1" }, update: false }) }
+    const created = buildResolvedQuery(
+      "create_orders",
+      { status: "pending", amount: 10 },
+      schema,
+      policies,
+      {},
+      "deny-all"
+    )
+    expect(created.data?.tenant_id).toBe("t1")
+    expect(() =>
+      buildResolvedQuery("update_orders", { id: "o1", amount: 20 }, schema, policies, {}, "deny-all")
+    ).toThrow(PolicyViolationError)
+  })
+
   it("offset is bounded to 0 minimum", () => {
     const query = buildResolvedQuery(
       "query_orders",
