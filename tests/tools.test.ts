@@ -151,6 +151,22 @@ describe("generateTools", () => {
     expect(required).toContain("amount")
   })
 
+  it("force-injected fields absent from create and update tool schemas", () => {
+    const tools = generateTools(schema, {
+      // write: { status: "pending" } → status is force-injected, should not appear
+      orders: () => ({ read: true, write: { status: "pending" } }),
+    }, {}, "deny-all")
+    const createTool = tools.find(t => t.name === "create_orders")!
+    const createProps = (createTool.parameters as Record<string, unknown>).properties as Record<string, unknown>
+    expect(createProps).not.toHaveProperty("status")
+    const createRequired = (createTool.parameters as Record<string, unknown>).required as string[] ?? []
+    expect(createRequired).not.toContain("status")
+
+    const updateTool = tools.find(t => t.name === "update_orders")!
+    const updateProps = (updateTool.parameters as Record<string, unknown>).properties as Record<string, unknown>
+    expect(updateProps).not.toHaveProperty("status")
+  })
+
   it("aggregate tool generated for resources with numeric fields", () => {
     const tools = generateTools(schema, {
       orders: () => ({ read: true }),

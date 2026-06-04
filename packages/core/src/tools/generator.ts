@@ -143,9 +143,10 @@ function buildCreateTool(
   resource: ResourceSchema,
   policy: EvaluatedPolicy
 ): NeutralTool {
+  const forcedKeys = new Set(Object.keys(policy.forcedWriteFields ?? {}))
   const writableFields = policy.allowedFields.filter(f => {
     const field = resource.fields[f]
-    return field && !field.isId
+    return field && !field.isId && !forcedKeys.has(f)
   })
 
   const properties: Record<string, unknown> = {}
@@ -178,10 +179,11 @@ function buildUpdateTool(
 ): NeutralTool {
   const idField = Object.values(resource.fields).find(f => f.isId)
   const idSchema = idField ? buildFieldSchema(idField) : { type: "string" }
+  const forcedKeys = new Set(Object.keys(policy.forcedWriteFields ?? {}))
 
   const writableFields = policy.allowedFields.filter(f => {
     const field = resource.fields[f]
-    return field && !field.isId
+    return field && !field.isId && !forcedKeys.has(f)
   })
 
   const properties: Record<string, unknown> = {
