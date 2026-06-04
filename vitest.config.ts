@@ -6,6 +6,7 @@ export default defineConfig({
     alias: {
       "@vistal/core": path.resolve(__dirname, "packages/core/src/index.ts"),
       "@vistal/prisma": path.resolve(__dirname, "packages/prisma/src/index.ts"),
+      "@vistal/clickhouse": path.resolve(__dirname, "packages/clickhouse/src/index.ts"),
     },
   },
 })

@@ -218,7 +218,12 @@ new Vistal({
 
 ## Other adapters
 
-`@vistal/prisma` is the first adapter. Everything above it (policies, tool generation, the query IR) is ORM-agnostic. An adapter is two methods:
+| Package | Database | Install |
+|---|---|---|
+| [`@vistal/prisma`](packages/prisma/README.md) | PostgreSQL, MySQL, SQLite (via Prisma) | `npm i @vistal/prisma @prisma/client` |
+| [`@vistal/clickhouse`](packages/clickhouse/README.md) | ClickHouse | `npm i @vistal/clickhouse @clickhouse/client` |
+
+Everything above the adapter layer (policies, tool generation, the query IR) is DB-agnostic. An adapter is two methods:
 
 ```ts
 import type { VistalAdapter, SchemaMap, ResolvedQuery } from "@vistal/core"
@@ -231,9 +236,36 @@ class MyAdapter implements VistalAdapter {
 
 `SchemaMap`, `ResolvedQuery`, and `FilterNode` are exported from `/core`.
 
-## Example
+### ClickHouse
 
-[`examples/ecommerce/`](examples/ecommerce/) is a full working demo: three users (admin, support, cross-tenant) issuing the same prompts against a live Postgres database, plus a stress-test suite for tenant isolation, sensitive field exclusion, write policy enforcement, and role-based field denial.
+```ts
+import { createClient } from "@clickhouse/client"
+import { createVistal } from "@vistal/clickhouse"
+
+const ch = createClient({ url: process.env.CLICKHOUSE_URL })
+const vistal = createVistal(ch, { database: "analytics", defaultPolicy: "deny-all" })
+
+vistal.policy("events", (ctx) => ({
+  read:      { tenant_id: ctx.tenant!.id },
+  aggregate: { tenant_id: ctx.tenant!.id },
+  write: false,
+  delete: false,
+}))
+
+const tools = await vistal.tools.vercel(ctx)
+await generateText({ model, tools, prompt })
+```
+
+Schema annotations (`@vistal:description`, `@vistal:sensitive`) live in column and table
+COMMENTs rather than Prisma `///` doc-comments. See the
+[`@vistal/clickhouse` README](packages/clickhouse/README.md) for details on the `id` column
+requirement, the no-relations caveat, and mutation behaviour.
+
+## Examples
+
+[`examples/ecommerce/`](examples/ecommerce/) — three users (admin, support, cross-tenant) against a live Postgres database, with a stress-test suite for tenant isolation, sensitive field exclusion, write policy enforcement, and role-based field denial.
+
+[`examples/clickhouse-analytics/`](examples/clickhouse-analytics/) — the same stress tests recast for ClickHouse: tenant isolation, sensitive-field guard, forced-tenant insert, revenue aggregation, and consolidated-mode schema discovery.
 
 ## License
 

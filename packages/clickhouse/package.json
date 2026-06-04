@@ -1,0 +1,44 @@
+{
+  "name": "@vistal/clickhouse",
+  "version": "0.1.0",
+  "description": "ClickHouse adapter for vistal — row-level security and access control for AI agents",
+  "keywords": [
+    "clickhouse",
+    "ai agent",
+    "llm",
+    "access control",
+    "authorization",
+    "row-level security",
+    "multi-tenant",
+    "tool use",
+    "function calling",
+    "analytics",
+    "olap",
+    "typescript"
+  ],
+  "author": "Nicolò D'Addabbo <nicolodaddabbo@gmail.com> (https://nicolod.com)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vista-libs/vista.git",
+    "directory": "packages/clickhouse"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "peerDependencies": {
+    "@clickhouse/client": "^1.0.0",
+    "@vistal/core": "^0.1.0"
+  }
+}

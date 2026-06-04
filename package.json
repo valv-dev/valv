@@ -6,7 +6,7 @@
     "examples/*"
   ],
   "scripts": {
-    "build": "npm run build -w @vistal/core && npm run build -w @vistal/prisma",
+    "build": "npm run build -w @vistal/core && npm run build -w @vistal/prisma && npm run build -w @vistal/clickhouse",
     "test": "vitest run",
     "test:watch": "vitest"
   },

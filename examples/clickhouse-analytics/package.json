@@ -1,0 +1,26 @@
+{
+  "name": "vistal-clickhouse-analytics-example",
+  "version": "0.0.1",
+  "private": true,
+  "description": "ClickHouse analytics example for vistal",
+  "scripts": {
+    "start": "tsx index.ts",
+    "db:start": "docker run -d --name vistal-clickhouse -p 8123:8123 -p 9000:9000 -e CLICKHOUSE_DB=analytics -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=vistal clickhouse/clickhouse-server:latest || docker start vistal-clickhouse",
+    "db:stop": "docker stop vistal-clickhouse",
+    "db:reset": "docker stop vistal-clickhouse && docker rm vistal-clickhouse && npm run db:start",
+    "db:seed": "tsx seed.ts"
+  },
+  "dependencies": {
+    "@clickhouse/client": "^1.0.0",
+    "@openrouter/ai-sdk-provider": "^0.4.0",
+    "@vistal/clickhouse": "*",
+    "@vistal/core": "*",
+    "ai": "^4.0.0",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
