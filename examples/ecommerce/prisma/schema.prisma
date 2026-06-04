@@ -21,13 +21,13 @@ enum OrderStatus {
   cancelled
 }
 
-/// @vista:description "A user account in the system"
+/// @vistal:description "A user account in the system"
 model User {
   id         String   @id @default(uuid())
   name       String
-  /// @vista:description "User email address for login"
+  /// @vistal:description "User email address for login"
   email      String   @unique
-  /// @vista:sensitive
+  /// @vistal:sensitive
   password_hash String
   role       UserRole
   tenant_id  String
@@ -36,14 +36,14 @@ model User {
   orders Order[]
 }
 
-/// @vista:description "A product available for purchase"
+/// @vistal:description "A product available for purchase"
 model Product {
   id          String   @id @default(uuid())
   name        String
   description String?
-  /// @vista:description "Unit price in cents"
+  /// @vistal:description "Unit price in cents"
   price       Decimal
-  /// @vista:description "Units currently in stock"
+  /// @vistal:description "Units currently in stock"
   stock       Int
   tenant_id   String
   created_at  DateTime @default(now())
@@ -51,13 +51,13 @@ model Product {
   order_items OrderItem[]
 }
 
-/// @vista:description "A customer purchase order"
+/// @vistal:description "A customer purchase order"
 model Order {
   id       String      @id @default(uuid())
   status   OrderStatus
-  /// @vista:description "Order total in cents"
+  /// @vistal:description "Order total in cents"
   total    Decimal
-  /// @vista:sensitive
+  /// @vistal:sensitive
   internal_notes String?
   tenant_id      String
   created_at     DateTime @default(now())
@@ -67,11 +67,11 @@ model Order {
   items    OrderItem[]
 }
 
-/// @vista:description "A line item within an order"
+/// @vistal:description "A line item within an order"
 model OrderItem {
   id         String  @id @default(uuid())
   quantity   Int
-  /// @vista:description "Price at time of purchase, in cents"
+  /// @vistal:description "Price at time of purchase, in cents"
   unit_price Decimal
 
   order_id String

@@ -17,8 +17,8 @@
   "dependencies": {
     "@openrouter/ai-sdk-provider": "^0.4.0",
     "@prisma/client": "^5.0.0",
-    "@vistal/core": "^0.1.0",
-    "@vistal/prisma": "^0.1.0",
+    "@vistal/core": "*",
+    "@vistal/prisma": "*",
     "ai": "^4.0.0",
     "dotenv": "^16.0.0"
   },

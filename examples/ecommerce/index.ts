@@ -1,6 +1,6 @@
 import "dotenv/config"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
-import { generateText } from "ai"
+import { generateText, NoSuchToolError } from "ai"
 import { PrismaClient } from "@prisma/client"
 import { createVistal } from "@vistal/prisma"
 import { DefaultContext } from "@vistal/core"
@@ -20,19 +20,38 @@ const vistal = createVistal(prisma, {
 
 // ── Policies ──────────────────────────────────────────────────────────────────
 
-vistal.policy("order", (ctx) => ({
-  read: { tenant_id: ctx.tenant!.id },
-  write: { tenant_id: ctx.tenant!.id },
-  delete: false,
-  fields: {
-    // internal_notes is @vistal:sensitive — auto-excluded from LLM
-    deny: ctx.user.role === "support" ? ["user_id"] : [],
-  },
-  relations: {
-    customer: ctx.user.role === "admin",
-    items: true,
-  },
-}))
+vistal.policy("order", (ctx) => {
+  // Auditor: a read-mostly analyst role that exercises the richer policy surface —
+  //   • operator row filter (sees only low-value orders)
+  //   • aggregate ≠ read (can total ALL orders, but only read rows under the cap)
+  //   • create ≠ update (may amend orders, never open new ones)
+  //   • read-only field (status is visible but not writable)
+  if (ctx.user.role === "auditor") {
+    return {
+      read: { tenant_id: ctx.tenant!.id, total: { lt: 50000 } },
+      aggregate: { tenant_id: ctx.tenant!.id },
+      create: false,
+      update: { tenant_id: ctx.tenant!.id },
+      delete: false,
+      fields: { readOnly: ["status"] },
+      relations: { customer: false, items: true },
+    }
+  }
+
+  return {
+    read: { tenant_id: ctx.tenant!.id },
+    write: { tenant_id: ctx.tenant!.id },
+    delete: false,
+    fields: {
+      // internal_notes is @vistal:sensitive — auto-excluded from LLM
+      deny: ctx.user.role === "support" ? ["user_id"] : [],
+    },
+    relations: {
+      customer: ctx.user.role === "admin",
+      items: true,
+    },
+  }
+})
 
 vistal.policy("user", (ctx) => ({
   read: { tenant_id: ctx.tenant!.id },
@@ -94,7 +113,8 @@ async function run(
   title: string,
   prompt: string,
   assertions?: Assertion[],
-  maxSteps = 8
+  maxSteps = 8,
+  toolOptions?: Parameters<typeof vistal.tools.vercel>[1]
 ): Promise<boolean> {
   const isTest = assertions && assertions.length > 0
   console.log(`\n${"=".repeat(64)}`)
@@ -103,8 +123,9 @@ async function run(
   console.log("=".repeat(64))
 
   // vistal.tools.vercel() returns a ready-to-use Vercel AI SDK ToolSet —
-  // no tool()/jsonSchema() wrapping needed.
-  const aiTools = await vistal.tools.vercel(ctx)
+  // no tool()/jsonSchema() wrapping needed. Pass { mode: "consolidated" } for
+  // the small fixed verb set (list_resources, describe_resource, query, …).
+  const aiTools = await vistal.tools.vercel(ctx, toolOptions)
   const availableTools = Object.keys(aiTools)
   console.log(`\nTools available (${availableTools.length}): ${availableTools.join(", ")}`)
 
@@ -132,7 +153,7 @@ async function run(
   } catch (err: unknown) {
     // Model hallucinated a call to a suppressed tool (e.g. create_order denied by policy).
     // The assertions handle this case via the tool availability check.
-    if (err instanceof Error && err.constructor.name === "AI_NoSuchToolError") {
+    if (NoSuchToolError.isInstance(err) || (err instanceof Error && err.name === "AI_NoSuchToolError")) {
       console.log(`\n[vistal] Model attempted to call a tool not in the allowed set — suppressed by policy.`)
     } else {
       throw err
@@ -354,7 +375,7 @@ async function main(): Promise<void> {
     ),
   })
 
-  // ── Test 7: support cannot create orders (user_id is required but denied) ─
+  // ── Test 7: support cannot create orders(user_id is required but denied) ─
   results.push({
     label: "Support write — required field denied from schema",
     passed: await run(
@@ -484,6 +505,122 @@ async function main(): Promise<void> {
           },
         },
       ]
+    ),
+  })
+
+  // ── Test 11: granular policy — operator filter, create≠update, aggregate≠read ─
+  // The auditor role uses the deepened policy surface. tenant-alpha has orders at
+  // 154998, 129999 (over the 50000 read cap) and 22998, 24999 (under it). The
+  // operator filter must hide the two high-value orders from row reads, while the
+  // separate aggregate rule still totals everything. Inserts are off; amends are on.
+  results.push({
+    label: "Granular policy — operator filter, create≠update, aggregate≠read",
+    passed: await run(
+      { user: { id: "user-dan", role: "auditor" }, tenant: { id: "tenant-alpha" } },
+      "Granular policy — auditor sees only low-value orders but aggregates all",
+      "List every order you can see. Then try to create a new order for 9999 cents, and separately report the total revenue across all orders.",
+      [
+        {
+          label: "create_order suppressed but update_order available (create ≠ update)",
+          fn: (_calls, tools) => !tools.includes("create_order") && tools.includes("update_order"),
+        },
+        {
+          label: "aggregate_order available despite the capped read filter (aggregate ≠ read)",
+          fn: (_calls, tools) => tools.includes("aggregate_order"),
+        },
+        {
+          label: "High-value orders (order-1, order-2) hidden by the `total < 50000` filter",
+          fn: (calls) => {
+            const reads = calls.filter(c => c.toolName === "query_order" || c.toolName === "get_order")
+            return reads.every(c =>
+              !deepContainsValue(c.result, "order-1") && !deepContainsValue(c.result, "order-2")
+            )
+          },
+        },
+        {
+          label: "No row read returns an order at or above the 50000 cap",
+          fn: (calls) => {
+            const overCap = (obj: unknown): boolean => {
+              if (!obj || typeof obj !== "object") return false
+              if (Array.isArray(obj)) return obj.some(overCap)
+              const rec = obj as Record<string, unknown>
+              if (typeof rec.total === "number" && rec.total >= 50000) return true
+              return Object.values(rec).some(overCap)
+            }
+            return calls
+              .filter(c => c.toolName === "query_order" || c.toolName === "get_order")
+              .every(c => !overCap(c.result))
+          },
+        },
+        {
+          label: "Any attempt to write the read-only `status` field is rejected",
+          fn: (calls) =>
+            calls
+              .filter(c => c.toolName === "update_order" && deepContainsKey(c.args, "status"))
+              .every(c => {
+                const r = c.result as Record<string, unknown> | null
+                return !!r && typeof r.error === "string"
+              }),
+        },
+      ]
+    ),
+  })
+
+  // ── Test 12: consolidated mode — discover-then-act with the fixed verb set ──
+  // Instead of one tool per resource×operation, consolidated mode exposes a
+  // small fixed set: list_resources, describe_resource, then query/get/create/
+  // update/delete/aggregate that take a `resource` argument. The agent is
+  // expected to *discover* the schema (list_resources → describe_resource)
+  // before acting — and policy still scopes everything.
+  results.push({
+    label: "Consolidated tools — discover then act",
+    passed: await run(
+      { user: { id: "user-alice", role: "admin" }, tenant: { id: "tenant-alpha" } },
+      "Consolidated mode — discover the schema, then read",
+      "You don't know this database. First list the resources you can access, then describe the 'order' resource to learn its fields, then list the orders.",
+      [
+        {
+          label: "Consolidated tools exposed (list_resources, describe_resource, query)",
+          fn: (_calls, tools) =>
+            tools.includes("list_resources") &&
+            tools.includes("describe_resource") &&
+            tools.includes("query"),
+        },
+        {
+          label: "Per-resource tools NOT generated in consolidated mode (no query_order)",
+          fn: (_calls, tools) => !tools.includes("query_order") && !tools.includes("get_order"),
+        },
+        {
+          label: "Agent used a discovery tool (list_resources or describe_resource)",
+          fn: (calls) =>
+            calls.some(c => c.toolName === "list_resources" || c.toolName === "describe_resource"),
+        },
+        {
+          label: "list_resources (if called) reports the order resource with its operations",
+          fn: (calls) => {
+            const lr = calls.find(c => c.toolName === "list_resources")
+            return !lr || (deepContainsValue(lr.result, "order") && deepContainsValue(lr.result, "query"))
+          },
+        },
+        {
+          label: "describe_resource (if called) for order exposes status field but not internal_notes",
+          fn: (calls) => {
+            const dr = calls.find(c => c.toolName === "describe_resource")
+            if (!dr) return true
+            // Field names appear as `name` *values* in the describe output.
+            return deepContainsValue(dr.result, "status") && !deepContainsValue(dr.result, "internal_notes")
+          },
+        },
+        {
+          label: "Any unified read (query/get) stays scoped to tenant-alpha",
+          fn: (calls) =>
+            calls
+              .filter(c => c.toolName === "query" || c.toolName === "get")
+              .every(c => allTenantScoped(c.result, "tenant-alpha")),
+        },
+      ],
+      8,
+      { mode: "consolidated" }
     ),
   })
 
