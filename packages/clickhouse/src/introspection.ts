@@ -1,7 +1,10 @@
 import type { SchemaMap, ResourceSchema, FieldSchema, FieldType } from "@vistal/core"
 
 export interface ClickHouseClient {
-  query(params: { query: string; format?: string }): Promise<{ json<T>(): Promise<T> }>
+  // json() is non-generic here so the interface is structurally compatible with
+  // @clickhouse/client's ResultSet (whose json() returns a concrete union type
+  // rather than the arbitrary T the generic would require).
+  query(params: { query: string; format?: string }): Promise<{ json(): Promise<unknown> }>
 }
 
 interface SysColumn {
@@ -34,7 +37,7 @@ export async function introspectClickHouse(
         ORDER BY table, position
       `,
       format: "JSONEachRow",
-    }).then(r => r.json<SysColumn[]>()),
+    }).then(r => r.json() as Promise<SysColumn[]>),
     client.query({
       query: `
         SELECT name, comment
@@ -42,7 +45,7 @@ export async function introspectClickHouse(
         WHERE database = '${db}'
       `,
       format: "JSONEachRow",
-    }).then(r => r.json<SysTable[]>()),
+    }).then(r => r.json() as Promise<SysTable[]>),
   ])
 
   const tableComments: Record<string, string> = {}
@@ -107,7 +110,7 @@ async function resolveDatabase(client: ClickHouseClient): Promise<string> {
   const result = await client.query({
     query: "SELECT currentDatabase() AS db",
     format: "JSONEachRow",
-  }).then(r => r.json<{ db: string }[]>())
+  }).then(r => r.json() as Promise<{ db: string }[]>)
   return result[0]?.db ?? "default"
 }
 

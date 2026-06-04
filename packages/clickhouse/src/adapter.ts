@@ -77,7 +77,7 @@ export class ClickHouseAdapter implements VistalAdapter {
       }
     }
 
-    const rows = await this.client.query({ query: sql, format: "JSONEachRow" }).then(r => r.json<unknown[]>())
+    const rows = await this.client.query({ query: sql, format: "JSONEachRow" }).then(r => r.json() as Promise<unknown[]>)
 
     return one ? (rows[0] ?? null) : rows
   }
@@ -178,6 +178,6 @@ export class ClickHouseAdapter implements VistalAdapter {
       sql += ` HAVING ${compileFilter(query.having)}`
     }
 
-    return this.client.query({ query: sql, format: "JSONEachRow" }).then(r => r.json<unknown[]>())
+    return this.client.query({ query: sql, format: "JSONEachRow" }).then(r => r.json() as Promise<unknown[]>)
   }
 }
