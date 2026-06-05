@@ -158,6 +158,12 @@ These are the strings you pass to `policy()` and that appear in generated tool n
 
 ---
 
+## Other adapters
+
+For ClickHouse, use [`@vistal/clickhouse`](https://www.npmjs.com/package/@vistal/clickhouse) instead — same policy API, no relations, schema annotations via column COMMENTs.
+
+---
+
 ## License
 
 MIT

@@ -6,7 +6,7 @@
 
 Reads an ORM schema, generates typed LLM tools, and enforces row-level security and field-level access control server-side on every query — in code, not prompts. Adapter-agnostic: works with any ORM or database through a two-method interface.
 
-> **Most users should install [`@vistal/prisma`](https://www.npmjs.com/package/@vistal/prisma)**, which wraps this package with a Prisma adapter and schema introspection. Use `@vistal/core` directly only if you're building a custom adapter.
+> **Most users should install [`@vistal/prisma`](https://www.npmjs.com/package/@vistal/prisma)** (Prisma / PostgreSQL / MySQL / SQLite) or [`@vistal/clickhouse`](https://www.npmjs.com/package/@vistal/clickhouse) (ClickHouse), which wrap this package with a ready-made adapter and schema introspection. Use `@vistal/core` directly only if you're building a custom adapter.
 
 ---
 
@@ -189,6 +189,15 @@ new Vistal({
   },
 })
 ```
+
+---
+
+## Available adapters
+
+| Package | Database |
+|---|---|
+| [`@vistal/prisma`](https://www.npmjs.com/package/@vistal/prisma) | PostgreSQL, MySQL, SQLite (via Prisma 5+) |
+| [`@vistal/clickhouse`](https://www.npmjs.com/package/@vistal/clickhouse) | ClickHouse |
 
 ---
 
