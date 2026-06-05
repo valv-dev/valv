@@ -30,11 +30,16 @@ function parseToolName(toolName: string): { operation: OperationType; resource: 
 function operationToPolicy(op: OperationType): PolicyOperation {
   switch (op) {
     case "find":
-    case "findOne": return "read"
-    case "aggregate": return "aggregate"
-    case "create": return "create"
-    case "update": return "update"
-    case "delete": return "delete"
+    case "findOne":
+      return "read"
+    case "aggregate":
+      return "aggregate"
+    case "create":
+      return "create"
+    case "update":
+      return "update"
+    case "delete":
+      return "delete"
   }
 }
 
@@ -45,7 +50,7 @@ export function buildResolvedQuery<TContext>(
   policies: Record<string, PolicyFn<TContext>>,
   ctx: TContext,
   defaultPolicy: "deny-all" | "allow-all",
-  paginationConfig: PaginationConfig = { maxLimit: 100, defaultLimit: 50 }
+  paginationConfig: PaginationConfig = { maxLimit: 100, defaultLimit: 50 },
 ): ResolvedQuery {
   const { operation, resource } = parseToolName(toolName)
 
@@ -59,7 +64,7 @@ export function buildResolvedQuery<TContext>(
 
   if (!evaluated.allowed) {
     throw new PolicyViolationError(
-      `Operation "${operation}" on "${resource}" is not permitted by policy`
+      `Operation "${operation}" on "${resource}" is not permitted by policy`,
     )
   }
 
@@ -68,7 +73,12 @@ export function buildResolvedQuery<TContext>(
   // Parse filters from LLM input
   let llmFilter: FilterNode | undefined
   if (inp.filters && typeof inp.filters === "object") {
-    llmFilter = parseFilters(inp.filters as Record<string, unknown>, evaluated.allowedFields, resource, resourceSchema.fields)
+    llmFilter = parseFilters(
+      inp.filters as Record<string, unknown>,
+      evaluated.allowedFields,
+      resource,
+      resourceSchema.fields,
+    )
   }
 
   // Merge policy row filter + forced write fields (for update guard) + LLM filter
@@ -88,12 +98,20 @@ export function buildResolvedQuery<TContext>(
       }
 
       const relatedSchema = schema.resources[relation.targetResource]
-      const relatedEvaluated = evaluatePolicy(policies[relation.targetResource], ctx, "read", defaultPolicy, relatedSchema)
+      const relatedEvaluated = evaluatePolicy(
+        policies[relation.targetResource],
+        ctx,
+        "read",
+        defaultPolicy,
+        relatedSchema,
+      )
 
       const relatedFields = relatedEvaluated.allowed
         ? relatedEvaluated.allowedFields
         : relatedSchema
-          ? Object.values(relatedSchema.fields).filter(f => !f.sensitive).map(f => f.name)
+          ? Object.values(relatedSchema.fields)
+              .filter((f) => !f.sensitive)
+              .map((f) => f.name)
           : []
 
       include[relationName] = {
@@ -107,7 +125,7 @@ export function buildResolvedQuery<TContext>(
   }
 
   const fields = [...evaluated.allowedFields]
-  const pkField = Object.values(resourceSchema.fields).find(f => f.isId)?.name ?? "id"
+  const pkField = Object.values(resourceSchema.fields).find((f) => f.isId)?.name ?? "id"
 
   const query: ResolvedQuery = {
     resource,
@@ -146,7 +164,10 @@ export function buildResolvedQuery<TContext>(
     if (keyset) {
       if (explicitSort) {
         // A cursor + an explicit sort must agree — the keyset is meaningless otherwise.
-        if (explicitSort.field !== keyset.sortField || explicitSort.direction !== keyset.direction) {
+        if (
+          explicitSort.field !== keyset.sortField ||
+          explicitSort.direction !== keyset.direction
+        ) {
           throw new ValidationError("Cursor does not match the requested sort")
         }
       } else {
@@ -161,7 +182,7 @@ export function buildResolvedQuery<TContext>(
     const cursorField = query.sort!.field
     if (keyset && resourceSchema.fields[cursorField]?.isNullable) {
       throw new ValidationError(
-        `Cursor pagination is not supported on nullable sort field "${cursorField}"`
+        `Cursor pagination is not supported on nullable sort field "${cursorField}"`,
       )
     }
 
@@ -171,7 +192,11 @@ export function buildResolvedQuery<TContext>(
     query.pagination = {
       limit,
       // Cursor wins over offset — only honor offset when paging without a cursor.
-      offset: keyset ? undefined : (typeof inp.offset === "number" ? Math.max(0, inp.offset) : undefined),
+      offset: keyset
+        ? undefined
+        : typeof inp.offset === "number"
+          ? Math.max(0, inp.offset)
+          : undefined,
       cursor: typeof inp.cursor === "string" ? inp.cursor : undefined,
       keyset,
       primaryKey: pkField,
@@ -195,14 +220,22 @@ export function buildResolvedQuery<TContext>(
   if (operation === "aggregate") {
     if (inp.aggregations && Array.isArray(inp.aggregations)) {
       for (const agg of inp.aggregations as Array<{ fn: string; field: string; alias: string }>) {
-        if (agg.fn !== "count" && agg.field !== "*" && !evaluated.allowedFields.includes(agg.field)) {
-          throw new ValidationError(`Aggregation field "${agg.field}" is not allowed on resource "${resource}"`)
+        if (
+          agg.fn !== "count" &&
+          agg.field !== "*" &&
+          !evaluated.allowedFields.includes(agg.field)
+        ) {
+          throw new ValidationError(
+            `Aggregation field "${agg.field}" is not allowed on resource "${resource}"`,
+          )
         }
       }
       query.aggregations = inp.aggregations as typeof query.aggregations
     }
     if (inp.groupBy && Array.isArray(inp.groupBy)) {
-      const disallowed = (inp.groupBy as string[]).filter(f => !evaluated.allowedFields.includes(f))
+      const disallowed = (inp.groupBy as string[]).filter(
+        (f) => !evaluated.allowedFields.includes(f),
+      )
       if (disallowed.length > 0) {
         throw new ValidationError(`groupBy fields not allowed: ${disallowed.join(", ")}`)
       }
@@ -250,7 +283,7 @@ function parseFilters(
   filtersObj: Record<string, unknown>,
   allowedFields: string[],
   resource: string,
-  fieldSchemas: Record<string, FieldSchema>
+  fieldSchemas: Record<string, FieldSchema>,
 ): FilterNode | undefined {
   // LLM-supplied filters share the policy filter language but are confined to
   // the policy's allowed fields and don't get boolean combinators.
@@ -259,7 +292,7 @@ function parseFilters(
     allowField: (field) => {
       if (!allowedFields.includes(field)) {
         throw new ValidationError(
-          `Field "${field}" is not allowed for filtering on resource "${resource}"`
+          `Field "${field}" is not allowed for filtering on resource "${resource}"`,
         )
       }
     },

@@ -49,10 +49,12 @@ export function compileFilter(node: FilterNode): string {
 
     case "range": {
       const parts: string[] = []
-      if (node.gte !== undefined) parts.push(`${quoteIdent(node.field)} >= ${formatValue(node.gte)}`)
-      if (node.lte !== undefined) parts.push(`${quoteIdent(node.field)} <= ${formatValue(node.lte)}`)
-      if (node.gt  !== undefined) parts.push(`${quoteIdent(node.field)} > ${formatValue(node.gt)}`)
-      if (node.lt  !== undefined) parts.push(`${quoteIdent(node.field)} < ${formatValue(node.lt)}`)
+      if (node.gte !== undefined)
+        parts.push(`${quoteIdent(node.field)} >= ${formatValue(node.gte)}`)
+      if (node.lte !== undefined)
+        parts.push(`${quoteIdent(node.field)} <= ${formatValue(node.lte)}`)
+      if (node.gt !== undefined) parts.push(`${quoteIdent(node.field)} > ${formatValue(node.gt)}`)
+      if (node.lt !== undefined) parts.push(`${quoteIdent(node.field)} < ${formatValue(node.lt)}`)
       return parts.join(" AND ")
     }
 

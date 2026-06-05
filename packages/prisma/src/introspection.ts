@@ -1,12 +1,18 @@
 import { getDMMF } from "@prisma/internals"
-import type { SchemaMap, ResourceSchema, FieldSchema, FieldType, RelationSchema } from "@vistal/core"
+import type {
+  SchemaMap,
+  ResourceSchema,
+  FieldSchema,
+  FieldType,
+  RelationSchema,
+} from "@vistal/core"
 
 export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
   const dmmf = await getDMMF({ datamodelPath: schemaPath })
 
   const enumMap: Record<string, string[]> = {}
   for (const e of dmmf.datamodel.enums) {
-    enumMap[e.name] = e.values.map(v => v.name)
+    enumMap[e.name] = e.values.map((v) => v.name)
   }
 
   const resources: Record<string, ResourceSchema> = {}
@@ -63,7 +69,7 @@ export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
 export function toResourceName(modelName: string): string {
   return modelName
     .replace(/([A-Z])/g, (match, letter, offset) =>
-      offset === 0 ? letter.toLowerCase() : `_${letter.toLowerCase()}`
+      offset === 0 ? letter.toLowerCase() : `_${letter.toLowerCase()}`,
     )
     .replace(/([a-z])([A-Z])/g, "$1_$2")
     .toLowerCase()
@@ -75,14 +81,20 @@ export function toClientKey(resourceName: string): string {
 
 function mapPrismaType(prismaType: string, enumMap: Record<string, string[]>): FieldType | null {
   switch (prismaType) {
-    case "String":   return "string"
+    case "String":
+      return "string"
     case "Int":
     case "Float":
-    case "Decimal":  return "number"
-    case "Boolean":  return "boolean"
-    case "DateTime": return "date"
-    case "Json":     return "json"
-    case "Bytes":    return "string"
+    case "Decimal":
+      return "number"
+    case "Boolean":
+      return "boolean"
+    case "DateTime":
+      return "date"
+    case "Json":
+      return "json"
+    case "Bytes":
+      return "string"
     default:
       // Only treat as enum if it's actually in the enum map
       if (enumMap[prismaType]) return "enum"
@@ -91,8 +103,22 @@ function mapPrismaType(prismaType: string, enumMap: Record<string, string[]>): F
 }
 
 function buildRelationSchema(
-  field: { name: string; type: string; relationName?: string | null; isList: boolean; relationFromFields?: readonly string[]; relationToFields?: readonly string[] },
-  allFields: readonly { name: string; type: string; isList: boolean; relationName?: string | null; relationFromFields?: readonly string[]; relationToFields?: readonly string[] }[]
+  field: {
+    name: string
+    type: string
+    relationName?: string | null
+    isList: boolean
+    relationFromFields?: readonly string[]
+    relationToFields?: readonly string[]
+  },
+  allFields: readonly {
+    name: string
+    type: string
+    isList: boolean
+    relationName?: string | null
+    relationFromFields?: readonly string[]
+    relationToFields?: readonly string[]
+  }[],
 ): RelationSchema | null {
   void allFields
   const targetResource = toResourceName(field.type)

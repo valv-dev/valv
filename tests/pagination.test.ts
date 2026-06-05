@@ -12,12 +12,12 @@ const schema: SchemaMap = {
       name: "orders",
       tableName: "Order",
       fields: {
-        id:         { name: "id",         type: "uuid",   isNullable: false, isId: true },
-        tenant_id:  { name: "tenant_id",  type: "string", isNullable: false, isId: false },
-        status:     { name: "status",     type: "string", isNullable: false, isId: false },
-        amount:     { name: "amount",     type: "number", isNullable: false, isId: false },
-        created_at: { name: "created_at", type: "date",   isNullable: false, isId: false },
-        note:       { name: "note",       type: "string", isNullable: true,  isId: false },
+        id: { name: "id", type: "uuid", isNullable: false, isId: true },
+        tenant_id: { name: "tenant_id", type: "string", isNullable: false, isId: false },
+        status: { name: "status", type: "string", isNullable: false, isId: false },
+        amount: { name: "amount", type: "number", isNullable: false, isId: false },
+        created_at: { name: "created_at", type: "date", isNullable: false, isId: false },
+        note: { name: "note", type: "string", isNullable: true, isId: false },
       },
       relations: {},
     },
@@ -31,7 +31,12 @@ const cfg: PaginationConfig = { maxLimit: 100, defaultLimit: 50 }
 
 describe("cursor codec", () => {
   it("round-trips a keyset through encode/decode", () => {
-    const ks = { sortField: "created_at", direction: "desc" as const, sortValue: "2026-01-01T00:00:00.000Z", id: "o123" }
+    const ks = {
+      sortField: "created_at",
+      direction: "desc" as const,
+      sortValue: "2026-01-01T00:00:00.000Z",
+      id: "o123",
+    }
     expect(decodeCursor(encodeCursor(ks))).toEqual(ks)
   })
 
@@ -43,7 +48,10 @@ describe("cursor codec", () => {
   })
 
   it("defaults direction to asc when absent", () => {
-    const bad = Buffer.from(JSON.stringify({ sortField: "id", sortValue: "x", id: "x" }), "utf8").toString("base64url")
+    const bad = Buffer.from(
+      JSON.stringify({ sortField: "id", sortValue: "x", id: "x" }),
+      "utf8",
+    ).toString("base64url")
     expect(decodeCursor(bad).direction).toBe("asc")
   })
 
@@ -103,38 +111,54 @@ describe("buildResolvedQuery pagination", () => {
   it("decodes a valid cursor into pagination.keyset", () => {
     const cursor = encodeCursor({ sortField: "id", direction: "asc", sortValue: "o5", id: "o5" })
     const q = build({ cursor })
-    expect(q.pagination?.keyset).toEqual({ sortField: "id", direction: "asc", sortValue: "o5", id: "o5" })
+    expect(q.pagination?.keyset).toEqual({
+      sortField: "id",
+      direction: "asc",
+      sortValue: "o5",
+      id: "o5",
+    })
   })
 
   it("derives the sort from the cursor when none is supplied", () => {
-    const cursor = encodeCursor({ sortField: "created_at", direction: "desc", sortValue: "2026-01-01T00:00:00.000Z", id: "o5" })
+    const cursor = encodeCursor({
+      sortField: "created_at",
+      direction: "desc",
+      sortValue: "2026-01-01T00:00:00.000Z",
+      id: "o5",
+    })
     const q = build({ cursor })
     expect(q.sort).toEqual({ field: "created_at", direction: "desc" })
     expect(q.pagination?.cursorField).toBe("created_at")
   })
 
   it("accepts a cursor with an identical explicit sort", () => {
-    const cursor = encodeCursor({ sortField: "created_at", direction: "desc", sortValue: "2026-01-01T00:00:00.000Z", id: "o5" })
+    const cursor = encodeCursor({
+      sortField: "created_at",
+      direction: "desc",
+      sortValue: "2026-01-01T00:00:00.000Z",
+      id: "o5",
+    })
     const q = build({ cursor, sort: { field: "created_at", direction: "desc" } })
     expect(q.pagination?.keyset?.sortField).toBe("created_at")
   })
 
   it("rejects a cursor whose sort field differs from an explicit sort", () => {
     const cursor = encodeCursor({ sortField: "amount", direction: "asc", sortValue: 10, id: "o5" })
-    expect(() => build({ cursor, sort: { field: "created_at", direction: "asc" } }))
-      .toThrow(/Cursor does not match/)
+    expect(() => build({ cursor, sort: { field: "created_at", direction: "asc" } })).toThrow(
+      /Cursor does not match/,
+    )
   })
 
   it("rejects a cursor whose direction differs from an explicit sort", () => {
     const cursor = encodeCursor({ sortField: "amount", direction: "asc", sortValue: 10, id: "o5" })
-    expect(() => build({ cursor, sort: { field: "amount", direction: "desc" } }))
-      .toThrow(/Cursor does not match/)
+    expect(() => build({ cursor, sort: { field: "amount", direction: "desc" } })).toThrow(
+      /Cursor does not match/,
+    )
   })
 
   it("rejects a cursor on a nullable sort field", () => {
     const cursor = encodeCursor({ sortField: "note", direction: "asc", sortValue: "x", id: "o5" })
-    expect(() => build({ cursor }))
-      .toThrow(/nullable sort field/)
+    expect(() => build({ cursor })).toThrow(/nullable sort field/)
   })
 
   it("cursor wins over offset (offset dropped)", () => {
@@ -166,8 +190,11 @@ describe("buildResolvedQuery pagination", () => {
 
 describe("query tool pagination schema", () => {
   it("reflects configured maxLimit and exposes a cursor param", () => {
-    const tools = generateTools(schema, policies, {}, "deny-all", { maxLimit: 25, defaultLimit: 10 })
-    const q = tools.find(t => t.name === "query_orders")!
+    const tools = generateTools(schema, policies, {}, "deny-all", {
+      maxLimit: 25,
+      defaultLimit: 10,
+    })
+    const q = tools.find((t) => t.name === "query_orders")!
     const props = (q.parameters as { properties: Record<string, { maximum?: number }> }).properties
     expect(props.limit.maximum).toBe(25)
     expect(props.cursor).toBeDefined()
@@ -193,8 +220,11 @@ describe("PrismaAdapter find pagination", () => {
   })
 
   it("returns an envelope and fetches limit+1 rows", async () => {
-    const { adapter, findMany } = makeAdapter([{ id: "a", amount: 1 }, { id: "b", amount: 2 }])
-    const res = await adapter.execute(findQuery()) as { data: unknown[]; hasMore: boolean }
+    const { adapter, findMany } = makeAdapter([
+      { id: "a", amount: 1 },
+      { id: "b", amount: 2 },
+    ])
+    const res = (await adapter.execute(findQuery())) as { data: unknown[]; hasMore: boolean }
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 3 }))
     expect(res.data).toHaveLength(2)
     expect(res.hasMore).toBe(false)
@@ -202,17 +232,28 @@ describe("PrismaAdapter find pagination", () => {
 
   it("sets hasMore and drops the probe row, emitting a nextCursor", async () => {
     const { adapter } = makeAdapter([
-      { id: "a", amount: 1 }, { id: "b", amount: 2 }, { id: "c", amount: 3 },
+      { id: "a", amount: 1 },
+      { id: "b", amount: 2 },
+      { id: "c", amount: 3 },
     ])
-    const res = await adapter.execute(findQuery()) as { data: unknown[]; hasMore: boolean; nextCursor?: string }
+    const res = (await adapter.execute(findQuery())) as {
+      data: unknown[]
+      hasMore: boolean
+      nextCursor?: string
+    }
     expect(res.hasMore).toBe(true)
     expect(res.data).toHaveLength(2)
-    expect(decodeCursor(res.nextCursor!)).toEqual({ sortField: "amount", direction: "asc", sortValue: 2, id: "b" })
+    expect(decodeCursor(res.nextCursor!)).toEqual({
+      sortField: "amount",
+      direction: "asc",
+      sortValue: 2,
+      id: "b",
+    })
   })
 
   it("has no nextCursor when there are no more rows", async () => {
     const { adapter } = makeAdapter([{ id: "a", amount: 1 }])
-    const res = await adapter.execute(findQuery()) as { hasMore: boolean; nextCursor?: string }
+    const res = (await adapter.execute(findQuery())) as { hasMore: boolean; nextCursor?: string }
     expect(res.hasMore).toBe(false)
     expect(res.nextCursor).toBeUndefined()
   })
@@ -220,28 +261,34 @@ describe("PrismaAdapter find pagination", () => {
   it("builds an ascending keyset WHERE with pk tiebreaker", async () => {
     const { adapter, findMany } = makeAdapter([])
     const keyset = { sortField: "amount", direction: "asc" as const, sortValue: 2, id: "b" }
-    await adapter.execute(findQuery({
-      pagination: { limit: 2, primaryKey: "id", cursorField: "amount", keyset },
-      filters: { type: "eq", field: "tenant_id", value: "t1" },
-    }))
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: {
-        AND: [
-          { tenant_id: "t1" },
-          { OR: [{ amount: { gt: 2 } }, { AND: [{ amount: 2 }, { id: { gt: "b" } }] }] },
-        ],
-      },
-      orderBy: [{ amount: "asc" }, { id: "asc" }],
-    }))
+    await adapter.execute(
+      findQuery({
+        pagination: { limit: 2, primaryKey: "id", cursorField: "amount", keyset },
+        filters: { type: "eq", field: "tenant_id", value: "t1" },
+      }),
+    )
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            { tenant_id: "t1" },
+            { OR: [{ amount: { gt: 2 } }, { AND: [{ amount: 2 }, { id: { gt: "b" } }] }] },
+          ],
+        },
+        orderBy: [{ amount: "asc" }, { id: "asc" }],
+      }),
+    )
   })
 
   it("uses lt for a descending keyset", async () => {
     const { adapter, findMany } = makeAdapter([])
     const keyset = { sortField: "amount", direction: "desc" as const, sortValue: 5, id: "z" }
-    await adapter.execute(findQuery({
-      sort: { field: "amount", direction: "desc" },
-      pagination: { limit: 2, primaryKey: "id", cursorField: "amount", keyset },
-    }))
+    await adapter.execute(
+      findQuery({
+        sort: { field: "amount", direction: "desc" },
+        pagination: { limit: 2, primaryKey: "id", cursorField: "amount", keyset },
+      }),
+    )
     const call = findMany.mock.calls[0][0]
     expect(call.where).toEqual({
       OR: [{ amount: { lt: 5 } }, { AND: [{ amount: 5 }, { id: { lt: "z" } }] }],
@@ -252,20 +299,27 @@ describe("PrismaAdapter find pagination", () => {
   it("simplifies the keyset WHERE when sorting by the primary key", async () => {
     const { adapter, findMany } = makeAdapter([])
     const keyset = { sortField: "id", direction: "asc" as const, sortValue: "m", id: "m" }
-    await adapter.execute(findQuery({
-      sort: { field: "id", direction: "asc" },
-      pagination: { limit: 2, primaryKey: "id", cursorField: "id", keyset },
-    }))
+    await adapter.execute(
+      findQuery({
+        sort: { field: "id", direction: "asc" },
+        pagination: { limit: 2, primaryKey: "id", cursorField: "id", keyset },
+      }),
+    )
     expect(findMany.mock.calls[0][0].where).toEqual({ id: { gt: "m" } })
   })
 
   it("strips internal-only fields from returned rows", async () => {
-    const { adapter } = makeAdapter([{ id: "a", amount: 1 }, { id: "b", amount: 2 }])
-    const res = await adapter.execute(findQuery({
-      fields: ["amount", "id"],
-      internalFields: ["id"],
-      pagination: { limit: 5, primaryKey: "id", cursorField: "amount" },
-    })) as { data: Record<string, unknown>[] }
+    const { adapter } = makeAdapter([
+      { id: "a", amount: 1 },
+      { id: "b", amount: 2 },
+    ])
+    const res = (await adapter.execute(
+      findQuery({
+        fields: ["amount", "id"],
+        internalFields: ["id"],
+        pagination: { limit: 5, primaryKey: "id", cursorField: "amount" },
+      }),
+    )) as { data: Record<string, unknown>[] }
     expect(res.data[0]).not.toHaveProperty("id")
     expect(res.data[0]).toHaveProperty("amount")
   })
@@ -277,11 +331,13 @@ describe("PrismaAdapter find pagination", () => {
       { id: "b", created_at: d },
       { id: "c", created_at: new Date("2026-06-01T00:00:00.000Z") },
     ])
-    const res = await adapter.execute(findQuery({
-      fields: ["id", "created_at"],
-      sort: { field: "created_at", direction: "asc" },
-      pagination: { limit: 2, primaryKey: "id", cursorField: "created_at" },
-    })) as { nextCursor?: string }
+    const res = (await adapter.execute(
+      findQuery({
+        fields: ["id", "created_at"],
+        sort: { field: "created_at", direction: "asc" },
+        pagination: { limit: 2, primaryKey: "id", cursorField: "created_at" },
+      }),
+    )) as { nextCursor?: string }
     expect(decodeCursor(res.nextCursor!).sortValue).toBe(d.toISOString())
   })
 })

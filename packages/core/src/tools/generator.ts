@@ -5,7 +5,14 @@ import type { GetToolsOptions, PaginationConfig } from "../vistal"
 /** Fallback pagination bounds for direct callers; production flows pass config from VistalConfig. */
 export const DEFAULT_PAGINATION: PaginationConfig = { maxLimit: 100, defaultLimit: 50 }
 
-export const CONSOLIDATED_VERBS = ["query", "get", "create", "update", "delete", "aggregate"] as const
+export const CONSOLIDATED_VERBS = [
+  "query",
+  "get",
+  "create",
+  "update",
+  "delete",
+  "aggregate",
+] as const
 export const CONSOLIDATED_META = ["list_resources", "describe_resource"] as const
 export const RESERVED_TOOL_NAMES = [...CONSOLIDATED_VERBS, ...CONSOLIDATED_META] as string[]
 
@@ -37,7 +44,7 @@ export function generateTools<TContext>(
   ctx: TContext,
   defaultPolicy: "deny-all" | "allow-all",
   paginationConfig: PaginationConfig = DEFAULT_PAGINATION,
-  options?: GetToolsOptions
+  options?: GetToolsOptions,
 ): NeutralTool[] {
   const tools: NeutralTool[] = []
   const resourceNames = options?.resources ?? Object.keys(schema.resources)
@@ -47,10 +54,34 @@ export function generateTools<TContext>(
     if (!resource) continue
 
     const readPolicy = evaluatePolicy(policies[resourceName], ctx, "read", defaultPolicy, resource)
-    const createPolicy = evaluatePolicy(policies[resourceName], ctx, "create", defaultPolicy, resource)
-    const updatePolicy = evaluatePolicy(policies[resourceName], ctx, "update", defaultPolicy, resource)
-    const deletePolicy = evaluatePolicy(policies[resourceName], ctx, "delete", defaultPolicy, resource)
-    const aggregatePolicy = evaluatePolicy(policies[resourceName], ctx, "aggregate", defaultPolicy, resource)
+    const createPolicy = evaluatePolicy(
+      policies[resourceName],
+      ctx,
+      "create",
+      defaultPolicy,
+      resource,
+    )
+    const updatePolicy = evaluatePolicy(
+      policies[resourceName],
+      ctx,
+      "update",
+      defaultPolicy,
+      resource,
+    )
+    const deletePolicy = evaluatePolicy(
+      policies[resourceName],
+      ctx,
+      "delete",
+      defaultPolicy,
+      resource,
+    )
+    const aggregatePolicy = evaluatePolicy(
+      policies[resourceName],
+      ctx,
+      "aggregate",
+      defaultPolicy,
+      resource,
+    )
 
     if (readPolicy.allowed) {
       tools.push(buildQueryTool(resourceName, resource, readPolicy, paginationConfig))
@@ -71,7 +102,9 @@ export function generateTools<TContext>(
 
     // Aggregate tool if there are numeric fields the caller may read.
     if (aggregatePolicy.allowed) {
-      const numericFields = aggregatePolicy.allowedFields.filter(f => resource.fields[f]?.type === "number")
+      const numericFields = aggregatePolicy.allowedFields.filter(
+        (f) => resource.fields[f]?.type === "number",
+      )
       if (numericFields.length > 0) {
         tools.push(buildAggregateTool(resourceName, resource, aggregatePolicy, numericFields))
       }
@@ -87,7 +120,7 @@ function buildQueryTool(
   resourceName: string,
   resource: ResourceSchema,
   policy: EvaluatedPolicy,
-  paginationConfig: PaginationConfig
+  paginationConfig: PaginationConfig,
 ): NeutralTool {
   const description = resource.description
     ? `Query multiple ${resourceName} records. ${resource.description}`
@@ -120,11 +153,13 @@ function buildPaginationSchema(cfg: PaginationConfig): Record<string, unknown> {
     },
     offset: {
       type: "number",
-      description: "Number of records to skip (ignored if cursor is supplied; prefer cursor for pagination)",
+      description:
+        "Number of records to skip (ignored if cursor is supplied; prefer cursor for pagination)",
     },
     cursor: {
       type: "string",
-      description: "Opaque pagination cursor from a previous result's nextCursor. Pass it alone to fetch the next page — it already carries the sort, so do not resend `sort` (or resend the identical one).",
+      description:
+        "Opaque pagination cursor from a previous result's nextCursor. Pass it alone to fetch the next page — it already carries the sort, so do not resend `sort` (or resend the identical one).",
     },
   }
 }
@@ -132,9 +167,9 @@ function buildPaginationSchema(cfg: PaginationConfig): Record<string, unknown> {
 function buildGetTool(
   resourceName: string,
   resource: ResourceSchema,
-  policy: EvaluatedPolicy
+  policy: EvaluatedPolicy,
 ): NeutralTool {
-  const idField = Object.values(resource.fields).find(f => f.isId)
+  const idField = Object.values(resource.fields).find((f) => f.isId)
   const idSchema = idField ? buildFieldSchema(idField) : { type: "string" }
   const description = resource.description
     ? `Get a single ${resourceName} by ID. ${resource.description}`
@@ -158,10 +193,10 @@ function buildGetTool(
 function buildCreateTool(
   resourceName: string,
   resource: ResourceSchema,
-  policy: EvaluatedPolicy
+  policy: EvaluatedPolicy,
 ): NeutralTool {
   const forcedKeys = new Set(Object.keys(policy.forcedWriteFields ?? {}))
-  const writableFields = policy.allowedFields.filter(f => {
+  const writableFields = policy.allowedFields.filter((f) => {
     const field = resource.fields[f]
     return field && !field.isId && !forcedKeys.has(f)
   })
@@ -192,13 +227,13 @@ function buildCreateTool(
 function buildUpdateTool(
   resourceName: string,
   resource: ResourceSchema,
-  policy: EvaluatedPolicy
+  policy: EvaluatedPolicy,
 ): NeutralTool {
-  const idField = Object.values(resource.fields).find(f => f.isId)
+  const idField = Object.values(resource.fields).find((f) => f.isId)
   const idSchema = idField ? buildFieldSchema(idField) : { type: "string" }
   const forcedKeys = new Set(Object.keys(policy.forcedWriteFields ?? {}))
 
-  const writableFields = policy.allowedFields.filter(f => {
+  const writableFields = policy.allowedFields.filter((f) => {
     const field = resource.fields[f]
     return field && !field.isId && !forcedKeys.has(f)
   })
@@ -226,7 +261,7 @@ function buildUpdateTool(
 }
 
 function buildDeleteTool(resourceName: string, resource: ResourceSchema): NeutralTool {
-  const idField = Object.values(resource.fields).find(f => f.isId)
+  const idField = Object.values(resource.fields).find((f) => f.isId)
   const idSchema = idField ? buildFieldSchema(idField) : { type: "string" }
 
   return {
@@ -247,7 +282,7 @@ function buildAggregateTool(
   resourceName: string,
   resource: ResourceSchema,
   policy: EvaluatedPolicy,
-  numericFields: string[]
+  numericFields: string[],
 ): NeutralTool {
   return {
     name: `aggregate_${resourceName}`,
@@ -284,7 +319,7 @@ function buildAggregateTool(
 
 function buildFiltersSchema(
   resource: ResourceSchema,
-  allowedFields: string[]
+  allowedFields: string[],
 ): Record<string, unknown> {
   const properties: Record<string, unknown> = {}
 
@@ -317,8 +352,8 @@ function buildFiltersSchema(
             properties: {
               gte: buildFieldSchema(field),
               lte: buildFieldSchema(field),
-              gt:  buildFieldSchema(field),
-              lt:  buildFieldSchema(field),
+              gt: buildFieldSchema(field),
+              lt: buildFieldSchema(field),
             },
             additionalProperties: false,
             description: `Range filter for ${fieldName}`,
@@ -332,10 +367,10 @@ function buildFiltersSchema(
           {
             type: "object",
             properties: {
-              contains:    { type: "string" },
-              startsWith:  { type: "string" },
-              endsWith:    { type: "string" },
-              in:          { type: "array", items: { type: "string" } },
+              contains: { type: "string" },
+              startsWith: { type: "string" },
+              endsWith: { type: "string" },
+              in: { type: "array", items: { type: "string" } },
             },
             additionalProperties: false,
             description: `String filter for ${fieldName}`,
@@ -357,7 +392,11 @@ function buildFiltersSchema(
 
 function buildIncludeSchema(allowedRelations: string[]): Record<string, unknown> {
   if (allowedRelations.length === 0) {
-    return { type: "array", items: { type: "string", enum: [] }, description: "Relations to include" }
+    return {
+      type: "array",
+      items: { type: "string", enum: [] },
+      description: "Relations to include",
+    }
   }
   return {
     type: "array",
@@ -385,7 +424,7 @@ export function generateConsolidatedTools<TContext>(
   ctx: TContext,
   defaultPolicy: "deny-all" | "allow-all",
   paginationConfig: PaginationConfig = DEFAULT_PAGINATION,
-  options?: GetToolsOptions
+  options?: GetToolsOptions,
 ): NeutralTool[] {
   const tools: NeutralTool[] = []
   const candidateNames = options?.resources ?? Object.keys(schema.resources)
@@ -403,21 +442,47 @@ export function generateConsolidatedTools<TContext>(
     const readPolicy = evaluatePolicy(policies[resourceName], ctx, "read", defaultPolicy, resource)
     if (readPolicy.allowed) queryResources.push(resourceName)
 
-    const aggregatePolicy = evaluatePolicy(policies[resourceName], ctx, "aggregate", defaultPolicy, resource)
+    const aggregatePolicy = evaluatePolicy(
+      policies[resourceName],
+      ctx,
+      "aggregate",
+      defaultPolicy,
+      resource,
+    )
     if (aggregatePolicy.allowed) {
-      const numericFields = aggregatePolicy.allowedFields.filter(f => resource.fields[f]?.type === "number")
+      const numericFields = aggregatePolicy.allowedFields.filter(
+        (f) => resource.fields[f]?.type === "number",
+      )
       if (numericFields.length > 0) aggregateResources.push(resourceName)
     }
 
-    const createPolicy = evaluatePolicy(policies[resourceName], ctx, "create", defaultPolicy, resource)
+    const createPolicy = evaluatePolicy(
+      policies[resourceName],
+      ctx,
+      "create",
+      defaultPolicy,
+      resource,
+    )
     if (createPolicy.allowed && createIsSatisfiable(resource, createPolicy)) {
       createResources.push(resourceName)
     }
 
-    const updatePolicy = evaluatePolicy(policies[resourceName], ctx, "update", defaultPolicy, resource)
+    const updatePolicy = evaluatePolicy(
+      policies[resourceName],
+      ctx,
+      "update",
+      defaultPolicy,
+      resource,
+    )
     if (updatePolicy.allowed) updateResources.push(resourceName)
 
-    const deletePolicy = evaluatePolicy(policies[resourceName], ctx, "delete", defaultPolicy, resource)
+    const deletePolicy = evaluatePolicy(
+      policies[resourceName],
+      ctx,
+      "delete",
+      defaultPolicy,
+      resource,
+    )
     if (deletePolicy.allowed) deleteResources.push(resourceName)
   }
 
@@ -459,7 +524,11 @@ export function generateConsolidatedTools<TContext>(
         type: "object",
         properties: {
           resource: { type: "string", enum: queryResources, description: "The resource to query" },
-          filters: { type: "object", additionalProperties: true, description: "Filter conditions (use field names from describe_resource)" },
+          filters: {
+            type: "object",
+            additionalProperties: true,
+            description: "Filter conditions (use field names from describe_resource)",
+          },
           sort: {
             type: "object",
             properties: {
@@ -469,7 +538,11 @@ export function generateConsolidatedTools<TContext>(
             required: ["field", "direction"],
             additionalProperties: false,
           },
-          include: { type: "array", items: { type: "string" }, description: "Relation names to include" },
+          include: {
+            type: "array",
+            items: { type: "string" },
+            description: "Relation names to include",
+          },
           ...buildPaginationSchema(paginationConfig),
         },
         required: ["resource"],
@@ -485,7 +558,11 @@ export function generateConsolidatedTools<TContext>(
         properties: {
           resource: { type: "string", enum: queryResources, description: "The resource to fetch" },
           id: { description: "ID of the record to retrieve" },
-          include: { type: "array", items: { type: "string" }, description: "Relation names to include" },
+          include: {
+            type: "array",
+            items: { type: "string" },
+            description: "Relation names to include",
+          },
         },
         required: ["resource", "id"],
         additionalProperties: false,
@@ -501,8 +578,16 @@ export function generateConsolidatedTools<TContext>(
       parameters: {
         type: "object",
         properties: {
-          resource: { type: "string", enum: createResources, description: "The resource to create" },
-          data: { type: "object", additionalProperties: true, description: "Field values for the new record" },
+          resource: {
+            type: "string",
+            enum: createResources,
+            description: "The resource to create",
+          },
+          data: {
+            type: "object",
+            additionalProperties: true,
+            description: "Field values for the new record",
+          },
         },
         required: ["resource", "data"],
         additionalProperties: false,
@@ -518,7 +603,11 @@ export function generateConsolidatedTools<TContext>(
       parameters: {
         type: "object",
         properties: {
-          resource: { type: "string", enum: updateResources, description: "The resource to update" },
+          resource: {
+            type: "string",
+            enum: updateResources,
+            description: "The resource to update",
+          },
           id: { description: "ID of the record to update" },
           data: { type: "object", additionalProperties: true, description: "Fields to update" },
         },
@@ -535,7 +624,11 @@ export function generateConsolidatedTools<TContext>(
       parameters: {
         type: "object",
         properties: {
-          resource: { type: "string", enum: deleteResources, description: "The resource to delete from" },
+          resource: {
+            type: "string",
+            enum: deleteResources,
+            description: "The resource to delete from",
+          },
           id: { description: "ID of the record to delete" },
         },
         required: ["resource", "id"],
@@ -552,7 +645,11 @@ export function generateConsolidatedTools<TContext>(
       parameters: {
         type: "object",
         properties: {
-          resource: { type: "string", enum: aggregateResources, description: "The resource to aggregate" },
+          resource: {
+            type: "string",
+            enum: aggregateResources,
+            description: "The resource to aggregate",
+          },
           aggregations: {
             type: "array",
             description: "List of aggregation operations to perform",
@@ -560,7 +657,10 @@ export function generateConsolidatedTools<TContext>(
               type: "object",
               properties: {
                 fn: { type: "string", enum: ["count", "sum", "avg", "min", "max"] },
-                field: { type: "string", description: "Field to aggregate (use numeric fields from describe_resource)" },
+                field: {
+                  type: "string",
+                  description: "Field to aggregate (use numeric fields from describe_resource)",
+                },
                 alias: { type: "string" },
               },
               required: ["fn", "field", "alias"],

@@ -9,11 +9,17 @@ const schema: SchemaMap = {
       name: "orders",
       tableName: "Order",
       fields: {
-        id:        { name: "id",        type: "uuid",   isNullable: false, isId: true },
+        id: { name: "id", type: "uuid", isNullable: false, isId: true },
         tenant_id: { name: "tenant_id", type: "string", isNullable: false, isId: false },
-        status:    { name: "status",    type: "enum",   isNullable: false, isId: false, enumValues: ["pending", "shipped", "delivered"] },
-        amount:    { name: "amount",    type: "number", isNullable: false, isId: false },
-        secret:    { name: "secret",    type: "string", isNullable: true,  isId: false, sensitive: true },
+        status: {
+          name: "status",
+          type: "enum",
+          isNullable: false,
+          isId: false,
+          enumValues: ["pending", "shipped", "delivered"],
+        },
+        amount: { name: "amount", type: "number", isNullable: false, isId: false },
+        secret: { name: "secret", type: "string", isNullable: true, isId: false, sensitive: true },
       },
       relations: {
         items: {
@@ -28,9 +34,9 @@ const schema: SchemaMap = {
       name: "items",
       tableName: "Item",
       fields: {
-        id:       { name: "id",       type: "uuid",   isNullable: false, isId: true },
+        id: { name: "id", type: "uuid", isNullable: false, isId: true },
         order_id: { name: "order_id", type: "string", isNullable: false, isId: false },
-        name:     { name: "name",     type: "string", isNullable: false, isId: false },
+        name: { name: "name", type: "string", isNullable: false, isId: false },
       },
       relations: {},
     },
@@ -45,7 +51,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ read: true }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     expect(query.operation).toBe("find")
     expect(query.resource).toBe("orders")
@@ -62,8 +68,8 @@ describe("buildResolvedQuery", () => {
         schema,
         { orders: () => ({ read: true }) },
         {},
-        "deny-all"
-      )
+        "deny-all",
+      ),
     ).toThrow(ValidationError)
   })
 
@@ -75,8 +81,8 @@ describe("buildResolvedQuery", () => {
         schema,
         { orders: () => ({ read: false }) },
         {},
-        "deny-all"
-      )
+        "deny-all",
+      ),
     ).toThrow(PolicyViolationError)
   })
 
@@ -87,7 +93,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ read: { tenant_id: "tenant-123" } }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     expect(query.filters).toBeDefined()
     const filterStr = JSON.stringify(query.filters)
@@ -100,7 +106,12 @@ describe("buildResolvedQuery", () => {
   it("accepts { eq } / { equals } as equality aliases", () => {
     for (const filters of [{ status: { eq: "pending" } }, { status: { equals: "pending" } }]) {
       const query = buildResolvedQuery(
-        "query_orders", { filters }, schema, { orders: () => ({ read: true }) }, {}, "deny-all"
+        "query_orders",
+        { filters },
+        schema,
+        { orders: () => ({ read: true }) },
+        {},
+        "deny-all",
       )
       expect(JSON.stringify(query.filters)).toContain('"type":"eq"')
       expect(JSON.stringify(query.filters)).toContain("pending")
@@ -109,18 +120,29 @@ describe("buildResolvedQuery", () => {
 
   it("maps { ne } to a negated equality", () => {
     const query = buildResolvedQuery(
-      "query_orders", { filters: { status: { ne: "pending" } } },
-      schema, { orders: () => ({ read: true }) }, {}, "deny-all"
+      "query_orders",
+      { filters: { status: { ne: "pending" } } },
+      schema,
+      { orders: () => ({ read: true }) },
+      {},
+      "deny-all",
     )
-    expect(query.filters).toEqual({ type: "not", filter: { type: "eq", field: "status", value: "pending" } })
+    expect(query.filters).toEqual({
+      type: "not",
+      filter: { type: "eq", field: "status", value: "pending" },
+    })
   })
 
   it("rejects an unknown filter operator with an actionable error", () => {
     expect(() =>
       buildResolvedQuery(
-        "query_orders", { filters: { status: { like: "pend%" } } },
-        schema, { orders: () => ({ read: true }) }, {}, "deny-all"
-      )
+        "query_orders",
+        { filters: { status: { like: "pend%" } } },
+        schema,
+        { orders: () => ({ read: true }) },
+        {},
+        "deny-all",
+      ),
     ).toThrow(/Unsupported filter for field "status"/)
   })
 
@@ -132,8 +154,8 @@ describe("buildResolvedQuery", () => {
         schema,
         { orders: () => ({ read: true, relations: { items: false } }) },
         {},
-        "deny-all"
-      )
+        "deny-all",
+      ),
     ).toThrow(ValidationError)
   })
 
@@ -144,7 +166,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ read: true }), items: () => ({ read: true }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     expect(query.include).toBeDefined()
     expect(query.include!.items).toBeDefined()
@@ -159,7 +181,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ read: true, fields: { deny: ["amount"] } }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     expect(query.fields).not.toContain("amount")
   })
@@ -171,7 +193,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ read: true }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     expect(query.operation).toBe("findOne")
     const filterStr = JSON.stringify(query.filters)
@@ -186,8 +208,8 @@ describe("buildResolvedQuery", () => {
         schema,
         { orders: () => ({ read: true, write: false }) },
         {},
-        "deny-all"
-      )
+        "deny-all",
+      ),
     ).toThrow(PolicyViolationError)
   })
 
@@ -199,8 +221,8 @@ describe("buildResolvedQuery", () => {
         schema,
         { orders: () => ({ read: true, fields: { allow: ["id", "status"] } }) },
         {},
-        "deny-all"
-      )
+        "deny-all",
+      ),
     ).toThrow(ValidationError)
   })
 
@@ -212,8 +234,8 @@ describe("buildResolvedQuery", () => {
         schema,
         { orders: () => ({ read: true }) },
         {},
-        "deny-all"
-      )
+        "deny-all",
+      ),
     ).toThrow(ValidationError)
   })
 
@@ -224,7 +246,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ read: true }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     expect(JSON.stringify(query.filters)).toContain("pending")
   })
@@ -238,7 +260,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ write: { tenant_id: ctx.tenant.id } }) },
       ctx,
-      "deny-all"
+      "deny-all",
     )
     expect(createQuery.data?.tenant_id).toBe("t1")
 
@@ -248,7 +270,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ write: { tenant_id: ctx.tenant.id } }) },
       ctx,
-      "deny-all"
+      "deny-all",
     )
     expect(updateQuery.data?.tenant_id).toBe("t1")
     // Where filter must include tenant guard
@@ -265,7 +287,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ write: { tenant_id: ctx.tenant.id } }) },
       ctx,
-      "deny-all"
+      "deny-all",
     )
     // Policy wins over LLM input
     expect(query.data?.tenant_id).toBe("t1")
@@ -278,7 +300,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ read: true }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     expect(query.operation).toBe("aggregate")
     expect(query.aggregations).toBeDefined()
@@ -291,7 +313,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ read: { amount: { lt: 1000 } } }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     expect(query.filters).toEqual({ type: "range", field: "amount", lt: 1000 })
   })
@@ -303,7 +325,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ update: { tenant_id: "t1", amount: { lt: 1000 } } }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     // Only the scalar equality is injected into the row…
     expect(query.data?.tenant_id).toBe("t1")
@@ -323,8 +345,8 @@ describe("buildResolvedQuery", () => {
         schema,
         { orders: () => ({ create: { amount: { gt: 0 } } }) },
         {},
-        "deny-all"
-      )
+        "deny-all",
+      ),
     ).toThrow(ValidationError)
   })
 
@@ -335,7 +357,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ read: { OR: [{ tenant_id: "t1" }, { status: "shipped" }] } }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     // Top level must be an AND wrapping the policy OR; the LLM filter cannot
     // escape the disjunctive scope.
@@ -362,11 +384,18 @@ describe("buildResolvedQuery", () => {
       schema,
       policies,
       {},
-      "deny-all"
+      "deny-all",
     )
     expect(created.data?.tenant_id).toBe("t1")
     expect(() =>
-      buildResolvedQuery("update_orders", { id: "o1", amount: 20 }, schema, policies, {}, "deny-all")
+      buildResolvedQuery(
+        "update_orders",
+        { id: "o1", amount: 20 },
+        schema,
+        policies,
+        {},
+        "deny-all",
+      ),
     ).toThrow(PolicyViolationError)
   })
 
@@ -377,7 +406,7 @@ describe("buildResolvedQuery", () => {
       schema,
       { orders: () => ({ read: true }) },
       {},
-      "deny-all"
+      "deny-all",
     )
     expect(query.pagination?.offset).toBe(0)
   })

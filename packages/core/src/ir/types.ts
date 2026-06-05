@@ -35,7 +35,7 @@ export interface ResolvedInclude {
   type: "belongsTo" | "hasMany" | "manyToMany"
   foreignKey: string
   fields: string[]
-  filters?: FilterNode   // relation's own policy filters injected here
+  filters?: FilterNode // relation's own policy filters injected here
 }
 
 // Filter nodes — composable
@@ -49,14 +49,47 @@ export type FilterNode =
   | OrFilter
   | NotFilter
 
-export interface EqFilter    { type: "eq";    field: string; value: unknown }
-export interface InFilter    { type: "in";    field: string; values: unknown[] }
-export interface RangeFilter { type: "range"; field: string; gte?: unknown; lte?: unknown; gt?: unknown; lt?: unknown }
-export interface LikeFilter  { type: "like";  field: string; value: string; mode?: "contains" | "startsWith" | "endsWith" }
-export interface NullFilter  { type: "null";  field: string; isNull: boolean }
-export interface AndFilter   { type: "and";   filters: FilterNode[] }
-export interface OrFilter    { type: "or";    filters: FilterNode[] }
-export interface NotFilter   { type: "not";   filter: FilterNode }
+export interface EqFilter {
+  type: "eq"
+  field: string
+  value: unknown
+}
+export interface InFilter {
+  type: "in"
+  field: string
+  values: unknown[]
+}
+export interface RangeFilter {
+  type: "range"
+  field: string
+  gte?: unknown
+  lte?: unknown
+  gt?: unknown
+  lt?: unknown
+}
+export interface LikeFilter {
+  type: "like"
+  field: string
+  value: string
+  mode?: "contains" | "startsWith" | "endsWith"
+}
+export interface NullFilter {
+  type: "null"
+  field: string
+  isNull: boolean
+}
+export interface AndFilter {
+  type: "and"
+  filters: FilterNode[]
+}
+export interface OrFilter {
+  type: "or"
+  filters: FilterNode[]
+}
+export interface NotFilter {
+  type: "not"
+  filter: FilterNode
+}
 
 export interface SortClause {
   field: string
@@ -66,10 +99,10 @@ export interface SortClause {
 export interface PaginationClause {
   limit?: number
   offset?: number
-  cursor?: string            // raw token as received (reference/debug)
-  keyset?: CursorKeyset      // decoded keyset when a valid cursor was supplied
-  primaryKey: string         // pk field name — always set by the builder for finds
-  cursorField: string        // field nextCursor is keyed on (the effective sort field)
+  cursor?: string // raw token as received (reference/debug)
+  keyset?: CursorKeyset // decoded keyset when a valid cursor was supplied
+  primaryKey: string // pk field name — always set by the builder for finds
+  cursorField: string // field nextCursor is keyed on (the effective sort field)
 }
 
 export interface AggregationClause {

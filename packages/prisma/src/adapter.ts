@@ -1,12 +1,18 @@
 import type { PrismaClient } from "@prisma/client"
-import type { VistalAdapter, SchemaMap, ResolvedQuery, FilterNode, ResolvedInclude } from "@vistal/core"
+import type {
+  VistalAdapter,
+  SchemaMap,
+  ResolvedQuery,
+  FilterNode,
+  ResolvedInclude,
+} from "@vistal/core"
 import { encodeCursor } from "@vistal/core"
 import { introspectPrisma } from "./introspection"
 
 export class PrismaAdapter implements VistalAdapter {
   constructor(
     private prisma: PrismaClient,
-    private schemaPath?: string
+    private schemaPath?: string,
   ) {}
 
   async introspect(): Promise<SchemaMap> {
@@ -20,7 +26,9 @@ export class PrismaAdapter implements VistalAdapter {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const model = (this.prisma as any)[clientKey]
     if (!model) {
-      throw new Error(`Prisma model not found for resource: ${query.resource} (tried key: ${clientKey})`)
+      throw new Error(
+        `Prisma model not found for resource: ${query.resource} (tried key: ${clientKey})`,
+      )
     }
 
     const where = query.filters ? translateFilter(query.filters) : undefined
@@ -28,9 +36,7 @@ export class PrismaAdapter implements VistalAdapter {
     const include = query.include ? buildInclude(query.include) : undefined
 
     // Prisma: use select for scalar fields, merge nested relation objects into the same select
-    const selectWithIncludes = include
-      ? { ...select, ...include }
-      : select
+    const selectWithIncludes = include ? { ...select, ...include } : select
 
     switch (query.operation) {
       case "find": {
@@ -44,23 +50,22 @@ export class PrismaAdapter implements VistalAdapter {
         const args: Record<string, unknown> = { select: selectWithIncludes }
 
         // orderBy: sort field + primary-key tiebreaker for a total, stable order.
-        args.orderBy = sort.field === pk
-          ? [{ [pk]: dir }]
-          : [{ [sort.field]: dir }, { [pk]: dir }]
+        args.orderBy = sort.field === pk ? [{ [pk]: dir }] : [{ [sort.field]: dir }, { [pk]: dir }]
 
         // Keyset WHERE from the cursor; falls back to offset/skip when no cursor.
         let effectiveWhere = where
         if (pag?.keyset) {
           const op = dir === "asc" ? "gt" : "lt"
           const ks = pag.keyset
-          const keysetWhere = sort.field === pk
-            ? { [pk]: { [op]: ks.id } }
-            : {
-                OR: [
-                  { [sort.field]: { [op]: ks.sortValue } },
-                  { AND: [{ [sort.field]: ks.sortValue }, { [pk]: { [op]: ks.id } }] },
-                ],
-              }
+          const keysetWhere =
+            sort.field === pk
+              ? { [pk]: { [op]: ks.id } }
+              : {
+                  OR: [
+                    { [sort.field]: { [op]: ks.sortValue } },
+                    { AND: [{ [sort.field]: ks.sortValue }, { [pk]: { [op]: ks.id } }] },
+                  ],
+                }
           effectiveWhere = where ? { AND: [where, keysetWhere] } : keysetWhere
         } else if (pag?.offset !== undefined) {
           args.skip = pag.offset
@@ -119,13 +124,13 @@ export class PrismaAdapter implements VistalAdapter {
           where: fullWhere,
           data: query.data ?? {},
         })
-        return result  // { count: N }
+        return result // { count: N }
       }
 
       case "delete": {
         // Use deleteMany with the full where for the same scoping guarantee.
         const fullWhere = where ?? {}
-        return model.deleteMany({ where: fullWhere })  // { count: N }
+        return model.deleteMany({ where: fullWhere }) // { count: N }
       }
 
       case "aggregate": {
@@ -166,9 +171,7 @@ function buildSelect(fields: string[]): Record<string, true> {
   return select
 }
 
-function buildInclude(
-  include: Record<string, ResolvedInclude>
-): Record<string, unknown> {
+function buildInclude(include: Record<string, ResolvedInclude>): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const [name, rel] of Object.entries(include)) {
     const relSelect = buildSelect(rel.fields)
@@ -186,14 +189,14 @@ function buildInclude(
 // For array results: null out any belongsTo includes that don't satisfy the relation's row filter
 function applyBelongsToFilters(
   results: unknown[],
-  include: Record<string, ResolvedInclude>
+  include: Record<string, ResolvedInclude>,
 ): unknown[] {
-  return results.map(r => applyBelongsToFiltersOne(r, include))
+  return results.map((r) => applyBelongsToFiltersOne(r, include))
 }
 
 function applyBelongsToFiltersOne(
   result: unknown,
-  include: Record<string, ResolvedInclude>
+  include: Record<string, ResolvedInclude>,
 ): unknown {
   if (!result || typeof result !== "object") return result
   const out = { ...(result as Record<string, unknown>) }
@@ -214,15 +217,17 @@ function applyBelongsToFiltersOne(
 // predicates are enforced rather than silently passed.
 export function matchesFilter(obj: Record<string, unknown>, filter: FilterNode): boolean {
   switch (filter.type) {
-    case "eq":  return obj[filter.field] === filter.value
-    case "in":  return (filter.values as unknown[]).includes(obj[filter.field])
+    case "eq":
+      return obj[filter.field] === filter.value
+    case "in":
+      return (filter.values as unknown[]).includes(obj[filter.field])
     case "range": {
       const v = obj[filter.field] as number | string | Date | null | undefined
       if (v === null || v === undefined) return false
       if (filter.gte !== undefined && !(v >= (filter.gte as typeof v))) return false
       if (filter.lte !== undefined && !(v <= (filter.lte as typeof v))) return false
-      if (filter.gt  !== undefined && !(v >  (filter.gt  as typeof v))) return false
-      if (filter.lt  !== undefined && !(v <  (filter.lt  as typeof v))) return false
+      if (filter.gt !== undefined && !(v > (filter.gt as typeof v))) return false
+      if (filter.lt !== undefined && !(v < (filter.lt as typeof v))) return false
       return true
     }
     case "like": {
@@ -231,7 +236,7 @@ export function matchesFilter(obj: Record<string, unknown>, filter: FilterNode):
       const hay = v.toLowerCase()
       const needle = filter.value.toLowerCase()
       if (filter.mode === "startsWith") return hay.startsWith(needle)
-      if (filter.mode === "endsWith")   return hay.endsWith(needle)
+      if (filter.mode === "endsWith") return hay.endsWith(needle)
       return hay.includes(needle)
     }
     case "null": {
@@ -239,9 +244,12 @@ export function matchesFilter(obj: Record<string, unknown>, filter: FilterNode):
       const isNull = v === null || v === undefined
       return filter.isNull ? isNull : !isNull
     }
-    case "and": return filter.filters.every(f => matchesFilter(obj, f))
-    case "or":  return filter.filters.some(f => matchesFilter(obj, f))
-    case "not": return !matchesFilter(obj, filter.filter)
+    case "and":
+      return filter.filters.every((f) => matchesFilter(obj, f))
+    case "or":
+      return filter.filters.some((f) => matchesFilter(obj, f))
+    case "not":
+      return !matchesFilter(obj, filter.filter)
   }
 }
 
@@ -249,7 +257,7 @@ async function executeAggregate(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   model: any,
   query: ResolvedQuery,
-  where: Record<string, unknown> | undefined
+  where: Record<string, unknown> | undefined,
 ): Promise<unknown> {
   const aggs = query.aggregations ?? []
   const groupBy = query.groupBy
@@ -300,8 +308,8 @@ export function translateFilter(node: FilterNode): Record<string, unknown> {
       const rangeObj: Record<string, unknown> = {}
       if (node.gte !== undefined) rangeObj.gte = node.gte
       if (node.lte !== undefined) rangeObj.lte = node.lte
-      if (node.gt !== undefined)  rangeObj.gt  = node.gt
-      if (node.lt !== undefined)  rangeObj.lt  = node.lt
+      if (node.gt !== undefined) rangeObj.gt = node.gt
+      if (node.lt !== undefined) rangeObj.lt = node.lt
       return { [node.field]: rangeObj }
     }
 

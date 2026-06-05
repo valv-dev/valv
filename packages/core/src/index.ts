@@ -20,12 +20,7 @@ export type { CursorKeyset } from "./ir/cursor"
 // Built-ins are also reachable via `vistal.tools.<provider>(ctx)`.
 export * as formats from "./formatters"
 export { anthropic, openai, gemini } from "./formatters"
-export type {
-  ToolFormatter,
-  AnthropicTool,
-  OpenAITool,
-  GeminiTool,
-} from "./formatters"
+export type { ToolFormatter, AnthropicTool, OpenAITool, GeminiTool } from "./formatters"
 export type { NeutralTool } from "./tools/generator"
 export type {
   PolicyFn,

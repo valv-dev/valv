@@ -1,7 +1,14 @@
 import { SchemaMap, PolicyFn, PolicyResult, DefaultContext } from "./types"
 import { ResolvedQuery } from "./ir/types"
 import { buildResolvedQuery } from "./ir/builder"
-import { generateTools, generateConsolidatedTools, NeutralTool, CONSOLIDATED_VERBS, CONSOLIDATED_META, DEFAULT_PAGINATION } from "./tools/generator"
+import {
+  generateTools,
+  generateConsolidatedTools,
+  NeutralTool,
+  CONSOLIDATED_VERBS,
+  CONSOLIDATED_META,
+  DEFAULT_PAGINATION,
+} from "./tools/generator"
 import { evaluatePolicy, EvaluatedPolicy } from "./policy/engine"
 import { serializeResult } from "./serializer"
 import * as formats from "./formatters"
@@ -150,8 +157,11 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
         this.formatTools(ctx, formats.gemini, options),
       vercel: (ctx: TContext, options?: GetToolsOptions<TResources>) =>
         this.vercelTools(ctx, options),
-      format: <T>(ctx: TContext, formatter: ToolFormatter<T>, options?: GetToolsOptions<TResources>) =>
-        this.formatTools(ctx, formatter, options),
+      format: <T>(
+        ctx: TContext,
+        formatter: ToolFormatter<T>,
+        options?: GetToolsOptions<TResources>,
+      ) => this.formatTools(ctx, formatter, options),
     }
   }
 
@@ -163,8 +173,8 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
    */
   private async vercelTools(
     ctx: TContext,
-    options?: GetToolsOptions<TResources>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    options?: GetToolsOptions<TResources>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<Record<string, any>> {
     let ai: { tool: (def: unknown) => unknown; jsonSchema: (schema: object) => unknown }
     try {
@@ -172,7 +182,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
       ai = await import(specifier)
     } catch {
       throw new Error(
-        '[vistal] tools.vercel() requires the "ai" package (Vercel AI SDK). Install it with: npm install ai'
+        '[vistal] tools.vercel() requires the "ai" package (Vercel AI SDK). Install it with: npm install ai',
       )
     }
 
@@ -196,12 +206,22 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
   }
 
   /** Generate provider-neutral tool definitions shaped by the evaluated policy. */
-  private async neutralTools(ctx: TContext, options?: GetToolsOptions<TResources>): Promise<NeutralTool[]> {
+  private async neutralTools(
+    ctx: TContext,
+    options?: GetToolsOptions<TResources>,
+  ): Promise<NeutralTool[]> {
     const schema = await this.loadSchema()
     this.validatePolicyKeys(schema)
     const policies = this.buildEffectivePolicies(schema)
     if (options?.mode === "consolidated") {
-      return generateConsolidatedTools(schema, policies, ctx, this.defaultPolicy, this.pagination, options)
+      return generateConsolidatedTools(
+        schema,
+        policies,
+        ctx,
+        this.defaultPolicy,
+        this.pagination,
+        options,
+      )
     }
     return generateTools(schema, policies, ctx, this.defaultPolicy, this.pagination, options)
   }
@@ -209,10 +229,10 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
   private async formatTools<T>(
     ctx: TContext,
     formatter: ToolFormatter<T>,
-    options?: GetToolsOptions<TResources>
+    options?: GetToolsOptions<TResources>,
   ): Promise<FormattedTool<T>[]> {
     const neutral = await this.neutralTools(ctx, options)
-    return neutral.map(t => ({
+    return neutral.map((t) => ({
       definition: formatter(t),
       name: t.name,
       execute: async (args: unknown) => serializeResult(await this.executeTool(t.name, args, ctx)),
@@ -225,13 +245,16 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
    */
   async getTools(ctx: TContext, options?: GetToolsOptions<TResources>): Promise<LLMTool[]> {
     const neutral = await this.neutralTools(ctx, options)
-    return neutral.map(t => formats.anthropic(t))
+    return neutral.map((t) => formats.anthropic(t))
   }
 
   /** Returns tools with execute() attached and result serialization (Decimal/Date/BigInt) built in. */
-  async executableTools(ctx: TContext, options?: GetToolsOptions<TResources>): Promise<ExecutableTool[]> {
+  async executableTools(
+    ctx: TContext,
+    options?: GetToolsOptions<TResources>,
+  ): Promise<ExecutableTool[]> {
     const llmTools = await this.getTools(ctx, options)
-    return llmTools.map(t => ({
+    return llmTools.map((t) => ({
       ...t,
       execute: async (args: unknown) => {
         const result = await this.executeTool(t.name, args, ctx)
@@ -243,7 +266,9 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
   async executeTool(toolName: string, input: unknown, ctx: TContext): Promise<unknown> {
     const start = Date.now()
     let caughtError: Error | undefined
-    let resolvedResource = toolName.includes("_") ? toolName.slice(toolName.indexOf("_") + 1) : toolName
+    let resolvedResource = toolName.includes("_")
+      ? toolName.slice(toolName.indexOf("_") + 1)
+      : toolName
 
     try {
       const schema = await this.loadSchema()
@@ -269,16 +294,35 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
         let normalizedInput: Record<string, unknown>
         if (toolName === "create" || toolName === "update") {
           const { resource: _r, data, ...rest } = inp
-          normalizedInput = { ...rest, ...(typeof data === "object" && data !== null ? data as Record<string, unknown> : {}) }
+          normalizedInput = {
+            ...rest,
+            ...(typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {}),
+          }
         } else {
           const { resource: _r, ...rest } = inp
           normalizedInput = rest
         }
-        const query = buildResolvedQuery(internalName, normalizedInput, schema, policies, ctx, this.defaultPolicy, this.pagination)
+        const query = buildResolvedQuery(
+          internalName,
+          normalizedInput,
+          schema,
+          policies,
+          ctx,
+          this.defaultPolicy,
+          this.pagination,
+        )
         return await this.adapter.execute(query)
       }
 
-      const query = buildResolvedQuery(toolName, input, schema, policies, ctx, this.defaultPolicy, this.pagination)
+      const query = buildResolvedQuery(
+        toolName,
+        input,
+        schema,
+        policies,
+        ctx,
+        this.defaultPolicy,
+        this.pagination,
+      )
       return await this.adapter.execute(query)
     } catch (e) {
       caughtError = e as Error
@@ -306,7 +350,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
     resourceName: string,
     resource: SchemaMap["resources"][string],
     policies: Record<string, PolicyFn<TContext>>,
-    ctx: TContext
+    ctx: TContext,
   ): {
     ops: string[]
     readPolicy: EvaluatedPolicy
@@ -325,7 +369,10 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
 
     const ops: string[] = []
     if (readPolicy.allowed) ops.push("query", "get")
-    if (aggregatePolicy.allowed && aggregatePolicy.allowedFields.some(f => resource.fields[f]?.type === "number")) {
+    if (
+      aggregatePolicy.allowed &&
+      aggregatePolicy.allowedFields.some((f) => resource.fields[f]?.type === "number")
+    ) {
       ops.push("aggregate")
     }
     if (createPolicy.allowed) {
@@ -345,12 +392,13 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
   private async listResourcesResult(
     schema: SchemaMap,
     policies: Record<string, PolicyFn<TContext>>,
-    ctx: TContext
+    ctx: TContext,
   ): Promise<unknown> {
     const result: { name: string; description?: string; operations: string[] }[] = []
     for (const [resourceName, resource] of Object.entries(schema.resources)) {
       const { ops } = this.resourceOperations(resourceName, resource, policies, ctx)
-      if (ops.length > 0) result.push({ name: resourceName, description: resource.description, operations: ops })
+      if (ops.length > 0)
+        result.push({ name: resourceName, description: resource.description, operations: ops })
     }
     return result
   }
@@ -359,23 +407,33 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
     resourceName: string,
     schema: SchemaMap,
     policies: Record<string, PolicyFn<TContext>>,
-    ctx: TContext
+    ctx: TContext,
   ): Promise<unknown> {
     const resource = schema.resources[resourceName]
     if (!resource) throw new ValidationError(`Unknown resource: "${resourceName}"`)
 
-    const { ops, readPolicy, createPolicy, updatePolicy } =
-      this.resourceOperations(resourceName, resource, policies, ctx)
+    const { ops, readPolicy, createPolicy, updatePolicy } = this.resourceOperations(
+      resourceName,
+      resource,
+      policies,
+      ctx,
+    )
 
     // Writable fields come from whichever write op is permitted; create/update
     // share the same field policy, so prefer update when both exist.
-    const writeEval = updatePolicy.allowed ? updatePolicy : (createPolicy.allowed ? createPolicy : undefined)
+    const writeEval = updatePolicy.allowed
+      ? updatePolicy
+      : createPolicy.allowed
+        ? createPolicy
+        : undefined
     const readableFields = new Set(readPolicy.allowed ? readPolicy.allowedFields : [])
-    const writableFields = new Set(writeEval ? writeEval.allowedFields.filter(f => !resource.fields[f]?.isId) : [])
+    const writableFields = new Set(
+      writeEval ? writeEval.allowedFields.filter((f) => !resource.fields[f]?.isId) : [],
+    )
 
     const fields = Object.values(resource.fields)
-      .filter(f => readableFields.has(f.name) || writableFields.has(f.name))
-      .map(f => ({
+      .filter((f) => readableFields.has(f.name) || writableFields.has(f.name))
+      .map((f) => ({
         name: f.name,
         type: f.type,
         ...(f.enumValues ? { enumValues: f.enumValues } : {}),
@@ -386,12 +444,20 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
       }))
 
     const allowedRelations = readPolicy.allowed ? readPolicy.allowedRelations : []
-    const relations = allowedRelations.map(relName => {
-      const rel = resource.relations[relName]
-      return rel ? { name: rel.name, target: rel.targetResource, type: rel.type } : null
-    }).filter(Boolean)
+    const relations = allowedRelations
+      .map((relName) => {
+        const rel = resource.relations[relName]
+        return rel ? { name: rel.name, target: rel.targetResource, type: rel.type } : null
+      })
+      .filter(Boolean)
 
-    return { name: resourceName, description: resource.description, operations: ops, fields, relations }
+    return {
+      name: resourceName,
+      description: resource.description,
+      operations: ops,
+      fields,
+      relations,
+    }
   }
 
   async loadSchema(): Promise<SchemaMap> {
@@ -410,9 +476,9 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
   /** Returns schema info + policy stubs for all resources — useful for discovering resource names. */
   async describe(): Promise<ResourceDescriptor[]> {
     const schema = await this.loadSchema()
-    return Object.values(schema.resources).map(r => ({
+    return Object.values(schema.resources).map((r) => ({
       name: r.name,
-      fields: Object.values(r.fields).map(f => ({
+      fields: Object.values(r.fields).map((f) => ({
         name: f.name,
         type: f.type,
         isId: f.isId,
@@ -420,7 +486,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
         hasDefaultValue: f.hasDefaultValue ?? false,
         sensitive: f.sensitive ?? false,
       })),
-      relations: Object.values(r.relations).map(rel => ({
+      relations: Object.values(r.relations).map((rel) => ({
         name: rel.name,
         target: rel.targetResource,
         type: rel.type,

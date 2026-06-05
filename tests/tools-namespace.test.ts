@@ -10,8 +10,8 @@ const schema: SchemaMap = {
       name: "order",
       tableName: "Order",
       fields: {
-        id:        { name: "id",        type: "uuid",   isNullable: false, isId: true,  hasDefaultValue: true },
-        amount:    { name: "amount",    type: "number", isNullable: false, isId: false },
+        id: { name: "id", type: "uuid", isNullable: false, isId: true, hasDefaultValue: true },
+        amount: { name: "amount", type: "number", isNullable: false, isId: false },
         tenant_id: { name: "tenant_id", type: "string", isNullable: false, isId: false },
       },
       relations: {},
@@ -42,7 +42,7 @@ describe("vistal.tools namespace", () => {
   it("openai returns { type: 'function', function } definitions", async () => {
     const vistal = makeVista(new MockAdapter())
     const tools = await vistal.tools.openai(ctx)
-    const query = tools.find(t => t.name === "query_order")!
+    const query = tools.find((t) => t.name === "query_order")!
     expect(query.definition.type).toBe("function")
     expect(query.definition.function.name).toBe("query_order")
     expect(query.definition.function).toHaveProperty("parameters")
@@ -51,7 +51,7 @@ describe("vistal.tools namespace", () => {
   it("anthropic returns input_schema definitions", async () => {
     const vistal = makeVista(new MockAdapter())
     const tools = await vistal.tools.anthropic(ctx)
-    const query = tools.find(t => t.name === "query_order")!
+    const query = tools.find((t) => t.name === "query_order")!
     expect(query.definition).toHaveProperty("input_schema")
     expect(query.definition.name).toBe("query_order")
   })
@@ -59,7 +59,7 @@ describe("vistal.tools namespace", () => {
   it("gemini produces flat function declarations", async () => {
     const vistal = makeVista(new MockAdapter())
     const gemini = await vistal.tools.gemini(ctx)
-    const g = gemini.find(t => t.name === "query_order")!.definition
+    const g = gemini.find((t) => t.name === "query_order")!.definition
     expect(g.name).toBe("query_order")
     expect(g).toHaveProperty("parameters")
   })
@@ -78,7 +78,7 @@ describe("vistal.tools namespace", () => {
     const adapter = new MockAdapter()
     const vistal = makeVista(adapter)
     const tools = await vistal.tools.openai(ctx)
-    const result = await tools.find(t => t.name === "query_order")!.execute({})
+    const result = await tools.find((t) => t.name === "query_order")!.execute({})
     expect(result).toEqual([{ id: "o1", amount: 10, tenant_id: "t1" }])
     // policy row filter is merged into the executed query
     expect(JSON.stringify(adapter.lastQuery)).toContain("tenant_id")
@@ -86,14 +86,18 @@ describe("vistal.tools namespace", () => {
 
   it("vercel execute() hides raw adapter errors behind a generic message", async () => {
     class ThrowingAdapter implements VistalAdapter {
-      async introspect(): Promise<SchemaMap> { return schema }
+      async introspect(): Promise<SchemaMap> {
+        return schema
+      }
       async execute(): Promise<unknown> {
         throw new Error("Invalid `model.findMany()` invocation in /home/nico/.../adapter.ts:74")
       }
     }
-    const vistal = new Vistal({ adapter: new ThrowingAdapter() }).policy("order", () => ({ read: true }))
+    const vistal = new Vistal({ adapter: new ThrowingAdapter() }).policy("order", () => ({
+      read: true,
+    }))
     const tools = await vistal.tools.vercel(ctx)
-    const result = await tools["query_order"].execute({}) as { error: string }
+    const result = (await tools["query_order"].execute({})) as { error: string }
     expect(result.error).toBe("The query could not be completed due to an internal error.")
     expect(result.error).not.toContain("adapter.ts")
   })
@@ -102,21 +106,23 @@ describe("vistal.tools namespace", () => {
     const vistal = makeVista(new MockAdapter())
     const tools = await vistal.tools.vercel(ctx)
     // unknown filter operator → ValidationError surfaced verbatim for model recovery
-    const result = await tools["query_order"].execute({ filters: { amount: { between: [1, 5] } } }) as { error: string }
+    const result = (await tools["query_order"].execute({
+      filters: { amount: { between: [1, 5] } },
+    })) as { error: string }
     expect(result.error).toMatch(/Unsupported filter for field "amount"/)
   })
 
   it("format() honors a custom formatter", async () => {
     const vistal = makeVista(new MockAdapter())
     const tools = await vistal.tools.format(ctx, (t) => ({ id: t.name, schema: t.parameters }))
-    const query = tools.find(t => t.name === "query_order")!
+    const query = tools.find((t) => t.name === "query_order")!
     expect((query.definition as any).id).toBe("query_order")
     expect(query.definition).toHaveProperty("schema")
   })
 
   it("write: false → no create/update tools in any format", async () => {
     const vistal = makeVista(new MockAdapter())
-    const names = (await vistal.tools.openai(ctx)).map(t => t.name)
+    const names = (await vistal.tools.openai(ctx)).map((t) => t.name)
     expect(names).not.toContain("create_order")
     expect(names).not.toContain("update_order")
   })
@@ -124,7 +130,7 @@ describe("vistal.tools namespace", () => {
   it("getTools() still returns the legacy Anthropic input_schema shape", async () => {
     const vistal = makeVista(new MockAdapter())
     const tools = await vistal.getTools(ctx)
-    const query = tools.find(t => t.name === "query_order")!
+    const query = tools.find((t) => t.name === "query_order")!
     expect(query).toHaveProperty("input_schema")
     expect(query).not.toHaveProperty("parameters")
   })

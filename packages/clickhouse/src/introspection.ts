@@ -24,28 +24,32 @@ interface SysTable {
 
 export async function introspectClickHouse(
   client: ClickHouseClient,
-  database?: string
+  database?: string,
 ): Promise<SchemaMap> {
-  const db = database ?? await resolveDatabase(client)
+  const db = database ?? (await resolveDatabase(client))
 
   const [columns, tables] = await Promise.all([
-    client.query({
-      query: `
+    client
+      .query({
+        query: `
         SELECT table, name, type, position, default_kind, is_in_primary_key, comment
         FROM system.columns
         WHERE database = '${db}'
         ORDER BY table, position
       `,
-      format: "JSONEachRow",
-    }).then(r => r.json() as Promise<SysColumn[]>),
-    client.query({
-      query: `
+        format: "JSONEachRow",
+      })
+      .then((r) => r.json() as Promise<SysColumn[]>),
+    client
+      .query({
+        query: `
         SELECT name, comment
         FROM system.tables
         WHERE database = '${db}'
       `,
-      format: "JSONEachRow",
-    }).then(r => r.json() as Promise<SysTable[]>),
+        format: "JSONEachRow",
+      })
+      .then((r) => r.json() as Promise<SysTable[]>),
   ])
 
   const tableComments: Record<string, string> = {}
@@ -67,8 +71,9 @@ export async function introspectClickHouse(
     const fields: Record<string, FieldSchema> = {}
 
     // Determine the id column: prefer one literally named "id", else first primary key col
-    const idColName = cols.find(c => c.name === "id")?.name
-      ?? cols.find(c => Number(c.is_in_primary_key) === 1)?.name
+    const idColName =
+      cols.find((c) => c.name === "id")?.name ??
+      cols.find((c) => Number(c.is_in_primary_key) === 1)?.name
 
     for (const col of cols) {
       const { baseType, isNullable } = unwrapType(col.type)
@@ -107,10 +112,12 @@ export async function introspectClickHouse(
 }
 
 async function resolveDatabase(client: ClickHouseClient): Promise<string> {
-  const result = await client.query({
-    query: "SELECT currentDatabase() AS db",
-    format: "JSONEachRow",
-  }).then(r => r.json() as Promise<{ db: string }[]>)
+  const result = await client
+    .query({
+      query: "SELECT currentDatabase() AS db",
+      format: "JSONEachRow",
+    })
+    .then((r) => r.json() as Promise<{ db: string }[]>)
   return result[0]?.db ?? "default"
 }
 
@@ -138,18 +145,26 @@ function unwrapType(rawType: string): { baseType: string; isNullable: boolean } 
 function mapClickHouseType(t: string): FieldType | null {
   if (t === "String" || t.startsWith("FixedString(")) return "string"
   if (
-    t.startsWith("Int") || t.startsWith("UInt") ||
-    t.startsWith("Float") || t.startsWith("Decimal")
-  ) return "number"
+    t.startsWith("Int") ||
+    t.startsWith("UInt") ||
+    t.startsWith("Float") ||
+    t.startsWith("Decimal")
+  )
+    return "number"
   if (t === "Bool" || t === "Boolean") return "boolean"
   if (t.startsWith("Date") || t.startsWith("DateTime")) return "date"
   if (t === "UUID") return "uuid"
   if (t.startsWith("Enum8(") || t.startsWith("Enum16(")) return "enum"
   if (
-    t.startsWith("Array(") || t.startsWith("Map(") ||
-    t.startsWith("Tuple(") || t.startsWith("Nested(") ||
-    t === "JSON" || t.startsWith("IPv") || t === "Object('json')"
-  ) return "json"
+    t.startsWith("Array(") ||
+    t.startsWith("Map(") ||
+    t.startsWith("Tuple(") ||
+    t.startsWith("Nested(") ||
+    t === "JSON" ||
+    t.startsWith("IPv") ||
+    t === "Object('json')"
+  )
+    return "json"
   return null
 }
 

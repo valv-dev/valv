@@ -12,7 +12,7 @@ export class ClickHouseAdapter implements VistalAdapter {
 
   constructor(
     private client: ClickHouseClient,
-    private options: ClickHouseAdapterOptions = {}
+    private options: ClickHouseAdapterOptions = {},
   ) {}
 
   async introspect(): Promise<SchemaMap> {
@@ -47,13 +47,11 @@ export class ClickHouseAdapter implements VistalAdapter {
     }
   }
 
-  private async executeFind(
-    query: ResolvedQuery,
-    table: string,
-    one: boolean
-  ): Promise<unknown> {
+  private async executeFind(query: ResolvedQuery, table: string, one: boolean): Promise<unknown> {
     if (query.fields.length === 0) {
-      throw new Error(`[vistal/clickhouse] find on "${query.resource}" resolved to zero fields — policy may be denying all fields`)
+      throw new Error(
+        `[vistal/clickhouse] find on "${query.resource}" resolved to zero fields — policy may be denying all fields`,
+      )
     }
 
     const selectCols = query.fields.map(quoteIdent).join(", ")
@@ -66,7 +64,9 @@ export class ClickHouseAdapter implements VistalAdapter {
         sql += ` ORDER BY ${quoteIdent(query.sort.field)} ${query.sort.direction.toUpperCase()}`
       }
       sql += " LIMIT 1"
-      const rows = await this.client.query({ query: sql, format: "JSONEachRow" }).then(r => r.json() as Promise<unknown[]>)
+      const rows = await this.client
+        .query({ query: sql, format: "JSONEachRow" })
+        .then((r) => r.json() as Promise<unknown[]>)
       return rows[0] ?? null
     }
 
@@ -86,28 +86,36 @@ export class ClickHouseAdapter implements VistalAdapter {
         sort.field === pk
           ? `${quoteIdent(pk)} ${op} ${formatValue(ks.id)}`
           : `(${quoteIdent(sort.field)} ${op} ${formatValue(ks.sortValue)} OR ` +
-            `(${quoteIdent(sort.field)} = ${formatValue(ks.sortValue)} AND ${quoteIdent(pk)} ${op} ${formatValue(ks.id)}))`
+              `(${quoteIdent(sort.field)} = ${formatValue(ks.sortValue)} AND ${quoteIdent(pk)} ${op} ${formatValue(ks.id)}))`,
       )
     }
 
     let sql = `SELECT ${selectCols} FROM ${table}`
     if (whereParts.length > 0) sql += ` WHERE ${whereParts.join(" AND ")}`
-    sql += sort.field === pk
-      ? ` ORDER BY ${quoteIdent(pk)} ${dir}`
-      : ` ORDER BY ${quoteIdent(sort.field)} ${dir}, ${quoteIdent(pk)} ${dir}`
+    sql +=
+      sort.field === pk
+        ? ` ORDER BY ${quoteIdent(pk)} ${dir}`
+        : ` ORDER BY ${quoteIdent(sort.field)} ${dir}, ${quoteIdent(pk)} ${dir}`
 
     const limit = pag?.limit
     if (limit !== undefined) sql += ` LIMIT ${limit + 1}`
     if (!pag?.keyset && pag?.offset !== undefined) sql += ` OFFSET ${pag.offset}`
 
-    let rows = await this.client.query({ query: sql, format: "JSONEachRow" }).then(r => r.json() as Promise<Record<string, unknown>[]>)
+    let rows = await this.client
+      .query({ query: sql, format: "JSONEachRow" })
+      .then((r) => r.json() as Promise<Record<string, unknown>[]>)
     const hasMore = limit !== undefined && rows.length > limit
     if (hasMore) rows = rows.slice(0, limit)
 
     let nextCursor: string | undefined
     if (hasMore && rows.length > 0) {
       const last = rows[rows.length - 1]
-      nextCursor = encodeCursor({ sortField: sort.field, direction: sort.direction, sortValue: last[sort.field], id: last[pk] })
+      nextCursor = encodeCursor({
+        sortField: sort.field,
+        direction: sort.direction,
+        sortValue: last[sort.field],
+        id: last[pk],
+      })
     }
 
     if (query.internalFields?.length) {
@@ -122,14 +130,16 @@ export class ClickHouseAdapter implements VistalAdapter {
   private async executeCreate(
     query: ResolvedQuery,
     tableName: string,
-    db?: string
+    db?: string,
   ): Promise<unknown> {
     const data = query.data ?? {}
     const table = db ? `${db}.${tableName}` : tableName
 
-    await (this.client as unknown as {
-      insert(params: { table: string; values: unknown[]; format: string }): Promise<unknown>
-    }).insert({
+    await (
+      this.client as unknown as {
+        insert(params: { table: string; values: unknown[]; format: string }): Promise<unknown>
+      }
+    ).insert({
       table,
       values: [data],
       format: "JSONEachRow",
@@ -140,7 +150,9 @@ export class ClickHouseAdapter implements VistalAdapter {
 
   private async executeUpdate(query: ResolvedQuery, table: string): Promise<unknown> {
     if (!query.filters) {
-      throw new Error(`[vistal/clickhouse] update on "${query.resource}" has no WHERE clause — this would affect all rows and is not allowed`)
+      throw new Error(
+        `[vistal/clickhouse] update on "${query.resource}" has no WHERE clause — this would affect all rows and is not allowed`,
+      )
     }
 
     const data = query.data ?? {}
@@ -155,9 +167,14 @@ export class ClickHouseAdapter implements VistalAdapter {
     const where = compileFilter(query.filters)
     const sql = `ALTER TABLE ${table} UPDATE ${assignments} WHERE ${where}`
 
-    await (this.client as unknown as {
-      command(params: { query: string; clickhouse_settings?: Record<string, unknown> }): Promise<unknown>
-    }).command({
+    await (
+      this.client as unknown as {
+        command(params: {
+          query: string
+          clickhouse_settings?: Record<string, unknown>
+        }): Promise<unknown>
+      }
+    ).command({
       query: sql,
       clickhouse_settings: { mutations_sync: 2 },
     })
@@ -167,15 +184,19 @@ export class ClickHouseAdapter implements VistalAdapter {
 
   private async executeDelete(query: ResolvedQuery, table: string): Promise<unknown> {
     if (!query.filters) {
-      throw new Error(`[vistal/clickhouse] delete on "${query.resource}" has no WHERE clause — this would delete all rows and is not allowed`)
+      throw new Error(
+        `[vistal/clickhouse] delete on "${query.resource}" has no WHERE clause — this would delete all rows and is not allowed`,
+      )
     }
 
     const where = compileFilter(query.filters)
     const sql = `DELETE FROM ${table} WHERE ${where}`
 
-    await (this.client as unknown as {
-      command(params: { query: string }): Promise<unknown>
-    }).command({ query: sql })
+    await (
+      this.client as unknown as {
+        command(params: { query: string }): Promise<unknown>
+      }
+    ).command({ query: sql })
 
     return { ok: true }
   }
@@ -184,7 +205,7 @@ export class ClickHouseAdapter implements VistalAdapter {
     const aggs = query.aggregations ?? []
     const groupBy = query.groupBy ?? []
 
-    const aggExprs = aggs.map(a => {
+    const aggExprs = aggs.map((a) => {
       const alias = quoteIdent(a.alias)
       if (a.fn === "count" && (a.field === "*" || a.field === "id")) {
         return `count() AS ${alias}`
@@ -192,10 +213,7 @@ export class ClickHouseAdapter implements VistalAdapter {
       return `${a.fn}(${quoteIdent(a.field)}) AS ${alias}`
     })
 
-    const selectParts = [
-      ...groupBy.map(quoteIdent),
-      ...aggExprs,
-    ]
+    const selectParts = [...groupBy.map(quoteIdent), ...aggExprs]
 
     if (selectParts.length === 0) {
       selectParts.push("count() AS `count`")
@@ -215,6 +233,8 @@ export class ClickHouseAdapter implements VistalAdapter {
       sql += ` HAVING ${compileFilter(query.having)}`
     }
 
-    return this.client.query({ query: sql, format: "JSONEachRow" }).then(r => r.json() as Promise<unknown[]>)
+    return this.client
+      .query({ query: sql, format: "JSONEachRow" })
+      .then((r) => r.json() as Promise<unknown[]>)
   }
 }

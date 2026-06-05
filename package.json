@@ -7,12 +7,16 @@
   ],
   "scripts": {
     "build": "npm run build -w @vistal/core && npm run build -w @vistal/prisma && npm run build -w @vistal/clickhouse",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/prisma && tsc --noEmit -p packages/clickhouse",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "format": "prettier --write \"packages/*/src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"packages/*/src/**/*.ts\" \"tests/**/*.ts\""
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "ai": "^4.0.0",
+    "prettier": "^3.8.3",
     "typescript": "^5.0.0",
     "vitest": "^1.0.0"
   }

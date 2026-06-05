@@ -10,21 +10,26 @@ const schema: SchemaMap = {
       name: "order",
       tableName: "Order",
       fields: {
-        id:        { name: "id",        type: "uuid",   isNullable: false, isId: true,  hasDefaultValue: true },
-        amount:    { name: "amount",    type: "number", isNullable: false, isId: false },
-        status:    { name: "status",    type: "string", isNullable: false, isId: false },
+        id: { name: "id", type: "uuid", isNullable: false, isId: true, hasDefaultValue: true },
+        amount: { name: "amount", type: "number", isNullable: false, isId: false },
+        status: { name: "status", type: "string", isNullable: false, isId: false },
         tenant_id: { name: "tenant_id", type: "string", isNullable: false, isId: false },
-        secret:    { name: "secret",    type: "string", isNullable: true,  isId: false, sensitive: true },
+        secret: { name: "secret", type: "string", isNullable: true, isId: false, sensitive: true },
       },
       relations: {
-        customer: { name: "customer", targetResource: "customer", type: "belongsTo", foreignKey: "customer_id" },
+        customer: {
+          name: "customer",
+          targetResource: "customer",
+          type: "belongsTo",
+          foreignKey: "customer_id",
+        },
       },
     },
     customer: {
       name: "customer",
       tableName: "Customer",
       fields: {
-        id:   { name: "id",   type: "uuid",   isNullable: false, isId: true, hasDefaultValue: true },
+        id: { name: "id", type: "uuid", isNullable: false, isId: true, hasDefaultValue: true },
         name: { name: "name", type: "string", isNullable: false, isId: false },
       },
       relations: {},
@@ -33,7 +38,7 @@ const schema: SchemaMap = {
       name: "audit_log",
       tableName: "AuditLog",
       fields: {
-        id:      { name: "id",      type: "uuid",   isNullable: false, isId: true, hasDefaultValue: true },
+        id: { name: "id", type: "uuid", isNullable: false, isId: true, hasDefaultValue: true },
         message: { name: "message", type: "string", isNullable: false, isId: false },
       },
       relations: {},
@@ -43,7 +48,9 @@ const schema: SchemaMap = {
 
 class MockAdapter implements VistalAdapter {
   lastQuery?: ResolvedQuery
-  async introspect(): Promise<SchemaMap> { return schema }
+  async introspect(): Promise<SchemaMap> {
+    return schema
+  }
   async execute(query: ResolvedQuery): Promise<unknown> {
     this.lastQuery = query
     return []
@@ -53,13 +60,13 @@ class MockAdapter implements VistalAdapter {
 function makeVistal(adapter: MockAdapter) {
   return new Vistal({ adapter })
     .policy("order", () => ({
-      read:   { tenant_id: "t1" },
-      write:  { tenant_id: "t1" },
+      read: { tenant_id: "t1" },
+      write: { tenant_id: "t1" },
       delete: false,
       relations: { customer: true },
     }))
     .policy("customer", () => ({ read: true, write: false, delete: false }))
-    // audit_log: no policy → deny-all (defaultPolicy = "deny-all")
+  // audit_log: no policy → deny-all (defaultPolicy = "deny-all")
 }
 
 describe("consolidated mode — tool generation", () => {
@@ -68,18 +75,33 @@ describe("consolidated mode — tool generation", () => {
       resources: Object.fromEntries(
         Array.from({ length: 200 }, (_, i) => {
           const name = `resource_${i}`
-          return [name, {
+          return [
             name,
-            tableName: name,
-            fields: { id: { name: "id", type: "uuid" as const, isNullable: false, isId: true, hasDefaultValue: true } },
-            relations: {},
-          }]
-        })
+            {
+              name,
+              tableName: name,
+              fields: {
+                id: {
+                  name: "id",
+                  type: "uuid" as const,
+                  isNullable: false,
+                  isId: true,
+                  hasDefaultValue: true,
+                },
+              },
+              relations: {},
+            },
+          ]
+        }),
       ),
     }
     class BigAdapter implements VistalAdapter {
-      async introspect() { return bigSchema }
-      async execute() { return [] }
+      async introspect() {
+        return bigSchema
+      }
+      async execute() {
+        return []
+      }
     }
     const v = new Vistal({ adapter: new BigAdapter(), defaultPolicy: "allow-all" })
     const tools = await v.tools.openai(ctx, { mode: "consolidated" })
@@ -89,21 +111,21 @@ describe("consolidated mode — tool generation", () => {
   it("emits list_resources and describe_resource when any resource is accessible", async () => {
     const v = makeVistal(new MockAdapter())
     const tools = await v.tools.openai(ctx, { mode: "consolidated" })
-    const names = tools.map(t => t.name)
+    const names = tools.map((t) => t.name)
     expect(names).toContain("list_resources")
     expect(names).toContain("describe_resource")
   })
 
   it("emits query and get for readable resources", async () => {
     const v = makeVistal(new MockAdapter())
-    const names = (await v.tools.openai(ctx, { mode: "consolidated" })).map(t => t.name)
+    const names = (await v.tools.openai(ctx, { mode: "consolidated" })).map((t) => t.name)
     expect(names).toContain("query")
     expect(names).toContain("get")
   })
 
   it("does NOT emit create/delete for order (delete: false) but does emit update", async () => {
     const v = makeVistal(new MockAdapter())
-    const names = (await v.tools.openai(ctx, { mode: "consolidated" })).map(t => t.name)
+    const names = (await v.tools.openai(ctx, { mode: "consolidated" })).map((t) => t.name)
     expect(names).toContain("update")
     expect(names).not.toContain("delete")
   })
@@ -111,8 +133,9 @@ describe("consolidated mode — tool generation", () => {
   it("resource enum on query includes order and customer but not denied audit_log", async () => {
     const v = makeVistal(new MockAdapter())
     const tools = await v.tools.openai(ctx, { mode: "consolidated" })
-    const queryTool = tools.find(t => t.name === "query")!
-    const resourceEnum = (queryTool.definition.function.parameters as any).properties.resource.enum as string[]
+    const queryTool = tools.find((t) => t.name === "query")!
+    const resourceEnum = (queryTool.definition.function.parameters as any).properties.resource
+      .enum as string[]
     expect(resourceEnum).toContain("order")
     expect(resourceEnum).toContain("customer")
     expect(resourceEnum).not.toContain("audit_log")
@@ -121,10 +144,11 @@ describe("consolidated mode — tool generation", () => {
   it("create tool resource enum does NOT include customer (write: false)", async () => {
     const v = makeVistal(new MockAdapter())
     const tools = await v.tools.openai(ctx, { mode: "consolidated" })
-    const createTool = tools.find(t => t.name === "create")
+    const createTool = tools.find((t) => t.name === "create")
     // customer has write: false, order has write allowed
     expect(createTool).toBeDefined()
-    const resourceEnum = (createTool!.definition.function.parameters as any).properties.resource.enum as string[]
+    const resourceEnum = (createTool!.definition.function.parameters as any).properties.resource
+      .enum as string[]
     expect(resourceEnum).toContain("order")
     expect(resourceEnum).not.toContain("customer")
   })
@@ -132,9 +156,10 @@ describe("consolidated mode — tool generation", () => {
   it("emits aggregate only for resources with numeric fields", async () => {
     const v = makeVistal(new MockAdapter())
     const tools = await v.tools.openai(ctx, { mode: "consolidated" })
-    const aggTool = tools.find(t => t.name === "aggregate")!
+    const aggTool = tools.find((t) => t.name === "aggregate")!
     // order has 'amount' (number); customer has no numeric fields
-    const resourceEnum = (aggTool.definition.function.parameters as any).properties.resource.enum as string[]
+    const resourceEnum = (aggTool.definition.function.parameters as any).properties.resource
+      .enum as string[]
     expect(resourceEnum).toContain("order")
     expect(resourceEnum).not.toContain("customer")
   })
@@ -149,12 +174,15 @@ describe("consolidated mode — tool generation", () => {
 describe("consolidated mode — list_resources execution", () => {
   it("returns only accessible resources with their allowed operations", async () => {
     const v = makeVistal(new MockAdapter())
-    const result = await v.executeTool("list_resources", {}, ctx) as { name: string; operations: string[] }[]
-    const names = result.map(r => r.name)
+    const result = (await v.executeTool("list_resources", {}, ctx)) as {
+      name: string
+      operations: string[]
+    }[]
+    const names = result.map((r) => r.name)
     expect(names).toContain("order")
     expect(names).toContain("customer")
     expect(names).not.toContain("audit_log")
-    const orderEntry = result.find(r => r.name === "order")!
+    const orderEntry = result.find((r) => r.name === "order")!
     expect(orderEntry.operations).toContain("query")
     expect(orderEntry.operations).toContain("update")
     expect(orderEntry.operations).not.toContain("delete")
@@ -170,8 +198,11 @@ describe("consolidated mode — list_resources execution", () => {
         update: { tenant_id: "t1" },
         delete: false,
       }))
-    const result = await v.executeTool("list_resources", {}, ctx) as { name: string; operations: string[] }[]
-    const order = result.find(r => r.name === "order")
+    const result = (await v.executeTool("list_resources", {}, ctx)) as {
+      name: string
+      operations: string[]
+    }[]
+    const order = result.find((r) => r.name === "order")
     expect(order).toBeDefined()
     expect(order!.operations).toContain("update")
     expect(order!.operations).toContain("aggregate")
@@ -184,10 +215,10 @@ describe("consolidated mode — list_resources execution", () => {
 describe("consolidated mode — describe_resource execution", () => {
   it("omits sensitive fields from field list", async () => {
     const v = makeVistal(new MockAdapter())
-    const result = await v.executeTool("describe_resource", { resource: "order" }, ctx) as {
+    const result = (await v.executeTool("describe_resource", { resource: "order" }, ctx)) as {
       fields: { name: string }[]
     }
-    const fieldNames = result.fields.map(f => f.name)
+    const fieldNames = result.fields.map((f) => f.name)
     expect(fieldNames).not.toContain("secret")
     expect(fieldNames).toContain("amount")
     expect(fieldNames).toContain("status")
@@ -195,33 +226,34 @@ describe("consolidated mode — describe_resource execution", () => {
 
   it("includes allowed relations in schema", async () => {
     const v = makeVistal(new MockAdapter())
-    const result = await v.executeTool("describe_resource", { resource: "order" }, ctx) as {
+    const result = (await v.executeTool("describe_resource", { resource: "order" }, ctx)) as {
       relations: { name: string }[]
     }
-    expect(result.relations.map(r => r.name)).toContain("customer")
+    expect(result.relations.map((r) => r.name)).toContain("customer")
   })
 
   it("marks a readOnly field as readable but not writable", async () => {
-    const v = new Vistal({ adapter: new MockAdapter() })
-      .policy("order", () => ({
-        read: { tenant_id: "t1" },
-        write: { tenant_id: "t1" },
-        delete: false,
-        fields: { readOnly: ["status"] },
-      }))
-    const result = await v.executeTool("describe_resource", { resource: "order" }, ctx) as {
+    const v = new Vistal({ adapter: new MockAdapter() }).policy("order", () => ({
+      read: { tenant_id: "t1" },
+      write: { tenant_id: "t1" },
+      delete: false,
+      fields: { readOnly: ["status"] },
+    }))
+    const result = (await v.executeTool("describe_resource", { resource: "order" }, ctx)) as {
       fields: { name: string; readable: boolean; writable: boolean }[]
     }
-    const status = result.fields.find(f => f.name === "status")!
+    const status = result.fields.find((f) => f.name === "status")!
     expect(status.readable).toBe(true)
     expect(status.writable).toBe(false)
-    const amount = result.fields.find(f => f.name === "amount")!
+    const amount = result.fields.find((f) => f.name === "amount")!
     expect(amount.writable).toBe(true)
   })
 
   it("throws for an unknown resource", async () => {
     const v = makeVistal(new MockAdapter())
-    await expect(v.executeTool("describe_resource", { resource: "nonexistent" }, ctx)).rejects.toThrow()
+    await expect(
+      v.executeTool("describe_resource", { resource: "nonexistent" }, ctx),
+    ).rejects.toThrow()
   })
 
   it("throws when resource argument is missing", async () => {
@@ -276,20 +308,28 @@ describe("consolidated mode — security hardening", () => {
   it("rejects aggregation over a denied/sensitive field", async () => {
     const v = makeVistal(new MockAdapter())
     await expect(
-      v.executeTool("aggregate", {
-        resource: "order",
-        aggregations: [{ fn: "sum", field: "secret", alias: "total_secret" }],
-      }, ctx)
+      v.executeTool(
+        "aggregate",
+        {
+          resource: "order",
+          aggregations: [{ fn: "sum", field: "secret", alias: "total_secret" }],
+        },
+        ctx,
+      ),
     ).rejects.toThrow()
   })
 
   it("allows aggregation over an allowed numeric field", async () => {
     const adapter = new MockAdapter()
     const v = makeVistal(adapter)
-    await v.executeTool("aggregate", {
-      resource: "order",
-      aggregations: [{ fn: "sum", field: "amount", alias: "total" }],
-    }, ctx)
+    await v.executeTool(
+      "aggregate",
+      {
+        resource: "order",
+        aggregations: [{ fn: "sum", field: "amount", alias: "total" }],
+      },
+      ctx,
+    )
     expect(adapter.lastQuery?.operation).toBe("aggregate")
   })
 })
@@ -297,7 +337,7 @@ describe("consolidated mode — security hardening", () => {
 describe("backward compatibility", () => {
   it("default mode (per-resource) still generates per-resource tools", async () => {
     const v = makeVistal(new MockAdapter())
-    const names = (await v.tools.openai(ctx)).map(t => t.name)
+    const names = (await v.tools.openai(ctx)).map((t) => t.name)
     expect(names).toContain("query_order")
     expect(names).toContain("get_customer")
     expect(names).not.toContain("query")
@@ -306,7 +346,7 @@ describe("backward compatibility", () => {
   it("consolidated mode via anthropic provider also works", async () => {
     const v = makeVistal(new MockAdapter())
     const tools = await v.tools.anthropic(ctx, { mode: "consolidated" })
-    const names = tools.map(t => t.name)
+    const names = tools.map((t) => t.name)
     expect(names).toContain("query")
     expect(names).toContain("list_resources")
   })

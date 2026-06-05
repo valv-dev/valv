@@ -10,19 +10,25 @@ export interface EvaluatedPolicy {
   rowFilter?: FilterNode
   allowedFields: string[]
   allowedRelations: string[]
-  forcedWriteFields?: Record<string, unknown>  // injected into data on create/update
+  forcedWriteFields?: Record<string, unknown> // injected into data on create/update
 }
 
 // Resolve the rule for an operation, applying the shorthand fallbacks:
 // create/update fall back to `write`, aggregate falls back to `read`.
 function resolveRule(result: PolicyResult, operation: PolicyOperation): PolicyRule | undefined {
   switch (operation) {
-    case "create":    return result.create ?? result.write
-    case "update":    return result.update ?? result.write
-    case "write":     return result.write
-    case "aggregate": return result.aggregate ?? result.read
-    case "read":      return result.read
-    case "delete":    return result.delete
+    case "create":
+      return result.create ?? result.write
+    case "update":
+      return result.update ?? result.write
+    case "write":
+      return result.write
+    case "aggregate":
+      return result.aggregate ?? result.read
+    case "read":
+      return result.read
+    case "delete":
+      return result.delete
   }
 }
 
@@ -35,7 +41,7 @@ export function evaluatePolicy<TContext>(
   ctx: TContext,
   operation: PolicyOperation,
   defaultPolicy: "deny-all" | "allow-all",
-  schema?: ResourceSchema
+  schema?: ResourceSchema,
 ): EvaluatedPolicy {
   let result: PolicyResult = {}
 
@@ -81,29 +87,31 @@ export function evaluatePolicy<TContext>(
 
   const allFields = schema ? Object.keys(schema.fields) : []
   const sensitiveFields = schema
-    ? Object.values(schema.fields).filter(f => f.sensitive).map(f => f.name)
+    ? Object.values(schema.fields)
+        .filter((f) => f.sensitive)
+        .map((f) => f.name)
     : []
 
   let allowedFields: string[]
   const fieldPolicy = result.fields
 
   if (fieldPolicy?.allow) {
-    allowedFields = fieldPolicy.allow.filter(f => !sensitiveFields.includes(f))
+    allowedFields = fieldPolicy.allow.filter((f) => !sensitiveFields.includes(f))
   } else if (fieldPolicy?.deny) {
     const denySet = new Set([...fieldPolicy.deny, ...sensitiveFields])
-    allowedFields = allFields.filter(f => !denySet.has(f))
+    allowedFields = allFields.filter((f) => !denySet.has(f))
   } else {
-    allowedFields = allFields.filter(f => !sensitiveFields.includes(f))
+    allowedFields = allFields.filter((f) => !sensitiveFields.includes(f))
   }
 
   // Operation-specific field visibility: read-only fields are dropped from the
   // write set, write-only fields are dropped from the read set.
   if (isWriteOp && fieldPolicy?.readOnly) {
     const readOnly = new Set(fieldPolicy.readOnly)
-    allowedFields = allowedFields.filter(f => !readOnly.has(f))
+    allowedFields = allowedFields.filter((f) => !readOnly.has(f))
   } else if (!isWriteOp && fieldPolicy?.writeOnly) {
     const writeOnly = new Set(fieldPolicy.writeOnly)
-    allowedFields = allowedFields.filter(f => !writeOnly.has(f))
+    allowedFields = allowedFields.filter((f) => !writeOnly.has(f))
   }
 
   const allRelations = schema ? Object.keys(schema.relations) : []
@@ -111,7 +119,7 @@ export function evaluatePolicy<TContext>(
 
   let allowedRelations: string[]
   if (relationsPolicy) {
-    allowedRelations = allRelations.filter(r => relationsPolicy[r] !== false)
+    allowedRelations = allRelations.filter((r) => relationsPolicy[r] !== false)
   } else {
     allowedRelations = allRelations
   }
@@ -126,14 +134,14 @@ export function evaluatePolicy<TContext>(
 function extractForcedFields(
   obj: Record<string, unknown>,
   schema: ResourceSchema | undefined,
-  strict: boolean
+  strict: boolean,
 ): Record<string, unknown> {
   const forced: Record<string, unknown> = {}
   for (const [field, value] of Object.entries(obj)) {
     if (field === "OR" || field === "AND" || field === "NOT") {
       if (strict) {
         throw new ValidationError(
-          `create policy cannot use the "${field}" combinator — inserts only support forced field values`
+          `create policy cannot use the "${field}" combinator — inserts only support forced field values`,
         )
       }
       continue
@@ -144,7 +152,7 @@ function extractForcedFields(
     }
     if (strict && isRequiredField(field, schema)) {
       throw new ValidationError(
-        `create policy uses an operator filter on required field "${field}", which an insert cannot satisfy`
+        `create policy uses an operator filter on required field "${field}", which an insert cannot satisfy`,
       )
     }
   }
@@ -171,7 +179,7 @@ export function rowFilterFromObject(obj: Record<string, unknown>): FilterNode {
 
 export function mergeFilters(
   policyFilter: FilterNode | undefined,
-  llmFilter: FilterNode | undefined
+  llmFilter: FilterNode | undefined,
 ): FilterNode | undefined {
   if (!policyFilter && !llmFilter) return undefined
   if (!policyFilter) return llmFilter

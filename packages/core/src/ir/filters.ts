@@ -23,7 +23,7 @@ const BOOLEAN_KEYS = new Set(["OR", "AND", "NOT"])
 export function valueToFilterNode(
   field: string,
   value: unknown,
-  fieldSchema?: FieldSchema
+  fieldSchema?: FieldSchema,
 ): FilterNode {
   if (value === null) {
     return { type: "null", field, isNull: true }
@@ -67,8 +67,8 @@ export function valueToFilterNode(
     // produce a malformed adapter query).
     throw new ValidationError(
       `Unsupported filter for field "${field}": {${Object.keys(obj).join(", ")}}. ` +
-      `Use a bare value for equality, or an operator object with one of: ` +
-      `eq, ne, gt, gte, lt, lte, in, contains, startsWith, endsWith.`
+        `Use a bare value for equality, or an operator object with one of: ` +
+        `eq, ne, gt, gte, lt, lte, in, contains, startsWith, endsWith.`,
     )
   }
 
@@ -88,7 +88,7 @@ export function valueToFilterNode(
  */
 export function objectToFilterNode(
   obj: Record<string, unknown>,
-  opts: FilterBuildOptions = {}
+  opts: FilterBuildOptions = {},
 ): FilterNode | undefined {
   const nodes: FilterNode[] = []
 
@@ -103,7 +103,7 @@ export function objectToFilterNode(
       }
       if (Array.isArray(value)) {
         const sub = value
-          .map(v => objectToFilterNode(v as Record<string, unknown>, opts))
+          .map((v) => objectToFilterNode(v as Record<string, unknown>, opts))
           .filter((n): n is FilterNode => n !== undefined)
         if (sub.length > 0) {
           nodes.push({ type: key === "OR" ? "or" : "and", filters: sub })

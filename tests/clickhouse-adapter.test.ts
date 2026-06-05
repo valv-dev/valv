@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from "vitest"
-import { compileFilter, formatValue, escapeString, escapeLikePattern, quoteIdent } from "@vistal/clickhouse"
+import {
+  compileFilter,
+  formatValue,
+  escapeString,
+  escapeLikePattern,
+  quoteIdent,
+} from "@vistal/clickhouse"
 import { ClickHouseAdapter, introspectClickHouse } from "@vistal/clickhouse"
 import type { ResolvedQuery } from "@vistal/core"
 
@@ -85,57 +91,61 @@ describe("formatValue", () => {
 
 describe("compileFilter", () => {
   it("eq: basic equality", () => {
-    expect(compileFilter({ type: "eq", field: "status", value: "active" }))
-      .toBe("`status` = 'active'")
+    expect(compileFilter({ type: "eq", field: "status", value: "active" })).toBe(
+      "`status` = 'active'",
+    )
   })
   it("eq: NULL value uses IS NULL", () => {
-    expect(compileFilter({ type: "eq", field: "deleted_at", value: null }))
-      .toBe("`deleted_at` IS NULL")
+    expect(compileFilter({ type: "eq", field: "deleted_at", value: null })).toBe(
+      "`deleted_at` IS NULL",
+    )
   })
   it("eq: numeric value", () => {
-    expect(compileFilter({ type: "eq", field: "amount", value: 100 }))
-      .toBe("`amount` = 100")
+    expect(compileFilter({ type: "eq", field: "amount", value: 100 })).toBe("`amount` = 100")
   })
 
   it("in: normal list", () => {
-    expect(compileFilter({ type: "in", field: "status", values: ["a", "b"] }))
-      .toBe("`status` IN ('a', 'b')")
+    expect(compileFilter({ type: "in", field: "status", values: ["a", "b"] })).toBe(
+      "`status` IN ('a', 'b')",
+    )
   })
   it("in: empty list → 1 = 0", () => {
-    expect(compileFilter({ type: "in", field: "status", values: [] }))
-      .toBe("1 = 0")
+    expect(compileFilter({ type: "in", field: "status", values: [] })).toBe("1 = 0")
   })
 
   it("range: gte and lte", () => {
-    expect(compileFilter({ type: "range", field: "amount", gte: 10, lte: 100 }))
-      .toBe("`amount` >= 10 AND `amount` <= 100")
+    expect(compileFilter({ type: "range", field: "amount", gte: 10, lte: 100 })).toBe(
+      "`amount` >= 10 AND `amount` <= 100",
+    )
   })
   it("range: only gt", () => {
-    expect(compileFilter({ type: "range", field: "amount", gt: 5 }))
-      .toBe("`amount` > 5")
+    expect(compileFilter({ type: "range", field: "amount", gt: 5 })).toBe("`amount` > 5")
   })
   it("range: lt only", () => {
-    expect(compileFilter({ type: "range", field: "total", lt: 50000 }))
-      .toBe("`total` < 50000")
+    expect(compileFilter({ type: "range", field: "total", lt: 50000 })).toBe("`total` < 50000")
   })
 
   it("like: contains (default) → %pattern%", () => {
-    expect(compileFilter({ type: "like", field: "name", value: "foo", mode: "contains" }))
-      .toBe("`name` ILIKE '%foo%'")
+    expect(compileFilter({ type: "like", field: "name", value: "foo", mode: "contains" })).toBe(
+      "`name` ILIKE '%foo%'",
+    )
   })
   it("like: startsWith → pattern%", () => {
-    expect(compileFilter({ type: "like", field: "name", value: "foo", mode: "startsWith" }))
-      .toBe("`name` ILIKE 'foo%'")
+    expect(compileFilter({ type: "like", field: "name", value: "foo", mode: "startsWith" })).toBe(
+      "`name` ILIKE 'foo%'",
+    )
   })
   it("like: endsWith → %pattern", () => {
-    expect(compileFilter({ type: "like", field: "name", value: "foo", mode: "endsWith" }))
-      .toBe("`name` ILIKE '%foo'")
+    expect(compileFilter({ type: "like", field: "name", value: "foo", mode: "endsWith" })).toBe(
+      "`name` ILIKE '%foo'",
+    )
   })
   it("like: % in user input is escaped so it matches literally", () => {
     // escapeLikePattern turns "100%" → "100\%"; then escapeString turns "\" → "\\"
     // in the SQL string literal, so ClickHouse receives pattern %100\%% where \% is literal %.
-    expect(compileFilter({ type: "like", field: "name", value: "100%", mode: "contains" }))
-      .toBe("`name` ILIKE '%100\\\\%%'")
+    expect(compileFilter({ type: "like", field: "name", value: "100%", mode: "contains" })).toBe(
+      "`name` ILIKE '%100\\\\%%'",
+    )
   })
   it("like: case-insensitive via ILIKE not LIKE", () => {
     const sql = compileFilter({ type: "like", field: "name", value: "Test" })
@@ -143,74 +153,86 @@ describe("compileFilter", () => {
   })
 
   it("null: IS NULL", () => {
-    expect(compileFilter({ type: "null", field: "deleted_at", isNull: true }))
-      .toBe("`deleted_at` IS NULL")
+    expect(compileFilter({ type: "null", field: "deleted_at", isNull: true })).toBe(
+      "`deleted_at` IS NULL",
+    )
   })
   it("null: IS NOT NULL", () => {
-    expect(compileFilter({ type: "null", field: "deleted_at", isNull: false }))
-      .toBe("`deleted_at` IS NOT NULL")
+    expect(compileFilter({ type: "null", field: "deleted_at", isNull: false })).toBe(
+      "`deleted_at` IS NOT NULL",
+    )
   })
 
   it("and: joins with AND, parenthesized", () => {
-    expect(compileFilter({
-      type: "and",
-      filters: [
-        { type: "eq", field: "status", value: "active" },
-        { type: "eq", field: "tenant_id", value: "t1" },
-      ],
-    })).toBe("(`status` = 'active' AND `tenant_id` = 't1')")
+    expect(
+      compileFilter({
+        type: "and",
+        filters: [
+          { type: "eq", field: "status", value: "active" },
+          { type: "eq", field: "tenant_id", value: "t1" },
+        ],
+      }),
+    ).toBe("(`status` = 'active' AND `tenant_id` = 't1')")
   })
   it("and: empty → 1 = 1", () => {
     expect(compileFilter({ type: "and", filters: [] })).toBe("1 = 1")
   })
 
   it("or: joins with OR, parenthesized", () => {
-    expect(compileFilter({
-      type: "or",
-      filters: [
-        { type: "eq", field: "status", value: "a" },
-        { type: "eq", field: "status", value: "b" },
-      ],
-    })).toBe("(`status` = 'a' OR `status` = 'b')")
+    expect(
+      compileFilter({
+        type: "or",
+        filters: [
+          { type: "eq", field: "status", value: "a" },
+          { type: "eq", field: "status", value: "b" },
+        ],
+      }),
+    ).toBe("(`status` = 'a' OR `status` = 'b')")
   })
   it("or: empty → 1 = 0", () => {
     expect(compileFilter({ type: "or", filters: [] })).toBe("1 = 0")
   })
 
   it("not: wraps in NOT (...)", () => {
-    expect(compileFilter({
-      type: "not",
-      filter: { type: "eq", field: "status", value: "deleted" },
-    })).toBe("NOT (`status` = 'deleted')")
+    expect(
+      compileFilter({
+        type: "not",
+        filter: { type: "eq", field: "status", value: "deleted" },
+      }),
+    ).toBe("NOT (`status` = 'deleted')")
   })
 
   it("deeply nested: AND(tenant_id=t1, OR(total>=10000, status=pending))", () => {
-    expect(compileFilter({
-      type: "and",
-      filters: [
-        { type: "eq", field: "tenant_id", value: "t1" },
-        {
-          type: "or",
-          filters: [
-            { type: "range", field: "total", gte: 10000 },
-            { type: "eq", field: "status", value: "pending" },
-          ],
-        },
-      ],
-    })).toBe("(`tenant_id` = 't1' AND (`total` >= 10000 OR `status` = 'pending'))")
+    expect(
+      compileFilter({
+        type: "and",
+        filters: [
+          { type: "eq", field: "tenant_id", value: "t1" },
+          {
+            type: "or",
+            filters: [
+              { type: "range", field: "total", gte: 10000 },
+              { type: "eq", field: "status", value: "pending" },
+            ],
+          },
+        ],
+      }),
+    ).toBe("(`tenant_id` = 't1' AND (`total` >= 10000 OR `status` = 'pending'))")
   })
 
   it("not(and(eq, like)) — negated compound", () => {
-    expect(compileFilter({
-      type: "not",
-      filter: {
-        type: "and",
-        filters: [
-          { type: "eq", field: "status", value: "cancelled" },
-          { type: "like", field: "name", value: "test", mode: "contains" },
-        ],
-      },
-    })).toBe("NOT ((`status` = 'cancelled' AND `name` ILIKE '%test%'))")
+    expect(
+      compileFilter({
+        type: "not",
+        filter: {
+          type: "and",
+          filters: [
+            { type: "eq", field: "status", value: "cancelled" },
+            { type: "like", field: "name", value: "test", mode: "contains" },
+          ],
+        },
+      }),
+    ).toBe("NOT ((`status` = 'cancelled' AND `name` ILIKE '%test%'))")
   })
 })
 
@@ -236,9 +258,9 @@ function makeAdapterWithSchema() {
         name: "orders",
         tableName: "orders",
         fields: {
-          id:        { name: "id",        type: "uuid",   isNullable: false, isId: true  },
-          status:    { name: "status",    type: "string", isNullable: false, isId: false },
-          total:     { name: "total",     type: "number", isNullable: false, isId: false },
+          id: { name: "id", type: "uuid", isNullable: false, isId: true },
+          status: { name: "status", type: "string", isNullable: false, isId: false },
+          total: { name: "total", type: "number", isNullable: false, isId: false },
           tenant_id: { name: "tenant_id", type: "string", isNullable: false, isId: false },
         },
         relations: {},
@@ -288,7 +310,9 @@ describe("ClickHouseAdapter.execute", () => {
     }
     await adapter.execute(query)
     const sql: string = mocks.query.mock.calls[0][0].query
-    expect(sql).toContain("WHERE `tenant_id` = 't1' AND (`total` > 50 OR (`total` = 50 AND `id` > 'o9'))")
+    expect(sql).toContain(
+      "WHERE `tenant_id` = 't1' AND (`total` > 50 OR (`total` = 50 AND `id` > 'o9'))",
+    )
     expect(sql).toContain("ORDER BY `total` ASC, `id` ASC")
     expect(sql).toContain("LIMIT 11")
     expect(sql).not.toContain("OFFSET")
@@ -297,26 +321,34 @@ describe("ClickHouseAdapter.execute", () => {
   it("find returns a { data, nextCursor, hasMore } envelope", async () => {
     const { client, mocks } = makeClient()
     mocks.query.mockResolvedValue({
-      json: () => Promise.resolve([
-        { id: "a", total: 1 }, { id: "b", total: 2 }, { id: "c", total: 3 },
-      ]),
+      json: () =>
+        Promise.resolve([
+          { id: "a", total: 1 },
+          { id: "b", total: 2 },
+          { id: "c", total: 3 },
+        ]),
     })
     const adapter = new ClickHouseAdapter(client as never, { database: "analytics" })
     ;(adapter as never as { schemaCache: unknown }).schemaCache = {
       resources: {
-        orders: { name: "orders", tableName: "orders", relations: {}, fields: {
-          id:    { name: "id",    type: "uuid",   isNullable: false, isId: true },
-          total: { name: "total", type: "number", isNullable: false, isId: false },
-        } },
+        orders: {
+          name: "orders",
+          tableName: "orders",
+          relations: {},
+          fields: {
+            id: { name: "id", type: "uuid", isNullable: false, isId: true },
+            total: { name: "total", type: "number", isNullable: false, isId: false },
+          },
+        },
       },
     }
-    const res = await adapter.execute({
+    const res = (await adapter.execute({
       resource: "orders",
       operation: "find",
       fields: ["id", "total"],
       sort: { field: "total", direction: "asc" },
       pagination: { limit: 2, primaryKey: "id", cursorField: "total" },
-    }) as { data: unknown[]; nextCursor?: string; hasMore: boolean }
+    })) as { data: unknown[]; nextCursor?: string; hasMore: boolean }
     expect(res.data).toHaveLength(2)
     expect(res.hasMore).toBe(true)
     expect(res.nextCursor).toBeDefined()
@@ -350,7 +382,12 @@ describe("ClickHouseAdapter.execute", () => {
     const adapter = new ClickHouseAdapter(client as any, { database: "analytics" })
     ;(adapter as any).schemaCache = {
       resources: {
-        orders: { name: "orders", tableName: "orders", fields: { id: { name: "id", type: "uuid", isNullable: false, isId: true } }, relations: {} },
+        orders: {
+          name: "orders",
+          tableName: "orders",
+          fields: { id: { name: "id", type: "uuid", isNullable: false, isId: true } },
+          relations: {},
+        },
       },
     }
 
@@ -391,7 +428,7 @@ describe("ClickHouseAdapter.execute", () => {
         table: "analytics.orders",
         values: [data],
         format: "JSONEachRow",
-      })
+      }),
     )
     expect(result).toEqual(data)
   })
@@ -429,12 +466,14 @@ describe("ClickHouseAdapter.execute", () => {
 
   it("update without WHERE throws", async () => {
     const { adapter } = makeAdapterWithSchema()
-    await expect(adapter.execute({
-      resource: "orders",
-      operation: "update",
-      fields: ["status"],
-      data: { status: "boom" },
-    })).rejects.toThrow("no WHERE clause")
+    await expect(
+      adapter.execute({
+        resource: "orders",
+        operation: "update",
+        fields: ["status"],
+        data: { status: "boom" },
+      }),
+    ).rejects.toThrow("no WHERE clause")
   })
 
   it("delete → DELETE FROM ... WHERE", async () => {
@@ -452,11 +491,13 @@ describe("ClickHouseAdapter.execute", () => {
 
   it("delete without WHERE throws", async () => {
     const { adapter } = makeAdapterWithSchema()
-    await expect(adapter.execute({
-      resource: "orders",
-      operation: "delete",
-      fields: [],
-    })).rejects.toThrow("no WHERE clause")
+    await expect(
+      adapter.execute({
+        resource: "orders",
+        operation: "delete",
+        fields: [],
+      }),
+    ).rejects.toThrow("no WHERE clause")
   })
 
   it("aggregate flat count → count() AS `total`", async () => {
@@ -559,11 +600,51 @@ describe("introspectClickHouse", () => {
 
   it("maps String → string, Int32 → number, Bool → boolean, Date → date, UUID → uuid", async () => {
     const client = makeIntrospectClient([
-      { table: "events", name: "id",         type: "UUID",    position: 1, default_kind: "",  is_in_primary_key: 1, comment: "" },
-      { table: "events", name: "name",       type: "String",  position: 2, default_kind: "",  is_in_primary_key: 0, comment: "" },
-      { table: "events", name: "count",      type: "Int32",   position: 3, default_kind: "",  is_in_primary_key: 0, comment: "" },
-      { table: "events", name: "active",     type: "Bool",    position: 4, default_kind: "",  is_in_primary_key: 0, comment: "" },
-      { table: "events", name: "created_at", type: "DateTime",position: 5, default_kind: "",  is_in_primary_key: 0, comment: "" },
+      {
+        table: "events",
+        name: "id",
+        type: "UUID",
+        position: 1,
+        default_kind: "",
+        is_in_primary_key: 1,
+        comment: "",
+      },
+      {
+        table: "events",
+        name: "name",
+        type: "String",
+        position: 2,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
+      {
+        table: "events",
+        name: "count",
+        type: "Int32",
+        position: 3,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
+      {
+        table: "events",
+        name: "active",
+        type: "Bool",
+        position: 4,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
+      {
+        table: "events",
+        name: "created_at",
+        type: "DateTime",
+        position: 5,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
     const fields = schema.resources["events"].fields
@@ -576,7 +657,15 @@ describe("introspectClickHouse", () => {
 
   it("Nullable(String) → isNullable: true", async () => {
     const client = makeIntrospectClient([
-      { table: "t", name: "deleted_at", type: "Nullable(DateTime)", position: 1, default_kind: "", is_in_primary_key: 0, comment: "" },
+      {
+        table: "t",
+        name: "deleted_at",
+        type: "Nullable(DateTime)",
+        position: 1,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
     expect(schema.resources["t"].fields["deleted_at"].isNullable).toBe(true)
@@ -585,7 +674,15 @@ describe("introspectClickHouse", () => {
 
   it("LowCardinality(String) → string", async () => {
     const client = makeIntrospectClient([
-      { table: "t", name: "status", type: "LowCardinality(String)", position: 1, default_kind: "", is_in_primary_key: 0, comment: "" },
+      {
+        table: "t",
+        name: "status",
+        type: "LowCardinality(String)",
+        position: 1,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
     expect(schema.resources["t"].fields["status"].type).toBe("string")
@@ -593,8 +690,24 @@ describe("introspectClickHouse", () => {
 
   it("column named 'id' is always isId, even if not in primary key", async () => {
     const client = makeIntrospectClient([
-      { table: "t", name: "id",  type: "UUID",   position: 1, default_kind: "", is_in_primary_key: 0, comment: "" },
-      { table: "t", name: "val", type: "String", position: 2, default_kind: "", is_in_primary_key: 1, comment: "" },
+      {
+        table: "t",
+        name: "id",
+        type: "UUID",
+        position: 1,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
+      {
+        table: "t",
+        name: "val",
+        type: "String",
+        position: 2,
+        default_kind: "",
+        is_in_primary_key: 1,
+        comment: "",
+      },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
     expect(schema.resources["t"].fields["id"].isId).toBe(true)
@@ -603,8 +716,24 @@ describe("introspectClickHouse", () => {
 
   it("first primary-key column is isId when no 'id' column exists", async () => {
     const client = makeIntrospectClient([
-      { table: "t", name: "pk_col", type: "UUID", position: 1, default_kind: "", is_in_primary_key: 1, comment: "" },
-      { table: "t", name: "other",  type: "String", position: 2, default_kind: "", is_in_primary_key: 0, comment: "" },
+      {
+        table: "t",
+        name: "pk_col",
+        type: "UUID",
+        position: 1,
+        default_kind: "",
+        is_in_primary_key: 1,
+        comment: "",
+      },
+      {
+        table: "t",
+        name: "other",
+        type: "String",
+        position: 2,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
     expect(schema.resources["t"].fields["pk_col"].isId).toBe(true)
@@ -613,8 +742,24 @@ describe("introspectClickHouse", () => {
 
   it("non-empty default_kind → hasDefaultValue: true", async () => {
     const client = makeIntrospectClient([
-      { table: "t", name: "created_at", type: "DateTime", position: 1, default_kind: "DEFAULT", is_in_primary_key: 0, comment: "" },
-      { table: "t", name: "name",       type: "String",   position: 2, default_kind: "",        is_in_primary_key: 0, comment: "" },
+      {
+        table: "t",
+        name: "created_at",
+        type: "DateTime",
+        position: 1,
+        default_kind: "DEFAULT",
+        is_in_primary_key: 0,
+        comment: "",
+      },
+      {
+        table: "t",
+        name: "name",
+        type: "String",
+        position: 2,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
     expect(schema.resources["t"].fields["created_at"].hasDefaultValue).toBe(true)
@@ -623,8 +768,24 @@ describe("introspectClickHouse", () => {
 
   it("@vistal:sensitive comment → sensitive: true", async () => {
     const client = makeIntrospectClient([
-      { table: "users", name: "password_hash", type: "String", position: 1, default_kind: "", is_in_primary_key: 0, comment: "@vistal:sensitive" },
-      { table: "users", name: "email",         type: "String", position: 2, default_kind: "", is_in_primary_key: 0, comment: "" },
+      {
+        table: "users",
+        name: "password_hash",
+        type: "String",
+        position: 1,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "@vistal:sensitive",
+      },
+      {
+        table: "users",
+        name: "email",
+        type: "String",
+        position: 2,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
     expect(schema.resources["users"].fields["password_hash"].sensitive).toBe(true)
@@ -633,7 +794,15 @@ describe("introspectClickHouse", () => {
 
   it("@vistal:description comment → description string", async () => {
     const client = makeIntrospectClient([
-      { table: "orders", name: "total", type: "Int64", position: 1, default_kind: "", is_in_primary_key: 0, comment: '@vistal:description "Order total in cents"' },
+      {
+        table: "orders",
+        name: "total",
+        type: "Int64",
+        position: 1,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: '@vistal:description "Order total in cents"',
+      },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
     expect(schema.resources["orders"].fields["total"].description).toBe("Order total in cents")
@@ -641,8 +810,18 @@ describe("introspectClickHouse", () => {
 
   it("table description from system.tables comment", async () => {
     const client = makeIntrospectClient(
-      [{ table: "orders", name: "id", type: "UUID", position: 1, default_kind: "", is_in_primary_key: 1, comment: "" }],
-      [{ name: "orders", comment: '@vistal:description "Customer orders"' }]
+      [
+        {
+          table: "orders",
+          name: "id",
+          type: "UUID",
+          position: 1,
+          default_kind: "",
+          is_in_primary_key: 1,
+          comment: "",
+        },
+      ],
+      [{ name: "orders", comment: '@vistal:description "Customer orders"' }],
     )
     const schema = await introspectClickHouse(client as never, "analytics")
     expect(schema.resources["orders"].description).toBe("Customer orders")
@@ -650,7 +829,15 @@ describe("introspectClickHouse", () => {
 
   it("Enum8 → enum with values parsed", async () => {
     const client = makeIntrospectClient([
-      { table: "orders", name: "status", type: "Enum8('pending' = 1, 'shipped' = 2, 'delivered' = 3)", position: 1, default_kind: "", is_in_primary_key: 0, comment: "" },
+      {
+        table: "orders",
+        name: "status",
+        type: "Enum8('pending' = 1, 'shipped' = 2, 'delivered' = 3)",
+        position: 1,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
     const f = schema.resources["orders"].fields["status"]
@@ -660,8 +847,24 @@ describe("introspectClickHouse", () => {
 
   it("unknown ClickHouse types are skipped", async () => {
     const client = makeIntrospectClient([
-      { table: "t", name: "id",   type: "UUID",   position: 1, default_kind: "", is_in_primary_key: 1, comment: "" },
-      { table: "t", name: "data", type: "Ring",   position: 2, default_kind: "", is_in_primary_key: 0, comment: "" },
+      {
+        table: "t",
+        name: "id",
+        type: "UUID",
+        position: 1,
+        default_kind: "",
+        is_in_primary_key: 1,
+        comment: "",
+      },
+      {
+        table: "t",
+        name: "data",
+        type: "Ring",
+        position: 2,
+        default_kind: "",
+        is_in_primary_key: 0,
+        comment: "",
+      },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
     expect(schema.resources["t"].fields["data"]).toBeUndefined()
@@ -672,6 +875,6 @@ describe("introspectClickHouse", () => {
     const client = makeIntrospectClient([])
     await introspectClickHouse(client as never)
     const queries: string[] = client.query.mock.calls.map((c: [{ query: string }]) => c[0].query)
-    expect(queries.some(q => q.includes("currentDatabase"))).toBe(true)
+    expect(queries.some((q) => q.includes("currentDatabase"))).toBe(true)
   })
 })

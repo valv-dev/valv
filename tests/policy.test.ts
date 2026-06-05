@@ -6,42 +6,41 @@ const mockResource: ResourceSchema = {
   name: "orders",
   tableName: "Order",
   fields: {
-    id:             { name: "id",             type: "uuid",   isNullable: false, isId: true },
-    tenant_id:      { name: "tenant_id",      type: "string", isNullable: false, isId: false },
-    status:         { name: "status",         type: "string", isNullable: false, isId: false },
-    user_id:        { name: "user_id",        type: "string", isNullable: false, isId: false },
-    internal_notes: { name: "internal_notes", type: "string", isNullable: true,  isId: false },
-    amount:         { name: "amount",         type: "number", isNullable: false, isId: false },
-    password_hash:  { name: "password_hash",  type: "string", isNullable: false, isId: false, sensitive: true },
+    id: { name: "id", type: "uuid", isNullable: false, isId: true },
+    tenant_id: { name: "tenant_id", type: "string", isNullable: false, isId: false },
+    status: { name: "status", type: "string", isNullable: false, isId: false },
+    user_id: { name: "user_id", type: "string", isNullable: false, isId: false },
+    internal_notes: { name: "internal_notes", type: "string", isNullable: true, isId: false },
+    amount: { name: "amount", type: "number", isNullable: false, isId: false },
+    password_hash: {
+      name: "password_hash",
+      type: "string",
+      isNullable: false,
+      isId: false,
+      sensitive: true,
+    },
   },
   relations: {
-    customer: { name: "customer", targetResource: "users",  type: "belongsTo", foreignKey: "user_id" },
-    items:    { name: "items",    targetResource: "items",  type: "hasMany",   foreignKey: "order_id" },
+    customer: {
+      name: "customer",
+      targetResource: "users",
+      type: "belongsTo",
+      foreignKey: "user_id",
+    },
+    items: { name: "items", targetResource: "items", type: "hasMany", foreignKey: "order_id" },
   },
 }
 
 describe("evaluatePolicy", () => {
   it("read: false → not allowed", () => {
-    const result = evaluatePolicy(
-      () => ({ read: false }),
-      {},
-      "read",
-      "deny-all",
-      mockResource
-    )
+    const result = evaluatePolicy(() => ({ read: false }), {}, "read", "deny-all", mockResource)
     expect(result.allowed).toBe(false)
     expect(result.allowedFields).toEqual([])
     expect(result.allowedRelations).toEqual([])
   })
 
   it("read: true → allowed, all non-sensitive fields", () => {
-    const result = evaluatePolicy(
-      () => ({ read: true }),
-      {},
-      "read",
-      "deny-all",
-      mockResource
-    )
+    const result = evaluatePolicy(() => ({ read: true }), {}, "read", "deny-all", mockResource)
     expect(result.allowed).toBe(true)
     expect(result.allowedFields).not.toContain("password_hash")
     expect(result.allowedFields).toContain("id")
@@ -55,7 +54,7 @@ describe("evaluatePolicy", () => {
       {},
       "read",
       "deny-all",
-      mockResource
+      mockResource,
     )
     expect(result.allowed).toBe(true)
     expect(result.rowFilter).toEqual({ type: "eq", field: "tenant_id", value: "abc" })
@@ -77,7 +76,7 @@ describe("evaluatePolicy", () => {
       {},
       "read",
       "deny-all",
-      mockResource
+      mockResource,
     )
     expect(result.allowed).toBe(true)
     expect(result.allowedFields).not.toContain("user_id")
@@ -93,7 +92,7 @@ describe("evaluatePolicy", () => {
       {},
       "read",
       "deny-all",
-      mockResource
+      mockResource,
     )
     expect(result.allowed).toBe(true)
     expect(result.allowedFields).toContain("id")
@@ -107,20 +106,14 @@ describe("evaluatePolicy", () => {
       {},
       "read",
       "deny-all",
-      mockResource
+      mockResource,
     )
     expect(result.allowedRelations).not.toContain("customer")
     expect(result.allowedRelations).toContain("items")
   })
 
   it("sensitive field never in allowedFields even without deny list", () => {
-    const result = evaluatePolicy(
-      () => ({ read: true }),
-      {},
-      "read",
-      "deny-all",
-      mockResource
-    )
+    const result = evaluatePolicy(() => ({ read: true }), {}, "read", "deny-all", mockResource)
     expect(result.allowedFields).not.toContain("password_hash")
   })
 
@@ -130,7 +123,7 @@ describe("evaluatePolicy", () => {
       {},
       "write",
       "deny-all",
-      mockResource
+      mockResource,
     )
     expect(result.allowed).toBe(true)
     expect(result.forcedWriteFields).toEqual({ tenant_id: "t1" })
@@ -138,13 +131,7 @@ describe("evaluatePolicy", () => {
   })
 
   it("write: false → not allowed, no forcedWriteFields", () => {
-    const result = evaluatePolicy(
-      () => ({ write: false }),
-      {},
-      "write",
-      "deny-all",
-      mockResource
-    )
+    const result = evaluatePolicy(() => ({ write: false }), {}, "write", "deny-all", mockResource)
     expect(result.allowed).toBe(false)
     expect(result.forcedWriteFields).toBeUndefined()
   })
@@ -157,7 +144,7 @@ describe("evaluatePolicy", () => {
       {},
       "read",
       "deny-all",
-      mockResource
+      mockResource,
     )
     expect(result.allowed).toBe(true)
     expect(result.rowFilter).toEqual({ type: "range", field: "amount", lt: 1000 })
@@ -169,7 +156,7 @@ describe("evaluatePolicy", () => {
       {},
       "read",
       "deny-all",
-      mockResource
+      mockResource,
     )
     expect(result.rowFilter).toEqual({
       type: "or",
@@ -186,7 +173,7 @@ describe("evaluatePolicy", () => {
       {},
       "read",
       "deny-all",
-      mockResource
+      mockResource,
     )
     expect(result.rowFilter).toEqual({
       type: "and",
@@ -205,7 +192,7 @@ describe("evaluatePolicy", () => {
       {},
       "update",
       "deny-all",
-      mockResource
+      mockResource,
     )
     // Only the scalar equality is injected into the row.
     expect(result.forcedWriteFields).toEqual({ tenant_id: "t1" })
@@ -226,8 +213,8 @@ describe("evaluatePolicy", () => {
         {},
         "create",
         "deny-all",
-        mockResource
-      )
+        mockResource,
+      ),
     ).toThrow(/operator filter on required field/)
   })
 
@@ -237,7 +224,7 @@ describe("evaluatePolicy", () => {
       {},
       "create",
       "deny-all",
-      mockResource
+      mockResource,
     )
     expect(result.allowed).toBe(true)
     expect(result.forcedWriteFields).toEqual({ tenant_id: "t1" })

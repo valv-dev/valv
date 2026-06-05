@@ -3,14 +3,16 @@ import type { DefaultContext, InferResources, VistalConfig } from "@vistal/core"
 import type { PrismaClient } from "@prisma/client"
 import { PrismaAdapter } from "./adapter"
 
-type CreateConfig<TContext, TClient extends PrismaClient> =
-  Omit<VistalConfig<TContext, InferResources<TClient>>, "adapter"> & {
-    schemaPath?: string
-  }
+type CreateConfig<TContext, TClient extends PrismaClient> = Omit<
+  VistalConfig<TContext, InferResources<TClient>>,
+  "adapter"
+> & {
+  schemaPath?: string
+}
 
 export function createVistal<TClient extends PrismaClient, TContext = DefaultContext>(
   prisma: TClient,
-  config?: CreateConfig<TContext, TClient>
+  config?: CreateConfig<TContext, TClient>,
 ): Vistal<TContext, InferResources<TClient>> {
   const { schemaPath, ...rest } = config ?? {}
   return new Vistal<TContext, InferResources<TClient>>({

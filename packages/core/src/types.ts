@@ -4,11 +4,11 @@ export interface SchemaMap {
 }
 
 export interface ResourceSchema {
-  name: string           // "orders"
-  tableName: string      // "Order" (Prisma model name)
+  name: string // "orders"
+  tableName: string // "Order" (Prisma model name)
   fields: Record<string, FieldSchema>
   relations: Record<string, RelationSchema>
-  description?: string   // from /// @vistal:description annotations
+  description?: string // from /// @vistal:description annotations
 }
 
 export interface FieldSchema {
@@ -16,32 +16,24 @@ export interface FieldSchema {
   type: FieldType
   isNullable: boolean
   isId: boolean
-  hasDefaultValue?: boolean  // field has a DB/schema default (e.g. @default(now()), @default(uuid()))
-  enumValues?: string[]      // if type is "enum"
-  description?: string       // from /// @vistal:description annotations
-  sensitive?: boolean        // from /// @vistal:sensitive annotations
+  hasDefaultValue?: boolean // field has a DB/schema default (e.g. @default(now()), @default(uuid()))
+  enumValues?: string[] // if type is "enum"
+  description?: string // from /// @vistal:description annotations
+  sensitive?: boolean // from /// @vistal:sensitive annotations
 }
 
-export type FieldType =
-  | "string"
-  | "number"
-  | "boolean"
-  | "date"
-  | "enum"
-  | "uuid"
-  | "json"
+export type FieldType = "string" | "number" | "boolean" | "date" | "enum" | "uuid" | "json"
 
 export interface RelationSchema {
   name: string
   targetResource: string
   type: "belongsTo" | "hasMany" | "manyToMany"
   foreignKey: string
-  junctionTable?: string   // for manyToMany
+  junctionTable?: string // for manyToMany
 }
 
 // Policy definition — what the developer writes
-export type PolicyFn<TContext = DefaultContext> =
-  (ctx: TContext) => PolicyResult
+export type PolicyFn<TContext = DefaultContext> = (ctx: TContext) => PolicyResult
 
 // An operation rule: `true` = allow, `false` = deny, or an object describing a
 // predicate. Object values use the same operator vocabulary the LLM filter
@@ -54,20 +46,20 @@ export type PolicyRule = boolean | Record<string, unknown>
 
 export interface PolicyResult {
   read?: PolicyRule
-  write?: PolicyRule      // shorthand: applies to both create and update
-  create?: PolicyRule     // overrides `write` for inserts
-  update?: PolicyRule     // overrides `write` for updates
+  write?: PolicyRule // shorthand: applies to both create and update
+  create?: PolicyRule // overrides `write` for inserts
+  update?: PolicyRule // overrides `write` for updates
   delete?: PolicyRule
-  aggregate?: PolicyRule  // overrides `read` for aggregations
+  aggregate?: PolicyRule // overrides `read` for aggregations
   fields?: FieldPolicy
   relations?: Record<string, boolean>
 }
 
 export interface FieldPolicy {
-  allow?: string[]      // whitelist
-  deny?: string[]       // blacklist
-  readOnly?: string[]   // readable but never writable (e.g. id, created_at, status)
-  writeOnly?: string[]  // writable but never returned (e.g. a settable secret)
+  allow?: string[] // whitelist
+  deny?: string[] // blacklist
+  readOnly?: string[] // readable but never writable (e.g. id, created_at, status)
+  writeOnly?: string[] // writable but never returned (e.g. a settable secret)
   // if none specified: all (non-sensitive) fields allowed for both read and write
 }
 
@@ -86,14 +78,13 @@ export interface DefaultContext {
 
 // ── Type-level camelCase → snake_case ────────────────────────────────────────
 
-type _CamelToSnake<S extends string> =
-  S extends `${infer Head}${infer Tail}`
-    ? Head extends Uppercase<Head>
-      ? Head extends Lowercase<Head>  // digit or non-alpha — pass through
-        ? `${Head}${_CamelToSnake<Tail>}`
-        : `_${Lowercase<Head>}${_CamelToSnake<Tail>}`
-      : `${Head}${_CamelToSnake<Tail>}`
-    : S
+type _CamelToSnake<S extends string> = S extends `${infer Head}${infer Tail}`
+  ? Head extends Uppercase<Head>
+    ? Head extends Lowercase<Head> // digit or non-alpha — pass through
+      ? `${Head}${_CamelToSnake<Tail>}`
+      : `_${Lowercase<Head>}${_CamelToSnake<Tail>}`
+    : `${Head}${_CamelToSnake<Tail>}`
+  : S
 
 /**
  * Derives vistal resource names (snake_case) from a Prisma client type.
