@@ -1,12 +1,12 @@
 import { SchemaMap, PolicyFn, PolicyResult, DefaultContext } from "./types"
 import { ResolvedQuery } from "./ir/types"
 import { buildResolvedQuery } from "./ir/builder"
-import { generateTools, generateConsolidatedTools, NeutralTool, CONSOLIDATED_VERBS, CONSOLIDATED_META } from "./tools/generator"
+import { generateTools, generateConsolidatedTools, NeutralTool, CONSOLIDATED_VERBS, CONSOLIDATED_META, DEFAULT_PAGINATION } from "./tools/generator"
 import { evaluatePolicy, EvaluatedPolicy } from "./policy/engine"
 import { serializeResult } from "./serializer"
 import * as formats from "./formatters"
 import { ToolFormatter } from "./formatters"
-import { ValidationError } from "./errors"
+import { ValidationError, PolicyViolationError } from "./errors"
 
 export interface VistalConfig<TContext = DefaultContext, TResources extends string = string> {
   adapter: VistalAdapter
@@ -17,6 +17,16 @@ export interface VistalConfig<TContext = DefaultContext, TResources extends stri
   resolvePolicy?: (resource: TResources, ctx: TContext) => PolicyResult
   /** Called after every executeTool invocation, successful or not */
   onQuery?: (event: QueryEvent<TContext, TResources>) => void
+  /** Hard cap on `limit` for query tools. Default 100. */
+  maxLimit?: number
+  /** Default `limit` applied when the model omits one. Default 50. */
+  defaultLimit?: number
+}
+
+/** Resolved pagination bounds threaded into the builder and tool generators. */
+export interface PaginationConfig {
+  maxLimit: number
+  defaultLimit: number
 }
 
 export interface QueryEvent<TContext, TResources extends string = string> {
@@ -90,6 +100,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
   private strictPolicyKeys: boolean
   private resolvePolicyFn?: (resource: TResources, ctx: TContext) => PolicyResult
   private onQueryFn?: (event: QueryEvent<TContext, TResources>) => void
+  private pagination: PaginationConfig
 
   constructor(config: VistalConfig<TContext, TResources>) {
     this.adapter = config.adapter
@@ -97,6 +108,10 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
     this.strictPolicyKeys = config.strictPolicyKeys ?? false
     this.resolvePolicyFn = config.resolvePolicy
     this.onQueryFn = config.onQuery
+    this.pagination = {
+      maxLimit: config.maxLimit ?? DEFAULT_PAGINATION.maxLimit,
+      defaultLimit: config.defaultLimit ?? DEFAULT_PAGINATION.defaultLimit,
+    }
   }
 
   /** Register an access policy for a resource. Use "*" as a wildcard fallback. */
@@ -172,7 +187,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
           try {
             return serializeResult(await this.executeTool(t.name, args, ctx))
           } catch (err) {
-            return { error: (err as Error).message }
+            return { error: safeErrorMessage(err) }
           }
         },
       })
@@ -186,9 +201,9 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
     this.validatePolicyKeys(schema)
     const policies = this.buildEffectivePolicies(schema)
     if (options?.mode === "consolidated") {
-      return generateConsolidatedTools(schema, policies, ctx, this.defaultPolicy, options)
+      return generateConsolidatedTools(schema, policies, ctx, this.defaultPolicy, this.pagination, options)
     }
-    return generateTools(schema, policies, ctx, this.defaultPolicy, options)
+    return generateTools(schema, policies, ctx, this.defaultPolicy, this.pagination, options)
   }
 
   private async formatTools<T>(
@@ -259,11 +274,11 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
           const { resource: _r, ...rest } = inp
           normalizedInput = rest
         }
-        const query = buildResolvedQuery(internalName, normalizedInput, schema, policies, ctx, this.defaultPolicy)
+        const query = buildResolvedQuery(internalName, normalizedInput, schema, policies, ctx, this.defaultPolicy, this.pagination)
         return await this.adapter.execute(query)
       }
 
-      const query = buildResolvedQuery(toolName, input, schema, policies, ctx, this.defaultPolicy)
+      const query = buildResolvedQuery(toolName, input, schema, policies, ctx, this.defaultPolicy, this.pagination)
       return await this.adapter.execute(query)
     } catch (e) {
       caughtError = e as Error
@@ -446,6 +461,17 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
       }
     }
   }
+}
+
+// Vistal's own errors are author-written, safe, and actionable for the model to
+// recover from. Any other error (e.g. a raw DB driver error) may carry internal
+// details — file paths, query dumps — so it is replaced with a generic message.
+// The full error is still delivered to onQuery for server-side logging.
+function safeErrorMessage(err: unknown): string {
+  if (err instanceof ValidationError || err instanceof PolicyViolationError) {
+    return err.message
+  }
+  return "The query could not be completed due to an internal error."
 }
 
 function buildPolicyStub(resourceName: string): string {

@@ -32,6 +32,19 @@ export function valueToFilterNode(
   if (typeof value === "object" && !Array.isArray(value)) {
     const obj = value as Record<string, unknown>
 
+    // Equality aliases — the canonical form is a bare value, but models commonly
+    // reach for `{ eq }` / `{ equals }`, so accept them rather than mangling the query.
+    if ("eq" in obj) {
+      validateEnum(field, [obj.eq], fieldSchema)
+      return { type: "eq", field, value: obj.eq }
+    }
+    if ("equals" in obj) {
+      validateEnum(field, [obj.equals], fieldSchema)
+      return { type: "eq", field, value: obj.equals }
+    }
+    if ("ne" in obj) {
+      return { type: "not", filter: { type: "eq", field, value: obj.ne } }
+    }
     if ("gte" in obj || "lte" in obj || "gt" in obj || "lt" in obj) {
       return { type: "range", field, ...obj }
     }
@@ -48,6 +61,15 @@ export function valueToFilterNode(
       validateEnum(field, obj.in, fieldSchema)
       return { type: "in", field, values: obj.in }
     }
+
+    // Unknown operator object — reject with an actionable message instead of
+    // passing it through as an equality against a literal object (which would
+    // produce a malformed adapter query).
+    throw new ValidationError(
+      `Unsupported filter for field "${field}": {${Object.keys(obj).join(", ")}}. ` +
+      `Use a bare value for equality, or an operator object with one of: ` +
+      `eq, ne, gt, gte, lt, lte, in, contains, startsWith, endsWith.`
+    )
   }
 
   if (Array.isArray(value)) {

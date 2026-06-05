@@ -3,6 +3,8 @@ import { ResolvedQuery, ResolvedInclude, FilterNode } from "./types"
 import { evaluatePolicy, mergeFilters, PolicyOperation } from "../policy/engine"
 import { objectToFilterNode } from "./filters"
 import { PolicyViolationError, ValidationError } from "../errors"
+import { decodeCursor, type CursorKeyset } from "./cursor"
+import type { PaginationConfig } from "../vistal"
 
 type OperationType = "find" | "findOne" | "create" | "update" | "delete" | "aggregate"
 
@@ -42,7 +44,8 @@ export function buildResolvedQuery<TContext>(
   schema: SchemaMap,
   policies: Record<string, PolicyFn<TContext>>,
   ctx: TContext,
-  defaultPolicy: "deny-all" | "allow-all"
+  defaultPolicy: "deny-all" | "allow-all",
+  paginationConfig: PaginationConfig = { maxLimit: 100, defaultLimit: 50 }
 ): ResolvedQuery {
   const { operation, resource } = parseToolName(toolName)
 
@@ -103,7 +106,8 @@ export function buildResolvedQuery<TContext>(
     }
   }
 
-  const fields = evaluated.allowedFields
+  const fields = [...evaluated.allowedFields]
+  const pkField = Object.values(resourceSchema.fields).find(f => f.isId)?.name ?? "id"
 
   const query: ResolvedQuery = {
     resource,
@@ -126,12 +130,65 @@ export function buildResolvedQuery<TContext>(
     }
   }
 
-  // Pagination
-  if (inp.limit !== undefined || inp.offset !== undefined) {
-    query.pagination = {
-      limit: typeof inp.limit === "number" ? Math.min(inp.limit, 100) : undefined,
-      offset: typeof inp.offset === "number" ? Math.max(0, inp.offset) : undefined,
+  // Pagination — applies to every find so the default page size always caps reads.
+  if (operation === "find") {
+    const explicitSort = query.sort
+
+    // The cursor is self-describing: decode it first so it can drive the sort.
+    let keyset: CursorKeyset | undefined
+    if (typeof inp.cursor === "string" && inp.cursor.length > 0) {
+      keyset = decodeCursor(inp.cursor)
+      if (keyset.sortField !== pkField && !evaluated.allowedFields.includes(keyset.sortField)) {
+        throw new ValidationError(`Cursor sort field "${keyset.sortField}" is not allowed`)
+      }
     }
+
+    if (keyset) {
+      if (explicitSort) {
+        // A cursor + an explicit sort must agree — the keyset is meaningless otherwise.
+        if (explicitSort.field !== keyset.sortField || explicitSort.direction !== keyset.direction) {
+          throw new ValidationError("Cursor does not match the requested sort")
+        }
+      } else {
+        // Continue paging under the sort the cursor was issued with.
+        query.sort = { field: keyset.sortField, direction: keyset.direction }
+      }
+    } else if (!query.sort) {
+      // No cursor, no explicit sort → default to the primary key for stable order.
+      query.sort = { field: pkField, direction: "asc" }
+    }
+
+    const cursorField = query.sort!.field
+    if (keyset && resourceSchema.fields[cursorField]?.isNullable) {
+      throw new ValidationError(
+        `Cursor pagination is not supported on nullable sort field "${cursorField}"`
+      )
+    }
+
+    const rawLimit = typeof inp.limit === "number" ? inp.limit : paginationConfig.defaultLimit
+    const limit = Math.min(Math.max(1, Math.floor(rawLimit)), paginationConfig.maxLimit)
+
+    query.pagination = {
+      limit,
+      // Cursor wins over offset — only honor offset when paging without a cursor.
+      offset: keyset ? undefined : (typeof inp.offset === "number" ? Math.max(0, inp.offset) : undefined),
+      cursor: typeof inp.cursor === "string" ? inp.cursor : undefined,
+      keyset,
+      primaryKey: pkField,
+      cursorField,
+    }
+
+    // The adapter needs the pk + sort field on each row to build nextCursor,
+    // even when policy didn't expose them. Track injected ones so they can be
+    // stripped from returned rows.
+    const internalFields: string[] = []
+    for (const f of [pkField, cursorField]) {
+      if (!fields.includes(f)) {
+        fields.push(f)
+        internalFields.push(f)
+      }
+    }
+    if (internalFields.length > 0) query.internalFields = internalFields
   }
 
   // Aggregations

@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client"
 import type { VistalAdapter, SchemaMap, ResolvedQuery, FilterNode, ResolvedInclude } from "@vistal/core"
+import { encodeCursor } from "@vistal/core"
 import { introspectPrisma } from "./introspection"
 
 export class PrismaAdapter implements VistalAdapter {
@@ -33,17 +34,67 @@ export class PrismaAdapter implements VistalAdapter {
 
     switch (query.operation) {
       case "find": {
+        // The builder guarantees sort + pagination (with primaryKey/cursorField)
+        // for finds; fall back defensively for directly-constructed queries.
+        const pag = query.pagination
+        const pk = pag?.primaryKey ?? "id"
+        const sort = query.sort ?? { field: pk, direction: "asc" as const }
+        const dir = sort.direction
+
         const args: Record<string, unknown> = { select: selectWithIncludes }
-        if (where) args.where = where
-        if (query.sort) {
-          args.orderBy = { [query.sort.field]: query.sort.direction }
+
+        // orderBy: sort field + primary-key tiebreaker for a total, stable order.
+        args.orderBy = sort.field === pk
+          ? [{ [pk]: dir }]
+          : [{ [sort.field]: dir }, { [pk]: dir }]
+
+        // Keyset WHERE from the cursor; falls back to offset/skip when no cursor.
+        let effectiveWhere = where
+        if (pag?.keyset) {
+          const op = dir === "asc" ? "gt" : "lt"
+          const ks = pag.keyset
+          const keysetWhere = sort.field === pk
+            ? { [pk]: { [op]: ks.id } }
+            : {
+                OR: [
+                  { [sort.field]: { [op]: ks.sortValue } },
+                  { AND: [{ [sort.field]: ks.sortValue }, { [pk]: { [op]: ks.id } }] },
+                ],
+              }
+          effectiveWhere = where ? { AND: [where, keysetWhere] } : keysetWhere
+        } else if (pag?.offset !== undefined) {
+          args.skip = pag.offset
         }
-        if (query.pagination) {
-          if (query.pagination.limit !== undefined) args.take = query.pagination.limit
-          if (query.pagination.offset !== undefined) args.skip = query.pagination.offset
+        if (effectiveWhere) args.where = effectiveWhere
+
+        // Fetch one extra row to detect whether another page exists.
+        const limit = pag?.limit
+        if (limit !== undefined) args.take = limit + 1
+
+        let results = (await model.findMany(args)) as Record<string, unknown>[]
+        const hasMore = limit !== undefined && results.length > limit
+        if (hasMore) results = results.slice(0, limit)
+
+        let nextCursor: string | undefined
+        if (hasMore && results.length > 0) {
+          const last = results[results.length - 1]
+          nextCursor = encodeCursor({
+            sortField: sort.field,
+            direction: dir,
+            sortValue: serializeCursorValue(last[sort.field]),
+            id: serializeCursorValue(last[pk]),
+          })
         }
-        const results = await model.findMany(args)
-        return query.include ? applyBelongsToFilters(results, query.include) : results
+
+        // Strip fields added only for cursor bookkeeping before returning.
+        if (query.internalFields?.length) {
+          for (const row of results) {
+            for (const f of query.internalFields) delete row[f]
+          }
+        }
+
+        const data = query.include ? applyBelongsToFilters(results, query.include) : results
+        return { data, nextCursor, hasMore }
       }
 
       case "findOne": {
@@ -89,6 +140,22 @@ export class PrismaAdapter implements VistalAdapter {
 
 function toCamelCase(snake: string): string {
   return snake.replace(/_([a-z])/g, (_, l) => l.toUpperCase())
+}
+
+// Normalize a value for embedding in a cursor so it JSON-round-trips and the
+// decoded value can be compared by Prisma on the next page (Date → ISO string,
+// Prisma Decimal → number). Mirrors the duck-typing in core's serializeResult.
+function serializeCursorValue(value: unknown): unknown {
+  if (value === null || value === undefined) return value
+  if (value instanceof Date) return value.toISOString()
+  if (typeof value === "bigint") return value.toString()
+  if (typeof value === "object") {
+    const v = value as Record<string, unknown>
+    if (typeof v.toNumber === "function" && typeof v.toFixed === "function") {
+      return (value as { toNumber(): number }).toNumber()
+    }
+  }
+  return value
 }
 
 function buildSelect(fields: string[]): Record<string, true> {

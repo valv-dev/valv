@@ -1,4 +1,5 @@
 import type { VistalAdapter, SchemaMap, ResolvedQuery } from "@vistal/core"
+import { encodeCursor } from "@vistal/core"
 import { introspectClickHouse, type ClickHouseClient } from "./introspection"
 import { compileFilter, formatValue, quoteIdent } from "./sql"
 
@@ -56,30 +57,66 @@ export class ClickHouseAdapter implements VistalAdapter {
     }
 
     const selectCols = query.fields.map(quoteIdent).join(", ")
-    let sql = `SELECT ${selectCols} FROM ${table}`
 
-    if (query.filters) {
-      sql += ` WHERE ${compileFilter(query.filters)}`
-    }
-
-    if (query.sort) {
-      sql += ` ORDER BY ${quoteIdent(query.sort.field)} ${query.sort.direction.toUpperCase()}`
-    }
-
+    // findOne: simple SELECT ... LIMIT 1, returned unwrapped.
     if (one) {
-      sql += " LIMIT 1"
-    } else if (query.pagination) {
-      if (query.pagination.limit !== undefined) {
-        sql += ` LIMIT ${query.pagination.limit}`
+      let sql = `SELECT ${selectCols} FROM ${table}`
+      if (query.filters) sql += ` WHERE ${compileFilter(query.filters)}`
+      if (query.sort) {
+        sql += ` ORDER BY ${quoteIdent(query.sort.field)} ${query.sort.direction.toUpperCase()}`
       }
-      if (query.pagination.offset !== undefined) {
-        sql += ` OFFSET ${query.pagination.offset}`
+      sql += " LIMIT 1"
+      const rows = await this.client.query({ query: sql, format: "JSONEachRow" }).then(r => r.json() as Promise<unknown[]>)
+      return rows[0] ?? null
+    }
+
+    // find: the builder guarantees sort + pagination (with primaryKey/cursorField);
+    // fall back defensively for directly-constructed queries.
+    const pag = query.pagination
+    const pk = pag?.primaryKey ?? "id"
+    const sort = query.sort ?? { field: pk, direction: "asc" as const }
+    const dir = sort.direction.toUpperCase()
+    const op = sort.direction === "asc" ? ">" : "<"
+
+    const whereParts: string[] = []
+    if (query.filters) whereParts.push(compileFilter(query.filters))
+    if (pag?.keyset) {
+      const ks = pag.keyset
+      whereParts.push(
+        sort.field === pk
+          ? `${quoteIdent(pk)} ${op} ${formatValue(ks.id)}`
+          : `(${quoteIdent(sort.field)} ${op} ${formatValue(ks.sortValue)} OR ` +
+            `(${quoteIdent(sort.field)} = ${formatValue(ks.sortValue)} AND ${quoteIdent(pk)} ${op} ${formatValue(ks.id)}))`
+      )
+    }
+
+    let sql = `SELECT ${selectCols} FROM ${table}`
+    if (whereParts.length > 0) sql += ` WHERE ${whereParts.join(" AND ")}`
+    sql += sort.field === pk
+      ? ` ORDER BY ${quoteIdent(pk)} ${dir}`
+      : ` ORDER BY ${quoteIdent(sort.field)} ${dir}, ${quoteIdent(pk)} ${dir}`
+
+    const limit = pag?.limit
+    if (limit !== undefined) sql += ` LIMIT ${limit + 1}`
+    if (!pag?.keyset && pag?.offset !== undefined) sql += ` OFFSET ${pag.offset}`
+
+    let rows = await this.client.query({ query: sql, format: "JSONEachRow" }).then(r => r.json() as Promise<Record<string, unknown>[]>)
+    const hasMore = limit !== undefined && rows.length > limit
+    if (hasMore) rows = rows.slice(0, limit)
+
+    let nextCursor: string | undefined
+    if (hasMore && rows.length > 0) {
+      const last = rows[rows.length - 1]
+      nextCursor = encodeCursor({ sortField: sort.field, direction: sort.direction, sortValue: last[sort.field], id: last[pk] })
+    }
+
+    if (query.internalFields?.length) {
+      for (const row of rows) {
+        for (const f of query.internalFields) delete row[f]
       }
     }
 
-    const rows = await this.client.query({ query: sql, format: "JSONEachRow" }).then(r => r.json() as Promise<unknown[]>)
-
-    return one ? (rows[0] ?? null) : rows
+    return { data: rows, nextCursor, hasMore }
   }
 
   private async executeCreate(

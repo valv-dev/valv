@@ -1,6 +1,9 @@
 import { SchemaMap, PolicyFn, ResourceSchema, FieldSchema } from "../types"
 import { evaluatePolicy, EvaluatedPolicy } from "../policy/engine"
-import { GetToolsOptions } from "../vistal"
+import type { GetToolsOptions, PaginationConfig } from "../vistal"
+
+/** Fallback pagination bounds for direct callers; production flows pass config from VistalConfig. */
+export const DEFAULT_PAGINATION: PaginationConfig = { maxLimit: 100, defaultLimit: 50 }
 
 export const CONSOLIDATED_VERBS = ["query", "get", "create", "update", "delete", "aggregate"] as const
 export const CONSOLIDATED_META = ["list_resources", "describe_resource"] as const
@@ -33,6 +36,7 @@ export function generateTools<TContext>(
   policies: Record<string, PolicyFn<TContext>>,
   ctx: TContext,
   defaultPolicy: "deny-all" | "allow-all",
+  paginationConfig: PaginationConfig = DEFAULT_PAGINATION,
   options?: GetToolsOptions
 ): NeutralTool[] {
   const tools: NeutralTool[] = []
@@ -49,7 +53,7 @@ export function generateTools<TContext>(
     const aggregatePolicy = evaluatePolicy(policies[resourceName], ctx, "aggregate", defaultPolicy, resource)
 
     if (readPolicy.allowed) {
-      tools.push(buildQueryTool(resourceName, resource, readPolicy))
+      tools.push(buildQueryTool(resourceName, resource, readPolicy, paginationConfig))
       tools.push(buildGetTool(resourceName, resource, readPolicy))
     }
 
@@ -82,7 +86,8 @@ export function generateTools<TContext>(
 function buildQueryTool(
   resourceName: string,
   resource: ResourceSchema,
-  policy: EvaluatedPolicy
+  policy: EvaluatedPolicy,
+  paginationConfig: PaginationConfig
 ): NeutralTool {
   const description = resource.description
     ? `Query multiple ${resourceName} records. ${resource.description}`
@@ -97,17 +102,29 @@ function buildQueryTool(
         filters: buildFiltersSchema(resource, policy.allowedFields),
         include: buildIncludeSchema(policy.allowedRelations),
         sort: buildSortSchema(policy.allowedFields),
-        limit: {
-          type: "number",
-          description: "Maximum number of records to return (max 100)",
-          maximum: 100,
-        },
-        offset: {
-          type: "number",
-          description: "Number of records to skip",
-        },
+        ...buildPaginationSchema(paginationConfig),
       },
       additionalProperties: false,
+    },
+  }
+}
+
+// Shared pagination params for query tools (per-resource and consolidated).
+function buildPaginationSchema(cfg: PaginationConfig): Record<string, unknown> {
+  return {
+    limit: {
+      type: "number",
+      description: `Maximum number of records to return (default ${cfg.defaultLimit}, max ${cfg.maxLimit})`,
+      minimum: 1,
+      maximum: cfg.maxLimit,
+    },
+    offset: {
+      type: "number",
+      description: "Number of records to skip (ignored if cursor is supplied; prefer cursor for pagination)",
+    },
+    cursor: {
+      type: "string",
+      description: "Opaque pagination cursor from a previous result's nextCursor. Pass it alone to fetch the next page — it already carries the sort, so do not resend `sort` (or resend the identical one).",
     },
   }
 }
@@ -367,6 +384,7 @@ export function generateConsolidatedTools<TContext>(
   policies: Record<string, PolicyFn<TContext>>,
   ctx: TContext,
   defaultPolicy: "deny-all" | "allow-all",
+  paginationConfig: PaginationConfig = DEFAULT_PAGINATION,
   options?: GetToolsOptions
 ): NeutralTool[] {
   const tools: NeutralTool[] = []
@@ -452,8 +470,7 @@ export function generateConsolidatedTools<TContext>(
             additionalProperties: false,
           },
           include: { type: "array", items: { type: "string" }, description: "Relation names to include" },
-          limit: { type: "number", description: "Maximum number of records to return (max 100)", maximum: 100 },
-          offset: { type: "number", description: "Number of records to skip" },
+          ...buildPaginationSchema(paginationConfig),
         },
         required: ["resource"],
         additionalProperties: false,

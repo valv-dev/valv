@@ -1,3 +1,5 @@
+import type { CursorKeyset } from "./cursor"
+
 export interface ResolvedQuery {
   resource: string
   operation: "find" | "findOne" | "create" | "update" | "delete" | "aggregate"
@@ -7,6 +9,10 @@ export interface ResolvedQuery {
 
   // Fields to return — already stripped by policy
   fields: string[]
+
+  // Fields the builder added solely for cursor bookkeeping (primary key / sort
+  // field). The adapter must SELECT them but strip them from returned rows.
+  internalFields?: string[]
 
   // Relations to include — already filtered by policy
   include?: Record<string, ResolvedInclude>
@@ -60,7 +66,10 @@ export interface SortClause {
 export interface PaginationClause {
   limit?: number
   offset?: number
-  cursor?: string   // for cursor-based pagination
+  cursor?: string            // raw token as received (reference/debug)
+  keyset?: CursorKeyset      // decoded keyset when a valid cursor was supplied
+  primaryKey: string         // pk field name — always set by the builder for finds
+  cursorField: string        // field nextCursor is keyed on (the effective sort field)
 }
 
 export interface AggregationClause {
