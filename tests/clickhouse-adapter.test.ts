@@ -264,9 +264,62 @@ describe("ClickHouseAdapter.execute", () => {
     expect(sql).toContain("SELECT `id`, `status`, `total`")
     expect(sql).toContain("FROM `analytics`.`orders`")
     expect(sql).toContain("WHERE `tenant_id` = 't1'")
-    expect(sql).toContain("ORDER BY `total` DESC")
-    expect(sql).toContain("LIMIT 10")
+    // sort field + primary-key tiebreaker for stable keyset ordering
+    expect(sql).toContain("ORDER BY `total` DESC, `id` DESC")
+    // LIMIT is limit + 1 (one extra row probes for a next page)
+    expect(sql).toContain("LIMIT 11")
     expect(sql).toContain("OFFSET 20")
+  })
+
+  it("find with cursor → keyset WHERE, pk tiebreaker ORDER BY, LIMIT+1", async () => {
+    const { adapter, mocks } = makeAdapterWithSchema()
+    const query: ResolvedQuery = {
+      resource: "orders",
+      operation: "find",
+      fields: ["id", "total"],
+      filters: { type: "eq", field: "tenant_id", value: "t1" },
+      sort: { field: "total", direction: "asc" },
+      pagination: {
+        limit: 10,
+        primaryKey: "id",
+        cursorField: "total",
+        keyset: { sortField: "total", direction: "asc", sortValue: 50, id: "o9" },
+      },
+    }
+    await adapter.execute(query)
+    const sql: string = mocks.query.mock.calls[0][0].query
+    expect(sql).toContain("WHERE `tenant_id` = 't1' AND (`total` > 50 OR (`total` = 50 AND `id` > 'o9'))")
+    expect(sql).toContain("ORDER BY `total` ASC, `id` ASC")
+    expect(sql).toContain("LIMIT 11")
+    expect(sql).not.toContain("OFFSET")
+  })
+
+  it("find returns a { data, nextCursor, hasMore } envelope", async () => {
+    const { client, mocks } = makeClient()
+    mocks.query.mockResolvedValue({
+      json: () => Promise.resolve([
+        { id: "a", total: 1 }, { id: "b", total: 2 }, { id: "c", total: 3 },
+      ]),
+    })
+    const adapter = new ClickHouseAdapter(client as never, { database: "analytics" })
+    ;(adapter as never as { schemaCache: unknown }).schemaCache = {
+      resources: {
+        orders: { name: "orders", tableName: "orders", relations: {}, fields: {
+          id:    { name: "id",    type: "uuid",   isNullable: false, isId: true },
+          total: { name: "total", type: "number", isNullable: false, isId: false },
+        } },
+      },
+    }
+    const res = await adapter.execute({
+      resource: "orders",
+      operation: "find",
+      fields: ["id", "total"],
+      sort: { field: "total", direction: "asc" },
+      pagination: { limit: 2, primaryKey: "id", cursorField: "total" },
+    }) as { data: unknown[]; nextCursor?: string; hasMore: boolean }
+    expect(res.data).toHaveLength(2)
+    expect(res.hasMore).toBe(true)
+    expect(res.nextCursor).toBeDefined()
   })
 
   it("find without filters — no WHERE clause emitted", async () => {

@@ -84,6 +84,28 @@ describe("vistal.tools namespace", () => {
     expect(JSON.stringify(adapter.lastQuery)).toContain("tenant_id")
   })
 
+  it("vercel execute() hides raw adapter errors behind a generic message", async () => {
+    class ThrowingAdapter implements VistalAdapter {
+      async introspect(): Promise<SchemaMap> { return schema }
+      async execute(): Promise<unknown> {
+        throw new Error("Invalid `model.findMany()` invocation in /home/nico/.../adapter.ts:74")
+      }
+    }
+    const vistal = new Vistal({ adapter: new ThrowingAdapter() }).policy("order", () => ({ read: true }))
+    const tools = await vistal.tools.vercel(ctx)
+    const result = await tools["query_order"].execute({}) as { error: string }
+    expect(result.error).toBe("The query could not be completed due to an internal error.")
+    expect(result.error).not.toContain("adapter.ts")
+  })
+
+  it("vercel execute() passes through vistal's own validation errors", async () => {
+    const vistal = makeVista(new MockAdapter())
+    const tools = await vistal.tools.vercel(ctx)
+    // unknown filter operator → ValidationError surfaced verbatim for model recovery
+    const result = await tools["query_order"].execute({ filters: { amount: { between: [1, 5] } } }) as { error: string }
+    expect(result.error).toMatch(/Unsupported filter for field "amount"/)
+  })
+
   it("format() honors a custom formatter", async () => {
     const vistal = makeVista(new MockAdapter())
     const tools = await vistal.tools.format(ctx, (t) => ({ id: t.name, schema: t.parameters }))

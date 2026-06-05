@@ -149,6 +149,7 @@ describe("PrismaAdapter.execute", () => {
     expect(mocks.findMany).toHaveBeenCalledWith({
       where: { tenant_id: "t1" },
       select: { id: true, status: true },
+      orderBy: [{ id: "asc" }],
     })
   })
 
@@ -244,7 +245,7 @@ describe("PrismaAdapter.execute", () => {
     }
     await adapter.execute(query)
     expect(mocks.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ orderBy: { status: "desc" } })
+      expect.objectContaining({ orderBy: [{ status: "desc" }, { id: "desc" }] })
     )
   })
 
@@ -257,8 +258,9 @@ describe("PrismaAdapter.execute", () => {
       pagination: { limit: 10, offset: 20 },
     }
     await adapter.execute(query)
+    // take is limit + 1 (one extra row probes for a next page); offset → skip
     expect(mocks.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 10, skip: 20 })
+      expect.objectContaining({ take: 11, skip: 20 })
     )
   })
 
@@ -448,9 +450,9 @@ describe("PrismaAdapter.execute", () => {
         },
       },
     }
-    const results = await adapter.execute(query) as Record<string, unknown>[]
+    const { data } = await adapter.execute(query) as { data: Record<string, unknown>[] }
     // customer fails tenant filter → nulled out
-    expect(results[0].customer).toBeNull()
+    expect(data[0].customer).toBeNull()
   })
 })
 
@@ -518,7 +520,7 @@ describe("matchesFilter (post-fetch belongsTo enforcement)", () => {
         },
       },
     }
-    const results = await adapter.execute(query) as Record<string, unknown>[]
-    expect(results[0].customer).toBeNull()
+    const { data } = await adapter.execute(query) as { data: Record<string, unknown>[] }
+    expect(data[0].customer).toBeNull()
   })
 })

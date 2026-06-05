@@ -127,6 +127,7 @@ describe("generateTools", () => {
       { orders: () => ({ read: true }) },
       {},
       "deny-all",
+      undefined,
       { resources: [] }
     )
     expect(tools).toHaveLength(0)

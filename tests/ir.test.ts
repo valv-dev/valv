@@ -97,6 +97,33 @@ describe("buildResolvedQuery", () => {
     expect(filterStr).toContain("pending")
   })
 
+  it("accepts { eq } / { equals } as equality aliases", () => {
+    for (const filters of [{ status: { eq: "pending" } }, { status: { equals: "pending" } }]) {
+      const query = buildResolvedQuery(
+        "query_orders", { filters }, schema, { orders: () => ({ read: true }) }, {}, "deny-all"
+      )
+      expect(JSON.stringify(query.filters)).toContain('"type":"eq"')
+      expect(JSON.stringify(query.filters)).toContain("pending")
+    }
+  })
+
+  it("maps { ne } to a negated equality", () => {
+    const query = buildResolvedQuery(
+      "query_orders", { filters: { status: { ne: "pending" } } },
+      schema, { orders: () => ({ read: true }) }, {}, "deny-all"
+    )
+    expect(query.filters).toEqual({ type: "not", filter: { type: "eq", field: "status", value: "pending" } })
+  })
+
+  it("rejects an unknown filter operator with an actionable error", () => {
+    expect(() =>
+      buildResolvedQuery(
+        "query_orders", { filters: { status: { like: "pend%" } } },
+        schema, { orders: () => ({ read: true }) }, {}, "deny-all"
+      )
+    ).toThrow(/Unsupported filter for field "status"/)
+  })
+
   it("disallowed relation in include → ValidationError", () => {
     expect(() =>
       buildResolvedQuery(
