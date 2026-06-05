@@ -39,6 +39,6 @@
   },
   "peerDependencies": {
     "@clickhouse/client": "^1.0.0",
-    "@vistal/core": "^0.1.0"
+    "@vistal/core": "^0.2.0"
   }
 }
