@@ -107,6 +107,8 @@ npm install @vistal/core @vistal/prisma
 |---|---|
 | `@vistal/core` | Zero-dependency core: policies, tool generation, query IR |
 | `@vistal/prisma` | Prisma adapter + schema introspection (Prisma 5+) |
+| `@vistal/mcp` | Zero-config MCP server for coding agents — point it at a `DATABASE_URL`, no code ([Claude Code](packages/mcp/README.md)) |
+| `@vistal/mcp-sdk` | Library to turn your app's own DB into an MCP server, policies in code ([guide](packages/mcp-sdk/README.md)) |
 | `ai` | Optional, only for `vistal.tools.vercel()` |
 
 Pass `schemaPath` to `createVistal` if your schema isn't at `./prisma/schema.prisma`.
@@ -223,6 +225,50 @@ const tools = await vistal.tools.format(ctx, (t) => ({ id: t.name, schema: t.par
 ```
 
 Tool errors are caught and returned as `{ error }` so the agent can recover instead of aborting.
+
+## Connect a coding agent (MCP)
+
+Let a coding agent like **Claude Code** work your database directly over the [Model Context Protocol](https://modelcontextprotocol.io) — under vistal policies, with no SQL and no leaks. Two ways in.
+
+### Zero-config: just a database URL
+
+[`@vistal/mcp`](packages/mcp/README.md) needs no code and no schema file. Point it at a `DATABASE_URL`; it introspects the live database, generates the tools, and serves them **read-only by default**. Add it to your `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "db": {
+      "command": "npx",
+      "args": ["-y", "@vistal/mcp"],
+      "env": { "DATABASE_URL": "postgresql://user:pass@localhost:5432/mydb" }
+    }
+  }
+}
+```
+
+Claude can now discover and read your tables. Narrow exposure with `VISTAL_TABLES` / `VISTAL_EXCLUDE`, and enable writes or richer rules with a `VISTAL_POLICY_FILE`. Works with any Prisma-supported database (PostgreSQL, MySQL, SQLite, SQL Server).
+
+### Policies-in-code: embed it in your app
+
+[`@vistal/mcp-sdk`](packages/mcp-sdk/README.md) exposes a vistal instance *you* configure (adapter + policies) as an MCP server — adapter-agnostic (Prisma or ClickHouse), with full control over policy and context.
+
+```ts
+import { startStdioServer } from "@vistal/mcp-sdk"
+
+const vistal = createVistal(prisma, { defaultPolicy: "deny-all" })
+vistal.policy("order", (ctx) => ({ read: { tenant_id: ctx.tenant.id }, delete: false }))
+
+await startStdioServer(vistal, {
+  // resolved per request — source identity from env, headers, etc.
+  context: () => ({ user: { role: process.env.VISTAL_ROLE! }, tenant: { id: process.env.VISTAL_TENANT! } }),
+})
+```
+
+```json
+{ "mcpServers": { "vistal": { "command": "npx", "args": ["tsx", "mcp.ts"] } } }
+```
+
+Either way the agent gets the **consolidated** tool set — `list_resources`, `describe_resource`, `query`, `get`, `create`, `update`, `delete`, `aggregate` — and discovers your schema at runtime. `startHttpServer` serves the same over Streamable HTTP. See [`examples/ecommerce/mcp.ts`](examples/ecommerce/mcp.ts).
 
 ## Observability
 

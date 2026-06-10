@@ -6,8 +6,8 @@
     "examples/*"
   ],
   "scripts": {
-    "build": "npm run build -w @vistal/core && npm run build -w @vistal/prisma && npm run build -w @vistal/clickhouse",
-    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/prisma && tsc --noEmit -p packages/clickhouse",
+    "build": "npm run build -w @vistal/core && npm run build -w @vistal/prisma && npm run build -w @vistal/clickhouse && npm run build -w @vistal/mcp-sdk && npm run build -w @vistal/mcp",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/prisma && tsc --noEmit -p packages/clickhouse && tsc --noEmit -p packages/mcp-sdk && tsc --noEmit -p packages/mcp",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write \"packages/*/src/**/*.ts\" \"tests/**/*.ts\"",

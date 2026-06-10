@@ -20,16 +20,26 @@ export class PrismaAdapter implements VistalAdapter {
     return introspectPrisma(path)
   }
 
-  async execute(query: ResolvedQuery): Promise<unknown> {
-    // Convert snake_case resource name to camelCase for Prisma client accessor
-    const clientKey = toCamelCase(query.resource)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const model = (this.prisma as any)[clientKey]
-    if (!model) {
-      throw new Error(
-        `Prisma model not found for resource: ${query.resource} (tried key: ${clientKey})`,
-      )
+  // Resolve the Prisma client delegate for a resource. Resource names come from
+  // PascalCase models (`OrderItem` → `order_item`, delegate `orderItem`), so
+  // toCamelCase is the primary key. But a schema introspected live from the DB
+  // (`prisma db pull`) keeps snake_case model names (`order_items`, delegate
+  // `order_items`), where the resource name *is* the delegate key — so we fall
+  // back to the raw name.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private resolveModel(resource: string): any {
+    for (const key of [toCamelCase(resource), resource]) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const model = (this.prisma as any)[key]
+      if (model) return model
     }
+    throw new Error(
+      `Prisma model not found for resource: ${resource} (tried keys: ${toCamelCase(resource)}, ${resource})`,
+    )
+  }
+
+  async execute(query: ResolvedQuery): Promise<unknown> {
+    const model = this.resolveModel(query.resource)
 
     const where = query.filters ? translateFilter(query.filters) : undefined
     const select = buildSelect(query.fields)

@@ -1,0 +1,53 @@
+{
+  "name": "@vistal/mcp-sdk",
+  "version": "0.1.0",
+  "description": "Library to turn your app's database into an MCP server for coding agents (Claude Code) — adapter-agnostic, row-level security, zero SQL",
+  "keywords": [
+    "mcp",
+    "model context protocol",
+    "claude code",
+    "ai agent",
+    "llm",
+    "access control",
+    "authorization",
+    "row-level security",
+    "multi-tenant",
+    "tool use",
+    "prisma",
+    "clickhouse",
+    "typescript"
+  ],
+  "author": "Nicolò D'Addabbo <nicolodaddabbo@gmail.com> (https://nicolod.com)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vista-libs/vista.git",
+    "directory": "packages/mcp-sdk"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "peerDependencies": {
+    "@vistal/core": "^0.2.0",
+    "express": "^4.0.0 || ^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  }
+}

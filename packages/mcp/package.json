@@ -1,0 +1,49 @@
+{
+  "name": "@vistal/mcp",
+  "version": "0.1.0",
+  "description": "Zero-config MCP server for any database — point it at a DATABASE_URL and let coding agents (Claude Code) query it safely, no SQL and no code",
+  "keywords": [
+    "mcp",
+    "model context protocol",
+    "claude code",
+    "database",
+    "postgres",
+    "mysql",
+    "sqlite",
+    "prisma",
+    "ai agent",
+    "row-level security",
+    "cli"
+  ],
+  "author": "Nicolò D'Addabbo <nicolodaddabbo@gmail.com> (https://nicolod.com)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vista-libs/vista.git",
+    "directory": "packages/mcp"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "vistal-mcp": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.0.0",
+    "@vistal/core": "*",
+    "@vistal/mcp-sdk": "*",
+    "@vistal/prisma": "*",
+    "prisma": "^5.0.0"
+  }
+}

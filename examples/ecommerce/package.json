@@ -5,6 +5,7 @@
   "description": "End-to-end e-commerce example for vistal",
   "scripts": {
     "start": "tsx index.ts",
+    "mcp": "tsx mcp.ts",
     "db:start": "docker run -d --name vistal-postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=vistal_dev postgres:16-alpine || docker start vistal-postgres",
     "db:stop": "docker stop vistal-postgres",
     "db:reset": "docker stop vistal-postgres && docker rm vistal-postgres && npm run db:start",
@@ -18,6 +19,7 @@
     "@openrouter/ai-sdk-provider": "^0.4.0",
     "@prisma/client": "^5.0.0",
     "@vistal/core": "*",
+    "@vistal/mcp-sdk": "*",
     "@vistal/prisma": "*",
     "ai": "^4.0.0",
     "dotenv": "^16.0.0"
