@@ -92,7 +92,7 @@ async function main(): Promise<void> {
 
   // Declaratively reshape the rows into the chart series. The spec is plain
   // data validated against the view's schema — an agent could emit it too.
-  const series = deriveView(view, {
+  const series = deriveView<OrderRow, SeriesRow>(view, {
     groupBy: ["status"],
     aggregations: [
       { alias: "revenue", fn: "sum", field: "total" },
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(series.resultSchema, null, 2))
 
   let update = 0
-  const sub = series.subscribe((result) => renderChart(result as ViewResult<SeriesRow>, ++update), {
+  const sub = series.subscribe((result) => renderChart(result, ++update), {
     intervalMs: 1000,
     onError: (e) => console.error(`  [view] ${e.message}`),
   })

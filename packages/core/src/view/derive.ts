@@ -50,8 +50,14 @@ const AGG_FNS = new Set(["count", "sum", "avg", "min", "max"])
  *
  * The computation happens client-side over the source rows; for large tables
  * prefer an `aggregate_*` view so the database does the work.
+ *
+ * The second type parameter asserts the derived row shape (the runtime source
+ * of truth is `resultSchema`): `deriveView<OrderRow, SeriesRow>(view, spec)`.
  */
-export function deriveView<T>(source: View<T>, spec: DeriveSpec): DerivedView {
+export function deriveView<T, R = Record<string, unknown>>(
+  source: View<T>,
+  spec: DeriveSpec,
+): DerivedView<R> {
   const rowProperties = sourceRowProperties(source)
   validateSpec(spec, rowProperties)
 
@@ -91,8 +97,8 @@ export function deriveView<T>(source: View<T>, spec: DeriveSpec): DerivedView {
     return out
   }
 
-  const wrap = (result: ViewResult<T>): ViewResult<Record<string, unknown>> => ({
-    data: apply(result.data),
+  const wrap = (result: ViewResult<T>): ViewResult<R> => ({
+    data: apply(result.data) as R[],
     hasMore: false,
   })
 
