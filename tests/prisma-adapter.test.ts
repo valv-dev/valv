@@ -349,13 +349,32 @@ describe("PrismaAdapter.execute", () => {
       filters: { type: "eq", field: "tenant_id", value: "t1" },
       aggregations: [{ fn: "count", field: "id", alias: "total_orders" }],
     }
-    await adapter.execute(query)
+    const result = await adapter.execute(query)
     expect(aggregate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { tenant_id: "t1" },
         _count: expect.objectContaining({ id: true }),
       }),
     )
+    // Prisma's nested _count is flattened to the alias.
+    expect(result).toEqual({ total_orders: 4 })
+  })
+
+  it("aggregate count '*' → _count: { _all: true }, flattened to the alias", async () => {
+    const aggregate = vi.fn().mockResolvedValue({ _count: { _all: 7 } })
+    const prisma = {
+      orders: { aggregate },
+    } as unknown as import("@prisma/client").PrismaClient
+    const adapter = new PrismaAdapter(prisma)
+
+    const result = await adapter.execute({
+      resource: "orders",
+      operation: "aggregate",
+      fields: [],
+      aggregations: [{ fn: "count", field: "*", alias: "n" }],
+    })
+    expect(aggregate).toHaveBeenCalledWith(expect.objectContaining({ _count: { _all: true } }))
+    expect(result).toEqual({ n: 7 })
   })
 
   it("aggregate (sum + avg) → prisma.aggregate with _sum and _avg", async () => {
@@ -375,7 +394,7 @@ describe("PrismaAdapter.execute", () => {
         { fn: "avg", field: "total", alias: "avg_order" },
       ],
     }
-    await adapter.execute(query)
+    const result = await adapter.execute(query)
     expect(aggregate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { tenant_id: "t1" },
@@ -383,6 +402,7 @@ describe("PrismaAdapter.execute", () => {
         _avg: { total: true },
       }),
     )
+    expect(result).toEqual({ revenue: 100, avg_order: 25 })
   })
 
   it("aggregate groupBy → prisma.groupBy with _sum and scoped where", async () => {
@@ -403,7 +423,7 @@ describe("PrismaAdapter.execute", () => {
       aggregations: [{ fn: "sum", field: "total", alias: "revenue" }],
       groupBy: ["status"],
     }
-    await adapter.execute(query)
+    const result = await adapter.execute(query)
     expect(groupBy).toHaveBeenCalledWith(
       expect.objectContaining({
         by: ["status"],
@@ -411,6 +431,11 @@ describe("PrismaAdapter.execute", () => {
         where: { tenant_id: "t1" },
       }),
     )
+    // Nested groupBy rows are flattened to { groupByField, alias } rows.
+    expect(result).toEqual([
+      { status: "delivered", revenue: 150000 },
+      { status: "pending", revenue: 30000 },
+    ])
   })
 
   it("aggregate groupBy multi-field → prisma.groupBy with multiple by fields", async () => {
