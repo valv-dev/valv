@@ -6,6 +6,7 @@
   "scripts": {
     "start": "tsx index.ts",
     "mcp": "tsx mcp.ts",
+    "dashboard": "tsx live-dashboard.ts",
     "db:start": "docker run -d --name vistal-postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=vistal_dev postgres:16-alpine || docker start vistal-postgres",
     "db:stop": "docker stop vistal-postgres",
     "db:reset": "docker stop vistal-postgres && docker rm vistal-postgres && npm run db:start",

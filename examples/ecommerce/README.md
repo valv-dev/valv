@@ -54,6 +54,16 @@ npm start
 | `npm run db:seed` | Insert fixture data |
 | `npm run db:studio` | Open Prisma Studio |
 
+## Live dashboard (`live-dashboard.ts`)
+
+Shows vistal **views**: the agent builds a query once, the app captures the tool call with `vistal.view()` and owns it from there — typed result schema, policy-enforced re-execution, and a `subscribe()` loop driving a live ASCII revenue chart while a background writer inserts orders. The rows are reshaped into the chart series with `deriveView()` (group by status, sum revenue, sort) — a declarative spec validated against the view's schema. The LLM is out of the loop after the capture.
+
+```bash
+npm run dashboard
+```
+
+Runs with or without `OPENROUTER_API_KEY` — without it, a canned tool call stands in for the agent. Needs the seeded database from the quick start. The demo cleans up the orders it creates.
+
 ## Key code sections in `index.ts`
 
 - **Lines 20–55** — policy definitions: where role-based and tenant-based rules are declared

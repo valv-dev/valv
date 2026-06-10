@@ -226,6 +226,102 @@ const tools = await vistal.tools.format(ctx, (t) => ({ id: t.name, schema: t.par
 
 Tool errors are caught and returned as `{ error }` so the agent can recover instead of aborting.
 
+## Live views
+
+Normally, when an agent answers a question about your database, the answer is frozen — text in a chat. If you want to show that data in a chart, or keep it updating, you'd have to ask the model again and again.
+
+Live views fix that. When the agent runs a query, your app can "catch" it and keep it:
+
+```ts
+// the agent called query_order — capture it
+const view = await vistal.view("query_order", toolCall.args, ctx)
+
+view.resultSchema             // JSON Schema of the result — column names & types for your chart
+const { data } = await view.execute()   // re-runs through the policy pipeline, no LLM
+
+// live graph: poll + diff — onData fires only when results change
+const sub = view.subscribe(({ data }) => chart.update(data), { intervalMs: 5000 })
+sub.stop()
+```
+
+That `view` is a reusable handle with three abilities:
+
+1. **Re-run it anytime** — `view.execute()` runs the same query directly against the database, with all your security rules (tenant isolation, hidden fields) still enforced. The AI is no longer involved, so it's instant and free.
+2. **Know what it returns** — `view.resultSchema` describes the columns and their types, so your app knows how to build a chart from it.
+3. **Keep it live** — `view.subscribe(callback)` watches the query and calls you only when the data actually changes. That's your live graph.
+
+The agent designs the query once; your app owns it from there. Details:
+
+- Works with per-resource (`query_order`) and consolidated (`query` + `{ resource: "order" }`) tool calls; `get` and `aggregate` too. Writes and meta tools are rejected.
+- **Policies are re-evaluated on every execution** — a view can never see more than its context allows, and revoking access takes effect on the next tick.
+- Results come back serialized (`Decimal` → number, `Date` → ISO string) as `{ data, hasMore, nextCursor? }` for every operation, so they're chart-ready.
+- `resultSchema` describes that envelope from the introspected schema and the policy-allowed fields — including relations and aggregate aliases (`count` → integer). It's a snapshot taken at view creation.
+- Invalid args or a denied policy throw at `view()` time, not on the first poll.
+- `subscribe` options: `intervalMs` (default 5000), `emitInitial` (default true), `onError` (polling continues after errors). Polls never overlap — the next one is scheduled after the previous completes.
+- Adapters can implement the optional `subscribe(query, onChange)` to replace polling with native change notifications (see [`@vistal/core`](packages/core/README.md)); notifications only trigger a re-execute through the policy pipeline, they never carry data.
+- `onQuery` events from views carry `source: "view"` (agent tool calls are `source: "tool"`), so dashboard refreshes don't pollute agent metrics.
+
+See [`examples/ecommerce/live-dashboard.ts`](examples/ecommerce/live-dashboard.ts) for an end-to-end demo: the agent builds the query, the app charts it live.
+
+### Persist & govern views
+
+Views serialize to plain JSON — deliberately **without** the context, which is the security boundary and must be re-resolved on rehydration:
+
+```ts
+db.save(view.toJSON())                                  // { vistal: "view", v: 1, toolName, args }
+const restored = await vistal.viewFromJSON(json, ctx)   // policies re-apply for THIS ctx
+
+// Or maintain a governed catalog of what dashboards may run:
+vistal.registerView("revenue_by_status", {
+  toolName: "aggregate_order",
+  args: { aggregations: [{ fn: "sum", field: "total", alias: "revenue" }], groupBy: ["status"] },
+  description: "Revenue per order status",
+})
+const view = await vistal.openView("revenue_by_status", ctx)
+```
+
+### Multi-step queries: compose() and deriveView()
+
+An agent often answers by combining several queries. Reify that computation so it can run live without the LLM:
+
+```ts
+import { compose, deriveView } from "@vistal/core"
+
+// App-authored transform over policy-enforced inputs — recomputes when any input changes
+const top = compose([ordersView, usersView], (orders, users) => rankBySpend(orders.data, users.data))
+top.subscribe((ranking) => leaderboard.update(ranking))
+
+// Declarative reshape — data-only, validated against the source schema, so it's
+// safe to accept the spec from the agent itself ("build me a chart of X by Y")
+const revenue = deriveView(ordersView, {
+  groupBy: ["status"],
+  aggregations: [{ alias: "revenue", fn: "sum", field: "total" }],
+  sort: { field: "revenue", direction: "desc" },
+})
+revenue.subscribe(({ data }) => chart.update(data))     // emits only when the series changes
+```
+
+### Generated types
+
+`generateViewTypes(view.resultSchema, "Order")` emits TypeScript source (`OrderRow` + `OrderResult` interfaces) from the runtime schema, so static types can't drift from what queries actually return.
+
+### Scaling live views
+
+Subscribers on the same View share **one** polling loop; a late subscriber is served from cache. Polling backs off exponentially while the query fails, an optional `jitter` spreads fleets of dashboards, and `maxConcurrentViewQueries` (default 16) caps simultaneous view executions per instance. Subscribe with `diffKey: "id"` to receive row-level `changes` (`added`/`removed`/`updated`) for smooth chart animation.
+
+To replace polling entirely on Postgres, `@vistal/prisma` ships LISTEN/NOTIFY support:
+
+```ts
+import { createVistal, installLiveTriggers } from "@vistal/prisma"
+
+await installLiveTriggers(prisma, ["Order", "User"])    // once, e.g. after migrations
+const vistal = createVistal(prisma, {
+  live: { connectionString: process.env.DATABASE_URL! }, // requires the optional `pg` package
+})
+```
+
+Triggers broadcast only the table name; on a notification the view re-executes through the policy pipeline — change notifications never carry data, so they can never bypass policy. Notification bursts are debounced, and views fall back to polling when `live` is not configured.
+
 ## Connect a coding agent (MCP)
 
 Let a coding agent like **Claude Code** work your database directly over the [Model Context Protocol](https://modelcontextprotocol.io) — under vistal policies, with no SQL and no leaks. Two ways in.
@@ -328,7 +424,7 @@ requirement, the no-relations caveat, and mutation behaviour.
 
 ## Examples
 
-[`examples/ecommerce/`](examples/ecommerce/) — three users (admin, support, cross-tenant) against a live Postgres database, with a stress-test suite for tenant isolation, sensitive field exclusion, write policy enforcement, and role-based field denial.
+[`examples/ecommerce/`](examples/ecommerce/) — three users (admin, support, cross-tenant) against a live Postgres database, with a stress-test suite for tenant isolation, sensitive field exclusion, write policy enforcement, and role-based field denial. Includes a [live dashboard](examples/ecommerce/live-dashboard.ts) (`npm run dashboard`) that captures an agent query as a view and drives a live revenue chart from it.
 
 [`examples/clickhouse-analytics/`](examples/clickhouse-analytics/) — the same stress tests recast for ClickHouse: tenant isolation, sensitive-field guard, forced-tenant insert, revenue aggregation, and consolidated-mode schema discovery.
 
