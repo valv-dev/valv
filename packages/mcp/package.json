@@ -1,6 +1,6 @@
 {
   "name": "@vistal/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Zero-config MCP server for any database — point it at a DATABASE_URL and let coding agents (Claude Code) query it safely, no SQL and no code",
   "keywords": [
     "mcp",
@@ -41,9 +41,12 @@
   },
   "dependencies": {
     "@prisma/client": "^5.0.0",
-    "@vistal/core": "*",
-    "@vistal/mcp-sdk": "*",
-    "@vistal/prisma": "*",
+    "@vistal/core": "^0.3.0",
+    "@vistal/mcp-sdk": "^0.1.0",
+    "@vistal/prisma": "^0.3.0",
     "prisma": "^5.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

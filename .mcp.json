@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "vistal": {
+      "command": "node",
+      "args": ["./packages/mcp/dist/cli.js"],
+      "env": {
+        "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/ormai_dev"
+      }
+    }
+  }
+}
