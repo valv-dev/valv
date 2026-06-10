@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/prisma && tsc --noEmit -p packages/clickhouse && tsc --noEmit -p packages/mcp-sdk && tsc --noEmit -p packages/mcp",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bump": "node scripts/version.mjs",
     "format": "prettier --write \"packages/*/src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"packages/*/src/**/*.ts\" \"tests/**/*.ts\""
   },
