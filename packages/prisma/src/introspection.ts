@@ -5,7 +5,7 @@ import type {
   FieldSchema,
   FieldType,
   RelationSchema,
-} from "@vistal/core"
+} from "@valv/core"
 
 export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
   const dmmf = await getDMMF({ datamodelPath: schemaPath })
@@ -147,10 +147,10 @@ function buildRelationSchema(
 
 function parseDescription(doc?: string): string | null {
   if (!doc) return null
-  const match = doc.match(/@vistal:description\s+"([^"]+)"/)
+  const match = doc.match(/@valv:description\s+"([^"]+)"/)
   return match ? match[1] : null
 }
 
 function parseSensitive(doc: string): boolean {
-  return /@vistal:sensitive/.test(doc)
+  return /@valv:sensitive/.test(doc)
 }

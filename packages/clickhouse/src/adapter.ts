@@ -1,5 +1,5 @@
-import type { VistalAdapter, SchemaMap, ResolvedQuery } from "@vistal/core"
-import { encodeCursor } from "@vistal/core"
+import type { ValvAdapter, SchemaMap, ResolvedQuery } from "@valv/core"
+import { encodeCursor } from "@valv/core"
 import { introspectClickHouse, type ClickHouseClient } from "./introspection"
 import { compileFilter, formatValue, quoteIdent } from "./sql"
 
@@ -7,7 +7,7 @@ export interface ClickHouseAdapterOptions {
   database?: string
 }
 
-export class ClickHouseAdapter implements VistalAdapter {
+export class ClickHouseAdapter implements ValvAdapter {
   private schemaCache: SchemaMap | null = null
 
   constructor(
@@ -50,7 +50,7 @@ export class ClickHouseAdapter implements VistalAdapter {
   private async executeFind(query: ResolvedQuery, table: string, one: boolean): Promise<unknown> {
     if (query.fields.length === 0) {
       throw new Error(
-        `[vistal/clickhouse] find on "${query.resource}" resolved to zero fields — policy may be denying all fields`,
+        `[valv/clickhouse] find on "${query.resource}" resolved to zero fields — policy may be denying all fields`,
       )
     }
 
@@ -151,7 +151,7 @@ export class ClickHouseAdapter implements VistalAdapter {
   private async executeUpdate(query: ResolvedQuery, table: string): Promise<unknown> {
     if (!query.filters) {
       throw new Error(
-        `[vistal/clickhouse] update on "${query.resource}" has no WHERE clause — this would affect all rows and is not allowed`,
+        `[valv/clickhouse] update on "${query.resource}" has no WHERE clause — this would affect all rows and is not allowed`,
       )
     }
 
@@ -161,7 +161,7 @@ export class ClickHouseAdapter implements VistalAdapter {
       .join(", ")
 
     if (!assignments) {
-      throw new Error(`[vistal/clickhouse] update on "${query.resource}" has no data fields to set`)
+      throw new Error(`[valv/clickhouse] update on "${query.resource}" has no data fields to set`)
     }
 
     const where = compileFilter(query.filters)
@@ -185,7 +185,7 @@ export class ClickHouseAdapter implements VistalAdapter {
   private async executeDelete(query: ResolvedQuery, table: string): Promise<unknown> {
     if (!query.filters) {
       throw new Error(
-        `[vistal/clickhouse] delete on "${query.resource}" has no WHERE clause — this would delete all rows and is not allowed`,
+        `[valv/clickhouse] delete on "${query.resource}" has no WHERE clause — this would delete all rows and is not allowed`,
       )
     }
 

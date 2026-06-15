@@ -24,8 +24,8 @@ import * as formats from "./formatters"
 import { ToolFormatter } from "./formatters"
 import { ValidationError, PolicyViolationError } from "./errors"
 
-export interface VistalConfig<TContext = DefaultContext, TResources extends string = string> {
-  adapter: VistalAdapter
+export interface ValvConfig<TContext = DefaultContext, TResources extends string = string> {
+  adapter: ValvAdapter
   defaultPolicy?: "deny-all" | "allow-all"
   /** Warn (false, default) or throw (true) when policy() is called with an unknown resource name */
   strictPolicyKeys?: boolean
@@ -108,7 +108,7 @@ export interface ResourceDescriptor {
   policyStub: string
 }
 
-export interface VistalAdapter {
+export interface ValvAdapter {
   introspect(): Promise<SchemaMap>
   execute(query: ResolvedQuery): Promise<unknown>
   /**
@@ -121,8 +121,8 @@ export interface VistalAdapter {
   subscribe?(query: ResolvedQuery, onChange: () => void): () => void
 }
 
-export class Vistal<TContext = DefaultContext, TResources extends string = string> {
-  private adapter: VistalAdapter
+export class Valv<TContext = DefaultContext, TResources extends string = string> {
+  private adapter: ValvAdapter
   private defaultPolicy: "deny-all" | "allow-all"
   private policies: Record<string, PolicyFn<TContext>> = {}
   private schemaCache: SchemaMap | null = null
@@ -133,7 +133,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
   private viewDefs: Record<string, ViewDefinition> = {}
   private viewLimiter: Semaphore
 
-  constructor(config: VistalConfig<TContext, TResources>) {
+  constructor(config: ValvConfig<TContext, TResources>) {
     this.adapter = config.adapter
     this.defaultPolicy = config.defaultPolicy ?? "deny-all"
     this.strictPolicyKeys = config.strictPolicyKeys ?? false
@@ -164,11 +164,11 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
    * and `execute` already wired) so it drops straight into `generateText`.
    *
    * ```ts
-   * const tools = await vistal.tools.openai(ctx)
+   * const tools = await valv.tools.openai(ctx)
    * // tools.map(t => t.definition) → pass to the API
    * // on a tool call: tools.find(t => t.name === call.name)!.execute(args)
    *
-   * const tools = await vistal.tools.vercel(ctx)
+   * const tools = await valv.tools.vercel(ctx)
    * await generateText({ model, tools, prompt })   // no wrapping needed
    * ```
    */
@@ -207,7 +207,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
       ai = await import(specifier)
     } catch {
       throw new Error(
-        '[vistal] tools.vercel() requires the "ai" package (Vercel AI SDK). Install it with: npm install ai',
+        '[valv] tools.vercel() requires the "ai" package (Vercel AI SDK). Install it with: npm install ai',
       )
     }
 
@@ -378,7 +378,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
    * JSON-safe values.
    *
    * ```ts
-   * const view = await vistal.view<Order>("query_order", call.args, ctx)
+   * const view = await valv.view<Order>("query_order", call.args, ctx)
    * view.resultSchema                 // JSON Schema of { data, hasMore, nextCursor? }
    * const { data } = await view.execute()
    * const sub = view.subscribe((r) => chart.update(r.data), { intervalMs: 5000 })
@@ -459,7 +459,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
         )
         return engine.subscribe(onData, options)
       },
-      toJSON: (): SerializedView => ({ vistal: "view", v: 1, toolName, args: frozenArgs }),
+      toJSON: (): SerializedView => ({ valv: "view", v: 1, toolName, args: frozenArgs }),
     }
   }
 
@@ -470,9 +470,9 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
    */
   async viewFromJSON<T = Record<string, unknown>>(json: unknown, ctx: TContext): Promise<View<T>> {
     const v = json as Partial<SerializedView> | null
-    if (!v || v.vistal !== "view" || v.v !== 1 || typeof v.toolName !== "string") {
+    if (!v || v.valv !== "view" || v.v !== 1 || typeof v.toolName !== "string") {
       throw new ValidationError(
-        'viewFromJSON() expects the shape produced by view.toJSON(): { vistal: "view", v: 1, toolName, args }',
+        'viewFromJSON() expects the shape produced by view.toJSON(): { valv: "view", v: 1, toolName, args }',
       )
     }
     return this.view<T>(v.toolName, v.args, ctx)
@@ -684,7 +684,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
     for (const key of Object.keys(this.policies)) {
       if (key === "*") continue
       if (!resourceNames.has(key)) {
-        const msg = `[vistal] policy() called with unknown resource "${key}". Known resources: ${[...resourceNames].join(", ")}. Use await vistal.describe() to list them.`
+        const msg = `[valv] policy() called with unknown resource "${key}". Known resources: ${[...resourceNames].join(", ")}. Use await valv.describe() to list them.`
         if (this.strictPolicyKeys) throw new Error(msg)
         else console.warn(msg)
       }
@@ -692,7 +692,7 @@ export class Vistal<TContext = DefaultContext, TResources extends string = strin
   }
 }
 
-// Vistal's own errors are author-written, safe, and actionable for the model to
+// Valv's own errors are author-written, safe, and actionable for the model to
 // recover from. Any other error (e.g. a raw DB driver error) may carry internal
 // details — file paths, query dumps — so it is replaced with a generic message.
 // The full error is still delivered to onQuery for server-side logging.
@@ -748,7 +748,7 @@ function safeErrorMessage(err: unknown): string {
 
 function buildPolicyStub(resourceName: string): string {
   return [
-    `vistal.policy("${resourceName}", (ctx) => ({`,
+    `valv.policy("${resourceName}", (ctx) => ({`,
     `  read: true,    // or false, or { field: ctx.value } for row-level filter`,
     `  write: false,  // or true, or { field: ctx.value } to auto-inject forced fields`,
     `  delete: false,`,

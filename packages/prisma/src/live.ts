@@ -8,7 +8,7 @@ import type { PrismaClient } from "@prisma/client"
 // view re-executes through the full policy pipeline, so native streaming can
 // never bypass policy. Requires the optional peer dependency `pg`.
 
-export const DEFAULT_LIVE_CHANNEL = "vistal_changes"
+export const DEFAULT_LIVE_CHANNEL = "valv_changes"
 const DEFAULT_DEBOUNCE_MS = 250
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/
 
@@ -22,7 +22,7 @@ export interface PgClientLike {
 export interface PgLiveOptions {
   /** Connection string for the dedicated LISTEN connection. */
   connectionString: string
-  /** NOTIFY channel. Must match the installed triggers. Default "vistal_changes". */
+  /** NOTIFY channel. Must match the installed triggers. Default "valv_changes". */
   channel?: string
   /** Coalesce notification bursts within this window (ms). Default 250. */
   debounceMs?: number
@@ -54,7 +54,7 @@ export class PgNotifyListener {
   constructor(private options: PgLiveOptions) {
     this.channel = options.channel ?? DEFAULT_LIVE_CHANNEL
     if (!IDENT.test(this.channel)) {
-      throw new Error(`[vistal] invalid LISTEN channel name: "${this.channel}"`)
+      throw new Error(`[valv] invalid LISTEN channel name: "${this.channel}"`)
     }
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS
   }
@@ -78,7 +78,7 @@ export class PgNotifyListener {
     this.starting ??= this.start().catch((err: Error) => {
       this.starting = undefined
       if (this.options.onError) this.options.onError(err)
-      else console.error(`[vistal] live updates unavailable: ${err.message}`)
+      else console.error(`[valv] live updates unavailable: ${err.message}`)
     })
     return this.starting
   }
@@ -130,7 +130,7 @@ function defaultClientFactory(connectionString: string): () => Promise<PgClientL
       pg = await import(specifier)
     } catch {
       throw new Error(
-        '[vistal] live updates require the "pg" package. Install it with: npm install pg',
+        '[valv] live updates require the "pg" package. Install it with: npm install pg',
       )
     }
     const mod = pg as {
@@ -138,7 +138,7 @@ function defaultClientFactory(connectionString: string): () => Promise<PgClientL
       default?: { Client: new (c: object) => PgClientLike }
     }
     const Client = mod.Client ?? mod.default?.Client
-    if (!Client) throw new Error('[vistal] could not load Client from the "pg" package')
+    if (!Client) throw new Error('[valv] could not load Client from the "pg" package')
     return new Client({ connectionString })
   }
 }
@@ -149,20 +149,20 @@ function defaultClientFactory(connectionString: string): () => Promise<PgClientL
  * actual Postgres table names (for Prisma, the model name unless @@map is used).
  */
 export function liveTriggersSQL(tables: string[], channel = DEFAULT_LIVE_CHANNEL): string[] {
-  if (!IDENT.test(channel)) throw new Error(`[vistal] invalid channel name: "${channel}"`)
+  if (!IDENT.test(channel)) throw new Error(`[valv] invalid channel name: "${channel}"`)
   const statements = [
-    `CREATE OR REPLACE FUNCTION vistal_notify() RETURNS trigger AS $vistal$
+    `CREATE OR REPLACE FUNCTION valv_notify() RETURNS trigger AS $valv$
 BEGIN
   PERFORM pg_notify('${channel}', TG_TABLE_NAME);
   RETURN NULL;
 END;
-$vistal$ LANGUAGE plpgsql`,
+$valv$ LANGUAGE plpgsql`,
   ]
   for (const table of tables) {
-    if (!IDENT.test(table)) throw new Error(`[vistal] invalid table name: "${table}"`)
-    statements.push(`DROP TRIGGER IF EXISTS "vistal_notify_${table}" ON "${table}"`)
+    if (!IDENT.test(table)) throw new Error(`[valv] invalid table name: "${table}"`)
+    statements.push(`DROP TRIGGER IF EXISTS "valv_notify_${table}" ON "${table}"`)
     statements.push(
-      `CREATE TRIGGER "vistal_notify_${table}" AFTER INSERT OR UPDATE OR DELETE ON "${table}" FOR EACH STATEMENT EXECUTE FUNCTION vistal_notify()`,
+      `CREATE TRIGGER "valv_notify_${table}" AFTER INSERT OR UPDATE OR DELETE ON "${table}" FOR EACH STATEMENT EXECUTE FUNCTION valv_notify()`,
     )
   }
   return statements

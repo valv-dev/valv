@@ -1,20 +1,20 @@
 {
-  "name": "vistal-clickhouse-analytics-example",
+  "name": "valv-clickhouse-analytics-example",
   "version": "0.0.1",
   "private": true,
-  "description": "ClickHouse analytics example for vistal",
+  "description": "ClickHouse analytics example for valv",
   "scripts": {
     "start": "tsx index.ts",
-    "db:start": "docker run -d --name vistal-clickhouse -p 8123:8123 -p 9000:9000 -e CLICKHOUSE_DB=analytics -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=vistal clickhouse/clickhouse-server:latest || docker start vistal-clickhouse",
-    "db:stop": "docker stop vistal-clickhouse",
-    "db:reset": "docker stop vistal-clickhouse && docker rm vistal-clickhouse && npm run db:start",
+    "db:start": "docker run -d --name valv-clickhouse -p 8123:8123 -p 9000:9000 -e CLICKHOUSE_DB=analytics -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=valv clickhouse/clickhouse-server:latest || docker start valv-clickhouse",
+    "db:stop": "docker stop valv-clickhouse",
+    "db:reset": "docker stop valv-clickhouse && docker rm valv-clickhouse && npm run db:start",
     "db:seed": "tsx seed.ts"
   },
   "dependencies": {
     "@clickhouse/client": "^1.0.0",
     "@openrouter/ai-sdk-provider": "^0.4.0",
-    "@vistal/clickhouse": "*",
-    "@vistal/core": "*",
+    "@valv/clickhouse": "*",
+    "@valv/core": "*",
     "ai": "^4.0.0",
     "dotenv": "^16.0.0"
   },

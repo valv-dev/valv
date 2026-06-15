@@ -3,7 +3,7 @@
  * and the runtime schema can't disagree:
  *
  * ```ts
- * const view = await vistal.view("query_order", args, ctx)
+ * const view = await valv.view("query_order", args, ctx)
  * fs.writeFileSync("order-view.ts", generateViewTypes(view.resultSchema, "Order"))
  * // → export interface OrderRow { id: string; status: "pending" | ...; ... }
  * //   export interface OrderResult { data: OrderRow[]; hasMore: boolean; nextCursor?: string }

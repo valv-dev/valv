@@ -1,4 +1,4 @@
-import type { GetToolsOptions } from "@vistal/core"
+import type { GetToolsOptions } from "@valv/core"
 
 /**
  * A policy context resolver: either a fixed value or a function (sync or async)
@@ -6,11 +6,11 @@ import type { GetToolsOptions } from "@vistal/core"
  */
 export type ContextResolver<TContext> = TContext | (() => TContext | Promise<TContext>)
 
-export interface VistalMcpOptions<TContext> {
+export interface ValvMcpOptions<TContext> {
   /**
-   * Context passed to vistal's policy engine. A fixed value, or a resolver
+   * Context passed to valv's policy engine. A fixed value, or a resolver
    * called on every request — handy for sourcing identity from env vars
-   * (e.g. VISTAL_ROLE / VISTAL_TENANT) or, over HTTP, from request headers.
+   * or, over HTTP, from request headers.
    */
   context: ContextResolver<TContext>
   /**
@@ -21,8 +21,8 @@ export interface VistalMcpOptions<TContext> {
    * tool per resource×operation instead.
    */
   mode?: "consolidated" | "per-resource"
-  /** Forwarded to vistal — restrict to specific resources and/or cap tool count. */
+  /** Forwarded to valv — restrict to specific resources and/or cap tool count. */
   toolOptions?: Omit<GetToolsOptions, "mode">
-  /** Advertised MCP server identity. Defaults to { name: "vistal", version }. */
+  /** Advertised MCP server identity. Defaults to { name: "valv", version }. */
   serverInfo?: { name: string; version: string }
 }

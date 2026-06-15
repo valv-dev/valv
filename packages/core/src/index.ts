@@ -1,4 +1,4 @@
-export { Vistal } from "./vistal"
+export { Valv } from "./valv"
 export type {
   LLMTool,
   ExecutableTool,
@@ -8,16 +8,16 @@ export type {
   ResourceDescriptor,
   ResourceField,
   ResourceRelation,
-  VistalAdapter,
-  VistalConfig,
+  ValvAdapter,
+  ValvConfig,
   PaginationConfig,
-} from "./vistal"
+} from "./valv"
 export { serializeResult } from "./serializer"
 export { encodeCursor, decodeCursor } from "./ir/cursor"
 export type { CursorKeyset } from "./ir/cursor"
 
 // Tool formatters — turn a provider-neutral tool into a provider-specific shape.
-// Built-ins are also reachable via `vistal.tools.<provider>(ctx)`.
+// Built-ins are also reachable via `valv.tools.<provider>(ctx)`.
 export * as formats from "./formatters"
 export { anthropic, openai, gemini } from "./formatters"
 export type { ToolFormatter, AnthropicTool, OpenAITool, GeminiTool } from "./formatters"

@@ -1,5 +1,5 @@
 {
-  "name": "@vistal/mcp",
+  "name": "@valv/mcp",
   "version": "0.1.1",
   "description": "Zero-config MCP server for any database — point it at a DATABASE_URL and let coding agents (Claude Code) query it safely, no SQL and no code",
   "keywords": [
@@ -25,7 +25,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "vistal-mcp": "dist/cli.js"
+    "valv-mcp": "dist/cli.js"
   },
   "exports": {
     ".": {
@@ -41,9 +41,9 @@
   },
   "dependencies": {
     "@prisma/client": "^5.0.0",
-    "@vistal/core": "^0.3.0",
-    "@vistal/mcp-sdk": "^0.1.0",
-    "@vistal/prisma": "^0.3.0",
+    "@valv/core": "^0.3.0",
+    "@valv/mcp-sdk": "^0.1.0",
+    "@valv/prisma": "^0.3.0",
     "prisma": "^5.0.0"
   },
   "publishConfig": {

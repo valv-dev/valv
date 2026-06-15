@@ -1,12 +1,12 @@
 {
-  "name": "vistal",
+  "name": "valv",
   "private": true,
   "workspaces": [
     "packages/*",
     "examples/*"
   ],
   "scripts": {
-    "build": "npm run build -w @vistal/core && npm run build -w @vistal/prisma && npm run build -w @vistal/clickhouse && npm run build -w @vistal/mcp-sdk && npm run build -w @vistal/mcp",
+    "build": "npm run build -w @valv/core && npm run build -w @valv/prisma && npm run build -w @valv/clickhouse && npm run build -w @valv/mcp-sdk && npm run build -w @valv/mcp",
     "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/prisma && tsc --noEmit -p packages/clickhouse && tsc --noEmit -p packages/mcp-sdk && tsc --noEmit -p packages/mcp",
     "test": "vitest run",
     "test:watch": "vitest",

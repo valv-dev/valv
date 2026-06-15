@@ -1,7 +1,7 @@
 {
-  "name": "@vistal/prisma",
+  "name": "@valv/prisma",
   "version": "0.3.0",
-  "description": "Prisma adapter for vistal — row-level security and access control for AI agents",
+  "description": "Prisma adapter for valv — row-level security and access control for AI agents",
   "keywords": [
     "prisma",
     "ai agent",
@@ -43,12 +43,15 @@
   },
   "peerDependencies": {
     "@prisma/client": "^5.0.0",
-    "@vistal/core": "^0.3.0",
+    "@valv/core": "^0.3.0",
     "pg": "^8.0.0"
   },
   "peerDependenciesMeta": {
     "pg": {
       "optional": true
     }
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -1,6 +1,6 @@
 export { PrismaAdapter, translateFilter, matchesFilter } from "./adapter"
 export type { PrismaAdapterOptions } from "./adapter"
-export { createVistal } from "./create"
+export { createValv } from "./create"
 export {
   PgNotifyListener,
   liveTriggersSQL,

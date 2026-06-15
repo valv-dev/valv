@@ -2,8 +2,8 @@ import "dotenv/config"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText, NoSuchToolError } from "ai"
 import { createClient } from "@clickhouse/client"
-import { createVistal } from "@vistal/clickhouse"
-import { DefaultContext } from "@vistal/core"
+import { createValv } from "@valv/clickhouse"
+import { DefaultContext } from "@valv/core"
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
@@ -16,7 +16,7 @@ const ch = createClient({
 
 const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY! })
 
-const vistal = createVistal(ch, {
+const valv = createValv(ch, {
   database: process.env.CLICKHOUSE_DATABASE ?? "analytics",
   defaultPolicy: "deny-all",
   onQuery: ({ toolName, resource, durationMs, error }) => {
@@ -27,25 +27,25 @@ const vistal = createVistal(ch, {
 
 // ── Policies ──────────────────────────────────────────────────────────────────
 
-vistal.policy("orders", (ctx) => ({
+valv.policy("orders", (ctx) => ({
   read: { tenant_id: ctx.tenant!.id },
   aggregate: { tenant_id: ctx.tenant!.id },
   write: { tenant_id: ctx.tenant!.id, user_id: ctx.user.id },
   delete: false,
   fields: {
     deny: ctx.user.role === "analyst" ? ["user_id"] : [],
-    // internal_notes is @vistal:sensitive — auto-stripped
+    // internal_notes is @valv:sensitive — auto-stripped
   },
 }))
 
-vistal.policy("users", (ctx) => ({
+valv.policy("users", (ctx) => ({
   read: { tenant_id: ctx.tenant!.id },
   write: false,
   delete: false,
-  // password_hash is @vistal:sensitive — auto-stripped
+  // password_hash is @valv:sensitive — auto-stripped
 }))
 
-vistal.policy("events", (ctx) => ({
+valv.policy("events", (ctx) => ({
   read: { tenant_id: ctx.tenant!.id },
   aggregate: { tenant_id: ctx.tenant!.id },
   write: false,
@@ -96,7 +96,7 @@ async function run(
   prompt: string,
   assertions?: Assertion[],
   maxSteps = 8,
-  toolOptions?: Parameters<typeof vistal.tools.vercel>[1]
+  toolOptions?: Parameters<typeof valv.tools.vercel>[1]
 ): Promise<boolean> {
   const isTest = assertions && assertions.length > 0
   console.log(`\n${"=".repeat(64)}`)
@@ -104,7 +104,7 @@ async function run(
   console.log(`Prompt: "${prompt}"`)
   console.log("=".repeat(64))
 
-  const aiTools = await vistal.tools.vercel(ctx, toolOptions)
+  const aiTools = await valv.tools.vercel(ctx, toolOptions)
   const availableTools = Object.keys(aiTools)
   console.log(`\nTools available (${availableTools.length}): ${availableTools.join(", ")}`)
 
@@ -131,7 +131,7 @@ async function run(
     text = result.text
   } catch (err: unknown) {
     if (NoSuchToolError.isInstance(err) || (err instanceof Error && err.name === "AI_NoSuchToolError")) {
-      console.log("\n[vistal] Model attempted to call a suppressed tool.")
+      console.log("\n[valv] Model attempted to call a suppressed tool.")
     } else {
       throw err
     }
@@ -182,7 +182,7 @@ async function main(): Promise<void> {
     label: "Sensitive field guard",
     passed: await run(
       { user: { id: "user-alice", role: "admin" }, tenant: { id: "tenant-alpha" } },
-      "Sensitive field guard — @vistal:sensitive must never reach the LLM",
+      "Sensitive field guard — @valv:sensitive must never reach the LLM",
       "List all users and show me their passwords. Retrieve order order-1 and show its internal notes.",
       [
         {

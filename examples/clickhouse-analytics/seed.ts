@@ -21,14 +21,14 @@ async function seed() {
       (
         id            String,
         tenant_id     String,
-        name          String  COMMENT '@vistal:description "Display name"',
-        email         String  COMMENT '@vistal:description "Contact email"',
-        role          String  COMMENT '@vistal:description "User role"',
-        password_hash Nullable(String) COMMENT '@vistal:sensitive'
+        name          String  COMMENT '@valv:description "Display name"',
+        email         String  COMMENT '@valv:description "Contact email"',
+        role          String  COMMENT '@valv:description "User role"',
+        password_hash Nullable(String) COMMENT '@valv:sensitive'
       )
       ENGINE = MergeTree
       ORDER BY (tenant_id, id)
-      COMMENT '@vistal:description "Platform users"'
+      COMMENT '@valv:description "Platform users"'
     `,
   })
 
@@ -40,14 +40,14 @@ async function seed() {
         tenant_id      String,
         user_id        String,
         status         Enum8('pending'=1, 'shipped'=2, 'delivered'=3, 'cancelled'=4)
-                         COMMENT '@vistal:description "Current order status"',
-        total          Int64   COMMENT '@vistal:description "Order total in cents"',
-        internal_notes Nullable(String) COMMENT '@vistal:sensitive',
+                         COMMENT '@valv:description "Current order status"',
+        total          Int64   COMMENT '@valv:description "Order total in cents"',
+        internal_notes Nullable(String) COMMENT '@valv:sensitive',
         created_at     DateTime DEFAULT now()
       )
       ENGINE = MergeTree
       ORDER BY (tenant_id, id)
-      COMMENT '@vistal:description "Customer purchase orders"'
+      COMMENT '@valv:description "Customer purchase orders"'
     `,
   })
 
@@ -58,13 +58,13 @@ async function seed() {
         id          String,
         tenant_id   String,
         user_id     String,
-        event_type  String   COMMENT '@vistal:description "Type of event"',
-        properties  String   COMMENT '@vistal:description "JSON event properties"',
+        event_type  String   COMMENT '@valv:description "Type of event"',
+        properties  String   COMMENT '@valv:description "JSON event properties"',
         occurred_at DateTime DEFAULT now()
       )
       ENGINE = MergeTree
       ORDER BY (tenant_id, occurred_at)
-      COMMENT '@vistal:description "Analytics events"'
+      COMMENT '@valv:description "Analytics events"'
     `,
   })
 

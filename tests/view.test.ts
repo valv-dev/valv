@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { Vistal, ValidationError, PolicyViolationError } from "@vistal/core"
-import type { VistalAdapter, SchemaMap, ResolvedQuery, QueryEvent } from "@vistal/core"
+import { Valv, ValidationError, PolicyViolationError } from "@valv/core"
+import type { ValvAdapter, SchemaMap, ResolvedQuery, QueryEvent } from "@valv/core"
 
 interface Ctx {
   tenant: string
@@ -49,7 +49,7 @@ const schema: SchemaMap = {
   },
 }
 
-class MockAdapter implements VistalAdapter {
+class MockAdapter implements ValvAdapter {
   queries: ResolvedQuery[] = []
   result: unknown = { data: [], hasMore: false }
   async introspect(): Promise<SchemaMap> {
@@ -64,8 +64,8 @@ class MockAdapter implements VistalAdapter {
   }
 }
 
-function makeVistal(adapter: VistalAdapter, onQuery?: (e: QueryEvent<Ctx>) => void) {
-  return new Vistal<Ctx>({ adapter, onQuery })
+function makeValv(adapter: ValvAdapter, onQuery?: (e: QueryEvent<Ctx>) => void) {
+  return new Valv<Ctx>({ adapter, onQuery })
     .policy("order", (c) => ({
       read: { tenant_id: c.tenant },
       write: { tenant_id: c.tenant },
@@ -80,20 +80,20 @@ afterEach(() => {
 
 describe("view() creation", () => {
   it("accepts per-resource read tools", async () => {
-    const vistal = makeVistal(new MockAdapter())
+    const valv = makeValv(new MockAdapter())
     for (const name of ["query_order", "get_order", "aggregate_order"]) {
-      const view = await vistal.view(name, {}, ctx)
+      const view = await valv.view(name, {}, ctx)
       expect(view.resource).toBe("order")
     }
-    expect((await vistal.view("query_order", {}, ctx)).operation).toBe("find")
-    expect((await vistal.view("get_order", {}, ctx)).operation).toBe("findOne")
-    expect((await vistal.view("aggregate_order", {}, ctx)).operation).toBe("aggregate")
+    expect((await valv.view("query_order", {}, ctx)).operation).toBe("find")
+    expect((await valv.view("get_order", {}, ctx)).operation).toBe("findOne")
+    expect((await valv.view("aggregate_order", {}, ctx)).operation).toBe("aggregate")
   })
 
   it("accepts consolidated read calls", async () => {
     const adapter = new MockAdapter()
-    const vistal = makeVistal(adapter)
-    const view = await vistal.view("query", { resource: "order", limit: 5 }, ctx)
+    const valv = makeValv(adapter)
+    const view = await valv.view("query", { resource: "order", limit: 5 }, ctx)
     expect(view.resource).toBe("order")
     expect(view.operation).toBe("find")
     await view.execute()
@@ -102,33 +102,33 @@ describe("view() creation", () => {
   })
 
   it("rejects write tools", async () => {
-    const vistal = makeVistal(new MockAdapter())
-    await expect(vistal.view("create_order", { amount: 1 }, ctx)).rejects.toThrow(ValidationError)
-    await expect(vistal.view("update", { resource: "order", id: "1" }, ctx)).rejects.toThrow(
+    const valv = makeValv(new MockAdapter())
+    await expect(valv.view("create_order", { amount: 1 }, ctx)).rejects.toThrow(ValidationError)
+    await expect(valv.view("update", { resource: "order", id: "1" }, ctx)).rejects.toThrow(
       /read operations/,
     )
-    await expect(vistal.view("delete_order", { id: "1" }, ctx)).rejects.toThrow(ValidationError)
+    await expect(valv.view("delete_order", { id: "1" }, ctx)).rejects.toThrow(ValidationError)
   })
 
   it("rejects meta tools", async () => {
-    const vistal = makeVistal(new MockAdapter())
-    await expect(vistal.view("list_resources", {}, ctx)).rejects.toThrow(/meta tool/)
-    await expect(vistal.view("describe_resource", { resource: "order" }, ctx)).rejects.toThrow(
+    const valv = makeValv(new MockAdapter())
+    await expect(valv.view("list_resources", {}, ctx)).rejects.toThrow(/meta tool/)
+    await expect(valv.view("describe_resource", { resource: "order" }, ctx)).rejects.toThrow(
       /meta tool/,
     )
   })
 
   it("fails fast on unknown resources and disallowed filters", async () => {
-    const vistal = makeVistal(new MockAdapter())
-    await expect(vistal.view("query_nope", {}, ctx)).rejects.toThrow(ValidationError)
-    await expect(vistal.view("query_order", { filters: { secret: "x" } }, ctx)).rejects.toThrow(
+    const valv = makeValv(new MockAdapter())
+    await expect(valv.view("query_nope", {}, ctx)).rejects.toThrow(ValidationError)
+    await expect(valv.view("query_order", { filters: { secret: "x" } }, ctx)).rejects.toThrow(
       ValidationError,
     )
   })
 
   it("fails fast when policy denies read", async () => {
-    const vistal = new Vistal<Ctx>({ adapter: new MockAdapter() }) // deny-all, no policies
-    await expect(vistal.view("query_order", {}, ctx)).rejects.toThrow(PolicyViolationError)
+    const valv = new Valv<Ctx>({ adapter: new MockAdapter() }) // deny-all, no policies
+    await expect(valv.view("query_order", {}, ctx)).rejects.toThrow(PolicyViolationError)
   })
 })
 
@@ -146,7 +146,7 @@ describe("view().execute()", () => {
       nextCursor: "abc",
       hasMore: true,
     }
-    const view = await makeVistal(adapter).view("query_order", {}, ctx)
+    const view = await makeValv(adapter).view("query_order", {}, ctx)
     const result = await view.execute()
     expect(result).toEqual({
       data: [{ id: "a", amount: 12.5, created_at: "2026-01-02T03:04:05.000Z" }],
@@ -157,9 +157,9 @@ describe("view().execute()", () => {
 
   it("wraps findOne results, including null", async () => {
     const adapter = new MockAdapter()
-    const vistal = makeVistal(adapter)
+    const valv = makeValv(adapter)
     adapter.result = { id: "a", amount: 1 }
-    const view = await vistal.view("get_order", { id: "a" }, ctx)
+    const view = await valv.view("get_order", { id: "a" }, ctx)
     expect(await view.execute()).toEqual({ data: [{ id: "a", amount: 1 }], hasMore: false })
     adapter.result = null
     expect(await view.execute()).toEqual({ data: [], hasMore: false })
@@ -167,13 +167,13 @@ describe("view().execute()", () => {
 
   it("wraps aggregate results: grouped rows and bare alias objects", async () => {
     const adapter = new MockAdapter()
-    const vistal = makeVistal(adapter)
+    const valv = makeValv(adapter)
     const args = {
       aggregations: [{ fn: "sum", field: "amount", alias: "total" }],
       groupBy: ["status"],
     }
     adapter.result = [{ status: "paid", total: 10 }]
-    const view = await vistal.view("aggregate_order", args, ctx)
+    const view = await valv.view("aggregate_order", args, ctx)
     expect(await view.execute()).toEqual({
       data: [{ status: "paid", total: 10 }],
       hasMore: false,
@@ -184,7 +184,7 @@ describe("view().execute()", () => {
 
   it("applies the policy row filter on every execution", async () => {
     const adapter = new MockAdapter()
-    const view = await makeVistal(adapter).view("query_order", {}, ctx)
+    const view = await makeValv(adapter).view("query_order", {}, ctx)
     await view.execute()
     await view.execute()
     for (const query of adapter.queries) {
@@ -195,7 +195,7 @@ describe("view().execute()", () => {
   it("re-evaluates policies against mutable ctx per execution", async () => {
     const adapter = new MockAdapter()
     const liveCtx: Ctx = { tenant: "t1" }
-    const view = await makeVistal(adapter).view("query_order", {}, liveCtx)
+    const view = await makeValv(adapter).view("query_order", {}, liveCtx)
     await view.execute()
     liveCtx.tenant = "t2"
     await view.execute()
@@ -206,7 +206,7 @@ describe("view().execute()", () => {
   it("is unaffected by caller mutating args after creation", async () => {
     const adapter = new MockAdapter()
     const args: Record<string, unknown> = { limit: 5 }
-    const view = await makeVistal(adapter).view("query_order", args, ctx)
+    const view = await makeValv(adapter).view("query_order", args, ctx)
     args.limit = 99
     await view.execute()
     expect(adapter.lastQuery?.pagination?.limit).toBe(5)
@@ -215,10 +215,10 @@ describe("view().execute()", () => {
   it("reports source 'view' to onQuery, while executeTool reports 'tool'", async () => {
     const events: QueryEvent<Ctx>[] = []
     const adapter = new MockAdapter()
-    const vistal = makeVistal(adapter, (e) => events.push(e))
-    const view = await vistal.view("query_order", {}, ctx)
+    const valv = makeValv(adapter, (e) => events.push(e))
+    const view = await valv.view("query_order", {}, ctx)
     await view.execute()
-    await vistal.executeTool("query_order", {}, ctx)
+    await valv.executeTool("query_order", {}, ctx)
     expect(events.map((e) => e.source)).toEqual(["view", "tool"])
   })
 })
@@ -235,8 +235,8 @@ describe("view().resultSchema", () => {
 
   it("describes the envelope with policy-allowed fields only", async () => {
     const adapter = new MockAdapter()
-    const vistal = makeVistal(adapter)
-    const view = await vistal.view("query_order", {}, ctx)
+    const valv = makeValv(adapter)
+    const view = await valv.view("query_order", {}, ctx)
     const rs = view.resultSchema as Envelope
     expect(rs.required).toEqual(["data", "hasMore"])
     const row = rs.properties.data.items
@@ -251,18 +251,18 @@ describe("view().resultSchema", () => {
 
   it("excludes cursor bookkeeping internalFields", async () => {
     const adapter = new MockAdapter()
-    const vistal = new Vistal<Ctx>({ adapter }).policy("order", (c) => ({
+    const valv = new Valv<Ctx>({ adapter }).policy("order", (c) => ({
       read: { tenant_id: c.tenant },
       fields: { allow: ["amount", "status"] }, // pk hidden → injected as internal
     }))
-    const view = await vistal.view("query_order", {}, ctx)
+    const view = await valv.view("query_order", {}, ctx)
     const row = (view.resultSchema as Envelope).properties.data.items
     expect(Object.keys(row.properties).sort()).toEqual(["amount", "status"])
   })
 
   it("describes included relations", async () => {
     const adapter = new MockAdapter()
-    const view = await makeVistal(adapter).view("query_order", { include: ["customer"] }, ctx)
+    const view = await makeValv(adapter).view("query_order", { include: ["customer"] }, ctx)
     const row = (view.resultSchema as Envelope).properties.data.items
     expect(row.properties.customer).toEqual({
       anyOf: [
@@ -279,7 +279,7 @@ describe("view().resultSchema", () => {
 
   it("describes aggregate rows: groupBy fields plus alias types", async () => {
     const adapter = new MockAdapter()
-    const view = await makeVistal(adapter).view(
+    const view = await makeValv(adapter).view(
       "aggregate_order",
       {
         aggregations: [
@@ -308,7 +308,7 @@ describe("view().subscribe() — polling", () => {
     vi.useFakeTimers()
     const adapter = new MockAdapter()
     adapter.result = rows(1)
-    const view = await makeVistal(adapter).view("query_order", {}, ctx)
+    const view = await makeValv(adapter).view("query_order", {}, ctx)
     const onData = vi.fn()
     const sub = view.subscribe(onData, { intervalMs: 1000, ...opts })
     await vi.advanceTimersByTimeAsync(0) // flush the initial tick
@@ -390,7 +390,7 @@ describe("view().subscribe() — polling", () => {
       inFlight--
       return rows(1)
     }
-    const view = await makeVistal(adapter).view("query_order", {}, ctx)
+    const view = await makeValv(adapter).view("query_order", {}, ctx)
     const sub = view.subscribe(vi.fn(), { intervalMs: 1000 })
     await vi.advanceTimersByTimeAsync(10_000)
     expect(maxInFlight).toBe(1)
@@ -415,7 +415,7 @@ describe("view().subscribe() — native adapter.subscribe", () => {
     vi.useFakeTimers()
     const adapter = new NativeAdapter()
     adapter.result = { data: [{ id: "1", amount: 1 }], hasMore: false }
-    const view = await makeVistal(adapter).view("query_order", {}, ctx)
+    const view = await makeValv(adapter).view("query_order", {}, ctx)
     const onData = vi.fn()
     const sub = view.subscribe(onData)
     await vi.advanceTimersByTimeAsync(0)
@@ -441,7 +441,7 @@ describe("view().subscribe() — native adapter.subscribe", () => {
   it("notifications still run through the policy pipeline", async () => {
     vi.useFakeTimers()
     const adapter = new NativeAdapter()
-    const view = await makeVistal(adapter).view("query_order", {}, ctx)
+    const view = await makeValv(adapter).view("query_order", {}, ctx)
     const sub = view.subscribe(vi.fn())
     await vi.advanceTimersByTimeAsync(0)
     adapter.onChange!()
@@ -457,34 +457,34 @@ describe("view().subscribe() — native adapter.subscribe", () => {
 describe("view serialization & registry", () => {
   it("toJSON() round-trips through viewFromJSON()", async () => {
     const adapter = new MockAdapter()
-    const vistal = makeVistal(adapter)
-    const view = await vistal.view("query_order", { limit: 7 }, ctx)
+    const valv = makeValv(adapter)
+    const view = await valv.view("query_order", { limit: 7 }, ctx)
     const json = JSON.parse(JSON.stringify(view)) // simulate persistence
 
-    const rehydrated = await vistal.viewFromJSON(json, ctx)
+    const rehydrated = await valv.viewFromJSON(json, ctx)
     expect(rehydrated.resource).toBe("order")
     await rehydrated.execute()
     expect(adapter.lastQuery?.pagination?.limit).toBe(7)
   })
 
   it("viewFromJSON() rejects malformed payloads", async () => {
-    const vistal = makeVistal(new MockAdapter())
-    await expect(vistal.viewFromJSON({ toolName: "query_order" }, ctx)).rejects.toThrow(
+    const valv = makeValv(new MockAdapter())
+    await expect(valv.viewFromJSON({ toolName: "query_order" }, ctx)).rejects.toThrow(
       ValidationError,
     )
-    await expect(vistal.viewFromJSON(null, ctx)).rejects.toThrow(ValidationError)
+    await expect(valv.viewFromJSON(null, ctx)).rejects.toThrow(ValidationError)
   })
 
   it("registry: registerView / openView / listViews", async () => {
     const adapter = new MockAdapter()
-    const vistal = makeVistal(adapter)
-    vistal.registerView("recent_orders", {
+    const valv = makeValv(adapter)
+    valv.registerView("recent_orders", {
       toolName: "query_order",
       args: { limit: 10 },
       description: "Latest orders for the dashboard",
     })
 
-    expect(vistal.listViews()).toEqual([
+    expect(valv.listViews()).toEqual([
       {
         name: "recent_orders",
         toolName: "query_order",
@@ -493,18 +493,18 @@ describe("view serialization & registry", () => {
       },
     ])
 
-    const view = await vistal.openView("recent_orders", ctx)
+    const view = await valv.openView("recent_orders", ctx)
     expect(view.name).toBe("recent_orders")
     await view.execute()
     expect(adapter.lastQuery?.pagination?.limit).toBe(10)
 
-    await expect(vistal.openView("nope", ctx)).rejects.toThrow(/Unknown view "nope"/)
+    await expect(valv.openView("nope", ctx)).rejects.toThrow(/Unknown view "nope"/)
   })
 
   it("openView still enforces policy for the opening context", async () => {
-    const vistal = new Vistal<Ctx>({ adapter: new MockAdapter() }) // deny-all
-    vistal.registerView("orders", { toolName: "query_order" })
-    await expect(vistal.openView("orders", ctx)).rejects.toThrow(PolicyViolationError)
+    const valv = new Valv<Ctx>({ adapter: new MockAdapter() }) // deny-all
+    valv.registerView("orders", { toolName: "query_order" })
+    await expect(valv.openView("orders", ctx)).rejects.toThrow(PolicyViolationError)
   })
 })
 
@@ -517,7 +517,7 @@ describe("shared engine", () => {
     vi.useFakeTimers()
     const adapter = new MockAdapter()
     adapter.result = rows(1)
-    const view = await makeVistal(adapter).view("query_order", {}, ctx)
+    const view = await makeValv(adapter).view("query_order", {}, ctx)
 
     const a = vi.fn()
     const b = vi.fn()
@@ -545,7 +545,7 @@ describe("shared engine", () => {
     vi.useFakeTimers()
     const adapter = new MockAdapter()
     adapter.result = rows(1)
-    const view = await makeVistal(adapter).view("query_order", {}, ctx)
+    const view = await makeValv(adapter).view("query_order", {}, ctx)
     const first = view.subscribe(vi.fn(), { intervalMs: 1000 })
     await vi.advanceTimersByTimeAsync(0)
     const executed = adapter.queries.length
@@ -570,7 +570,7 @@ describe("shared engine", () => {
       ],
       hasMore: false,
     }
-    const view = await makeVistal(adapter).view("query_order", {}, ctx)
+    const view = await makeValv(adapter).view("query_order", {}, ctx)
     const onData = vi.fn()
     const sub = view.subscribe(onData, { intervalMs: 1000, diffKey: "id" })
     await vi.advanceTimersByTimeAsync(0)
@@ -615,7 +615,7 @@ describe("shared engine", () => {
       inFlight--
       return { data: [], hasMore: false }
     }
-    const vistal = new Vistal<Ctx>({ adapter, maxConcurrentViewQueries: 2 }).policy(
+    const valv = new Valv<Ctx>({ adapter, maxConcurrentViewQueries: 2 }).policy(
       "order",
       (c) => ({
         read: { tenant_id: c.tenant },
@@ -625,7 +625,7 @@ describe("shared engine", () => {
     // Five distinct views, all polling concurrently.
     const subs = []
     for (let i = 0; i < 5; i++) {
-      const view = await vistal.view("query_order", { limit: i + 1 }, ctx)
+      const view = await valv.view("query_order", { limit: i + 1 }, ctx)
       subs.push(view.subscribe(vi.fn(), { intervalMs: 1000 }))
     }
     await vi.advanceTimersByTimeAsync(5000)

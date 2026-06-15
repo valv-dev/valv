@@ -4,7 +4,7 @@ import { evaluatePolicy, mergeFilters, PolicyOperation } from "../policy/engine"
 import { objectToFilterNode } from "./filters"
 import { PolicyViolationError, ValidationError } from "../errors"
 import { decodeCursor, type CursorKeyset } from "./cursor"
-import type { PaginationConfig } from "../vistal"
+import type { PaginationConfig } from "../valv"
 
 export type OperationType = "find" | "findOne" | "create" | "update" | "delete" | "aggregate"
 

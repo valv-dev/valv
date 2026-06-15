@@ -50,7 +50,7 @@ export async function prepareDatabase(
   databaseUrl: string,
   provider: Provider,
 ): Promise<PreparedDatabase> {
-  const dir = mkdtempSync(join(clientBaseDir(), ".vistal-mcp-"))
+  const dir = mkdtempSync(join(clientBaseDir(), ".valv-mcp-"))
   const schemaPath = join(dir, "schema.prisma")
   const clientOutput = join(dir, "client")
 
@@ -69,9 +69,9 @@ datasource db {
   const env = { ...process.env, DATABASE_URL: databaseUrl }
   const cli = resolvePrismaCli()
 
-  process.stderr.write("[vistal] Introspecting database schema…\n")
+  process.stderr.write("[valv] Introspecting database schema…\n")
   runPrisma(cli, ["db", "pull", "--schema", schemaPath], env)
-  process.stderr.write("[vistal] Generating client…\n")
+  process.stderr.write("[valv] Generating client…\n")
   runPrisma(cli, ["generate", "--schema", schemaPath], env)
 
   const { PrismaClient: GeneratedClient } = require(clientOutput) as {

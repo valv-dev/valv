@@ -3,7 +3,7 @@ import type { ViewResult, RowChanges, SubscribeOptions, ViewSubscription } from 
 export const DEFAULT_VIEW_INTERVAL_MS = 5000
 export const DEFAULT_MAX_BACKOFF_MS = 60_000
 
-/** Caps concurrent view executions across a Vistal instance so a fleet of
+/** Caps concurrent view executions across a Valv instance so a fleet of
  *  dashboards cannot stampede the database. */
 export class Semaphore {
   private active = 0

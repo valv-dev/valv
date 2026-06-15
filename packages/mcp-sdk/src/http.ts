@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"
-import type { Vistal } from "@vistal/core"
+import type { Valv } from "@valv/core"
 import { createMcpServer } from "./server.js"
-import type { VistalMcpOptions } from "./types.js"
+import type { ValvMcpOptions } from "./types.js"
 
-export interface HttpServerOptions<TContext> extends VistalMcpOptions<TContext> {
+export interface HttpServerOptions<TContext> extends ValvMcpOptions<TContext> {
   /** Port to listen on. Default 3000. */
   port?: number
   /** HTTP path the MCP endpoint is mounted at. Default "/mcp". */
@@ -30,29 +30,26 @@ interface ExpressApp {
 type ExpressFn = ((...args: unknown[]) => ExpressApp) & { json: () => unknown }
 
 /**
- * Start a vistal MCP server over Streamable HTTP — for remote or shared
+ * Start a valv MCP server over Streamable HTTP — for remote or shared
  * deployments. A fresh server + transport is created per request (stateless),
- * so the {@link VistalMcpOptions.context} resolver runs on every call.
+ * so the {@link ValvMcpOptions.context} resolver runs on every call.
  *
  * Requires the optional peer dependency `express`. Deploy this behind your own
  * authentication; the context resolver is the natural place to map a verified
- * caller to a vistal policy context.
+ * caller to a valv policy context.
  */
 export async function startHttpServer<TContext, TResources extends string = string>(
-  vistal: Vistal<TContext, TResources>,
+  valv: Valv<TContext, TResources>,
   options: HttpServerOptions<TContext>,
 ): Promise<Closable> {
   let express: ExpressFn
   try {
-    // Indirect specifier so TS treats this optional peer dep as a dynamic
-    // import (no @types/express needed at build time) — same trick @vistal/core
-    // uses for the optional "ai" package.
     const specifier = "express"
     const mod = (await import(specifier)) as { default: ExpressFn }
     express = mod.default
   } catch {
     throw new Error(
-      '[vistal] startHttpServer() requires the "express" package. Install it with: npm install express',
+      '[valv] startHttpServer() requires the "express" package. Install it with: npm install express',
     )
   }
 
@@ -63,9 +60,7 @@ export async function startHttpServer<TContext, TResources extends string = stri
   app.use(express.json())
 
   app.post(path, async (req: Req, res: Res) => {
-    // Stateless: one server + transport per request, closed when the response
-    // finishes so nothing leaks between calls.
-    const server = createMcpServer(vistal, options)
+    const server = createMcpServer(valv, options)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
     res.on("close", () => {
       void transport.close()

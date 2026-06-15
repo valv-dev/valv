@@ -5,9 +5,9 @@ import {
   escapeString,
   escapeLikePattern,
   quoteIdent,
-} from "@vistal/clickhouse"
-import { ClickHouseAdapter, introspectClickHouse } from "@vistal/clickhouse"
-import type { ResolvedQuery } from "@vistal/core"
+} from "@valv/clickhouse"
+import { ClickHouseAdapter, introspectClickHouse } from "@valv/clickhouse"
+import type { ResolvedQuery } from "@valv/core"
 
 // ── SQL helpers ───────────────────────────────────────────────────────────────
 
@@ -766,7 +766,7 @@ describe("introspectClickHouse", () => {
     expect(schema.resources["t"].fields["name"].hasDefaultValue).toBe(false)
   })
 
-  it("@vistal:sensitive comment → sensitive: true", async () => {
+  it("@valv:sensitive comment → sensitive: true", async () => {
     const client = makeIntrospectClient([
       {
         table: "users",
@@ -775,7 +775,7 @@ describe("introspectClickHouse", () => {
         position: 1,
         default_kind: "",
         is_in_primary_key: 0,
-        comment: "@vistal:sensitive",
+        comment: "@valv:sensitive",
       },
       {
         table: "users",
@@ -792,7 +792,7 @@ describe("introspectClickHouse", () => {
     expect(schema.resources["users"].fields["email"].sensitive).toBe(false)
   })
 
-  it("@vistal:description comment → description string", async () => {
+  it("@valv:description comment → description string", async () => {
     const client = makeIntrospectClient([
       {
         table: "orders",
@@ -801,7 +801,7 @@ describe("introspectClickHouse", () => {
         position: 1,
         default_kind: "",
         is_in_primary_key: 0,
-        comment: '@vistal:description "Order total in cents"',
+        comment: '@valv:description "Order total in cents"',
       },
     ])
     const schema = await introspectClickHouse(client as never, "analytics")
@@ -821,7 +821,7 @@ describe("introspectClickHouse", () => {
           comment: "",
         },
       ],
-      [{ name: "orders", comment: '@vistal:description "Customer orders"' }],
+      [{ name: "orders", comment: '@valv:description "Customer orders"' }],
     )
     const schema = await introspectClickHouse(client as never, "analytics")
     expect(schema.resources["orders"].description).toBe("Customer orders")

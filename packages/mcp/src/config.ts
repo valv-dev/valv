@@ -31,7 +31,7 @@ export function inferProvider(url: string): Provider {
   }
   throw new Error(
     `Could not infer the database provider from the connection string. ` +
-      `Set VISTAL_PROVIDER to one of: postgresql, mysql, sqlite, sqlserver, mongodb.`,
+      `Set VALV_PROVIDER to one of: postgresql, mysql, sqlite, sqlserver, mongodb.`,
   )
 }
 
@@ -57,30 +57,30 @@ export function configFromEnv(env: NodeJS.ProcessEnv, argv: string[]): ServerCon
     )
   }
 
-  const provider = env.VISTAL_PROVIDER
-    ? (env.VISTAL_PROVIDER as Provider)
+  const provider = env.VALV_PROVIDER
+    ? (env.VALV_PROVIDER as Provider)
     : inferProvider(databaseUrl)
 
   let context: unknown = {}
-  if (env.VISTAL_CONTEXT) {
+  if (env.VALV_CONTEXT) {
     try {
-      context = JSON.parse(env.VISTAL_CONTEXT)
+      context = JSON.parse(env.VALV_CONTEXT)
     } catch {
-      throw new Error("VISTAL_CONTEXT must be valid JSON.")
+      throw new Error("VALV_CONTEXT must be valid JSON.")
     }
   }
 
-  const httpPort = env.VISTAL_HTTP_PORT ? Number(env.VISTAL_HTTP_PORT) : undefined
+  const httpPort = env.VALV_HTTP_PORT ? Number(env.VALV_HTTP_PORT) : undefined
   if (httpPort !== undefined && Number.isNaN(httpPort)) {
-    throw new Error("VISTAL_HTTP_PORT must be a number.")
+    throw new Error("VALV_HTTP_PORT must be a number.")
   }
 
   return {
     databaseUrl,
     provider,
-    policyFile: env.VISTAL_POLICY_FILE,
-    tables: csv(env.VISTAL_TABLES),
-    exclude: csv(env.VISTAL_EXCLUDE),
+    policyFile: env.VALV_POLICY_FILE,
+    tables: csv(env.VALV_TABLES),
+    exclude: csv(env.VALV_EXCLUDE),
     context,
     httpPort,
   }

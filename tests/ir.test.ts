@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { buildResolvedQuery } from "../packages/core/src/ir/builder"
-import type { SchemaMap } from "@vistal/core"
-import { PolicyViolationError, ValidationError } from "@vistal/core"
+import type { SchemaMap } from "@valv/core"
+import { PolicyViolationError, ValidationError } from "@valv/core"
 
 const schema: SchemaMap = {
   resources: {

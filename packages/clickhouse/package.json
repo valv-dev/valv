@@ -1,7 +1,7 @@
 {
-  "name": "@vistal/clickhouse",
+  "name": "@valv/clickhouse",
   "version": "0.2.0",
-  "description": "ClickHouse adapter for vistal — row-level security and access control for AI agents",
+  "description": "ClickHouse adapter for valv — row-level security and access control for AI agents",
   "keywords": [
     "clickhouse",
     "ai agent",
@@ -39,6 +39,9 @@
   },
   "peerDependencies": {
     "@clickhouse/client": "^1.0.0",
-    "@vistal/core": "^0.3.0"
+    "@valv/core": "^0.3.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

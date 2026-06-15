@@ -1,18 +1,18 @@
 import "dotenv/config"
 import { OrderStatus } from "@prisma/client"
-import { deriveView } from "@vistal/core"
-import type { DefaultContext, ViewResult } from "@vistal/core"
-import { prisma, vistal } from "./vistal"
+import { deriveView } from "@valv/core"
+import type { DefaultContext, ViewResult } from "@valv/core"
+import { prisma, valv } from "./valv"
 
-// Live dashboard demo for vistal views.
+// Live dashboard demo for valv views.
 //
 // The agent builds a query once (a regular tool call); the app captures it with
-// vistal.view() and from then on owns it — typed via resultSchema, re-executed
+// valv.view() and from then on owns it — typed via resultSchema, re-executed
 // through the same policy pipeline, and kept live with subscribe() — no LLM in
 // the loop anymore.
 //
 //   1. The agent picks the query (or a canned tool call when no API key is set).
-//   2. vistal.view() turns the tool call into a policy-enforced handle.
+//   2. valv.view() turns the tool call into a policy-enforced handle.
 //   3. deriveView() reshapes the rows into the chart series (group by status,
 //      sum revenue, sort) — a declarative, schema-validated spec.
 //   4. subscribe() polls + diffs — the chart re-renders only when the series
@@ -51,7 +51,7 @@ async function captureAgentQuery(): Promise<{ toolName: string; args: unknown }>
   const captured: { toolName: string; args: unknown }[] = []
   await generateText({
     model: openrouter("openrouter/owl-alpha"),
-    tools: await vistal.tools.vercel(ctx),
+    tools: await valv.tools.vercel(ctx),
     maxSteps: 3,
     prompt:
       "I want to chart revenue by order status. Fetch up to 100 orders with their status and total.",
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
   // From here on the LLM is out of the loop: the view re-runs the captured
   // query through the full policy pipeline (tenant filter, field rules) on
   // every execution.
-  const view = await vistal.view<OrderRow>(toolName, args, ctx)
+  const view = await valv.view<OrderRow>(toolName, args, ctx)
 
   // Declaratively reshape the rows into the chart series. The spec is plain
   // data validated against the view's schema — an agent could emit it too.

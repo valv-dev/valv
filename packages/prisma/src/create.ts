@@ -1,11 +1,11 @@
-import { Vistal } from "@vistal/core"
-import type { DefaultContext, InferResources, VistalConfig } from "@vistal/core"
+import { Valv } from "@valv/core"
+import type { DefaultContext, InferResources, ValvConfig } from "@valv/core"
 import type { PrismaClient } from "@prisma/client"
 import { PrismaAdapter } from "./adapter"
 import type { PgLiveOptions } from "./live"
 
 type CreateConfig<TContext, TClient extends PrismaClient> = Omit<
-  VistalConfig<TContext, InferResources<TClient>>,
+  ValvConfig<TContext, InferResources<TClient>>,
   "adapter"
 > & {
   schemaPath?: string
@@ -14,12 +14,12 @@ type CreateConfig<TContext, TClient extends PrismaClient> = Omit<
   live?: PgLiveOptions
 }
 
-export function createVistal<TClient extends PrismaClient, TContext = DefaultContext>(
+export function createValv<TClient extends PrismaClient, TContext = DefaultContext>(
   prisma: TClient,
   config?: CreateConfig<TContext, TClient>,
-): Vistal<TContext, InferResources<TClient>> {
+): Valv<TContext, InferResources<TClient>> {
   const { schemaPath, live, ...rest } = config ?? {}
-  return new Vistal<TContext, InferResources<TClient>>({
+  return new Valv<TContext, InferResources<TClient>>({
     ...rest,
     adapter: new PrismaAdapter(prisma, { schemaPath, live }),
   })

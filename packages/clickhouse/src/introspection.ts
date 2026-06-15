@@ -1,4 +1,4 @@
-import type { SchemaMap, ResourceSchema, FieldSchema, FieldType } from "@vistal/core"
+import type { SchemaMap, ResourceSchema, FieldSchema, FieldType } from "@valv/core"
 
 export interface ClickHouseClient {
   // json() is non-generic here so the interface is structurally compatible with
@@ -180,10 +180,10 @@ function parseEnumValues(enumType: string): string[] {
 }
 
 function parseDescription(doc: string): string | null {
-  const match = doc.match(/@vistal:description\s+"([^"]+)"/)
+  const match = doc.match(/@valv:description\s+"([^"]+)"/)
   return match ? match[1] : null
 }
 
 function parseSensitive(doc: string): boolean {
-  return /@vistal:sensitive/.test(doc)
+  return /@valv:sensitive/.test(doc)
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
-import { translateFilter, matchesFilter, PrismaAdapter } from "@vistal/prisma"
-import type { ResolvedQuery } from "@vistal/core"
+import { translateFilter, matchesFilter, PrismaAdapter } from "@valv/prisma"
+import type { ResolvedQuery } from "@valv/core"
 
 describe("translateFilter", () => {
   it("EqFilter", () => {

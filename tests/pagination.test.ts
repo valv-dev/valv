@@ -3,8 +3,8 @@ import { buildResolvedQuery } from "../packages/core/src/ir/builder"
 import { generateTools } from "../packages/core/src/tools/generator"
 import { encodeCursor, decodeCursor } from "../packages/core/src/ir/cursor"
 import { PrismaAdapter } from "../packages/prisma/src/adapter"
-import type { SchemaMap, ResolvedQuery, PaginationConfig } from "@vistal/core"
-import { ValidationError } from "@vistal/core"
+import type { SchemaMap, ResolvedQuery, PaginationConfig } from "@valv/core"
+import { ValidationError } from "@valv/core"
 
 const schema: SchemaMap = {
   resources: {

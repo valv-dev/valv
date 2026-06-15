@@ -39,16 +39,16 @@ export interface ViewSubscription {
 /**
  * The persistable form of a view: plain JSON, safe to store in a database or
  * config. Deliberately excludes the context — ctx is the security boundary and
- * must be re-resolved when the view is rehydrated with `vistal.viewFromJSON`.
+ * must be re-resolved when the view is rehydrated with `valv.viewFromJSON`.
  */
 export interface SerializedView {
-  vistal: "view"
+  valv: "view"
   v: 1
   toolName: string
   args: unknown
 }
 
-/** A named view definition for the registry (`vistal.registerView`). */
+/** A named view definition for the registry (`valv.registerView`). */
 export interface ViewDefinition {
   toolName: string
   args?: unknown
@@ -58,14 +58,14 @@ export interface ViewDefinition {
 /**
  * A captured agent query: re-executable through the full policy pipeline
  * without the LLM in the loop, with a runtime JSON Schema of its result shape.
- * Created via `vistal.view(toolName, args, ctx)`.
+ * Created via `valv.view(toolName, args, ctx)`.
  */
 export interface View<T = Record<string, unknown>> {
   readonly toolName: string
   readonly args: unknown
   readonly resource: string
   readonly operation: "find" | "findOne" | "aggregate"
-  /** Registry name when opened via `vistal.openView()`. */
+  /** Registry name when opened via `valv.openView()`. */
   readonly name?: string
   /** JSON Schema of the envelope execute() returns. Snapshot taken at view
    *  creation — if policies later narrow the allowed fields, rows simply omit
@@ -78,6 +78,6 @@ export interface View<T = Record<string, unknown>> {
    *  result actually changed. All subscribers on the same View share one
    *  polling loop. */
   subscribe(onData: (result: ViewResult<T>) => void, options?: SubscribeOptions): ViewSubscription
-  /** Persistable form (no ctx). Rehydrate with `vistal.viewFromJSON(json, ctx)`. */
+  /** Persistable form (no ctx). Rehydrate with `valv.viewFromJSON(json, ctx)`. */
   toJSON(): SerializedView
 }

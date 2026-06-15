@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { PgNotifyListener, liveTriggersSQL, PrismaAdapter } from "@vistal/prisma"
-import type { PgClientLike } from "@vistal/prisma"
-import type { ResolvedQuery } from "@vistal/core"
+import { PgNotifyListener, liveTriggersSQL, PrismaAdapter } from "@valv/prisma"
+import type { PgClientLike } from "@valv/prisma"
+import type { ResolvedQuery } from "@valv/core"
 
 class FakePgClient implements PgClientLike {
   queries: string[] = []
@@ -22,7 +22,7 @@ class FakePgClient implements PgClientLike {
   on(event: "notification", cb: (msg: { channel: string; payload?: string }) => void): void {
     this.handler = cb
   }
-  notify(payload?: string, channel = "vistal_changes"): void {
+  notify(payload?: string, channel = "valv_changes"): void {
     this.handler?.({ channel, payload })
   }
 }
@@ -48,7 +48,7 @@ describe("PgNotifyListener", () => {
     const unwatch = listener.watch(["Order"], vi.fn())
     await flush()
     expect(client.connected).toBe(true)
-    expect(client.queries).toEqual(['LISTEN "vistal_changes"'])
+    expect(client.queries).toEqual(['LISTEN "valv_changes"'])
 
     unwatch()
     await flush()
@@ -137,14 +137,14 @@ describe("PgNotifyListener", () => {
 describe("liveTriggersSQL", () => {
   it("emits the notify function and idempotent per-table triggers", () => {
     const sql = liveTriggersSQL(["Order", "User"])
-    expect(sql[0]).toContain("CREATE OR REPLACE FUNCTION vistal_notify()")
-    expect(sql[0]).toContain("pg_notify('vistal_changes', TG_TABLE_NAME)")
+    expect(sql[0]).toContain("CREATE OR REPLACE FUNCTION valv_notify()")
+    expect(sql[0]).toContain("pg_notify('valv_changes', TG_TABLE_NAME)")
     expect(sql).toContainEqual(
-      expect.stringContaining('DROP TRIGGER IF EXISTS "vistal_notify_Order"'),
+      expect.stringContaining('DROP TRIGGER IF EXISTS "valv_notify_Order"'),
     )
     expect(sql).toContainEqual(
       expect.stringContaining(
-        'AFTER INSERT OR UPDATE OR DELETE ON "Order" FOR EACH STATEMENT EXECUTE FUNCTION vistal_notify()',
+        'AFTER INSERT OR UPDATE OR DELETE ON "Order" FOR EACH STATEMENT EXECUTE FUNCTION valv_notify()',
       ),
     )
   })

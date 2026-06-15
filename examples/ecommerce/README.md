@@ -1,6 +1,6 @@
-# vistal ecommerce example
+# valv ecommerce example
 
-Demonstrates vistal's core value: the same LLM agent, the same question, different access context → different data visible.
+Demonstrates valv's core value: the same LLM agent, the same question, different access context → different data visible.
 
 Three scenarios run back-to-back against a real Postgres database:
 
@@ -10,7 +10,7 @@ Three scenarios run back-to-back against a real Postgres database:
 | Support | bob @ tenant-alpha | No customer relation, `user_id` field stripped, no write tools |
 | Cross-tenant | carol @ tenant-beta | Zero results — tenant-alpha data is invisible |
 
-`internal_notes` on orders is marked `@vistal:sensitive` in the schema and is **never** sent to the LLM regardless of role.
+`internal_notes` on orders is marked `@valv:sensitive` in the schema and is **never** sent to the LLM regardless of role.
 
 ## Prerequisites
 
@@ -21,8 +21,8 @@ Three scenarios run back-to-back against a real Postgres database:
 ## Quick start
 
 ```bash
-# 1. Build the vistal library
-cd /path/to/vistal
+# 1. Build the valv library
+cd /path/to/valv
 npm install && npm run build
 
 # 2. Install example dependencies
@@ -56,7 +56,7 @@ npm start
 
 ## Live dashboard (`live-dashboard.ts`)
 
-Shows vistal **views**: the agent builds a query once, the app captures the tool call with `vistal.view()` and owns it from there — typed result schema, policy-enforced re-execution, and a `subscribe()` loop driving a live ASCII revenue chart while a background writer inserts orders. The rows are reshaped into the chart series with `deriveView()` (group by status, sum revenue, sort) — a declarative spec validated against the view's schema. The LLM is out of the loop after the capture.
+Shows valv **views**: the agent builds a query once, the app captures the tool call with `valv.view()` and owns it from there — typed result schema, policy-enforced re-execution, and a `subscribe()` loop driving a live ASCII revenue chart while a background writer inserts orders. The rows are reshaped into the chart series with `deriveView()` (group by status, sum revenue, sort) — a declarative spec validated against the view's schema. The LLM is out of the loop after the capture.
 
 ```bash
 npm run dashboard
@@ -67,5 +67,5 @@ Runs with or without `OPENROUTER_API_KEY` — without it, a canned tool call sta
 ## Key code sections in `index.ts`
 
 - **Lines 20–55** — policy definitions: where role-based and tenant-based rules are declared
-- **Lines 57–110** — `runAgentDemo`: the agentic loop that calls Claude and executes tool calls through vistal
+- **Lines 57–110** — `runAgentDemo`: the agentic loop that calls Claude and executes tool calls through valv
 - **Lines 115–135** — `main`: three identical prompts run under three different contexts

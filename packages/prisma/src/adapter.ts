@@ -1,12 +1,12 @@
 import type { PrismaClient } from "@prisma/client"
 import type {
-  VistalAdapter,
+  ValvAdapter,
   SchemaMap,
   ResolvedQuery,
   FilterNode,
   ResolvedInclude,
-} from "@vistal/core"
-import { encodeCursor } from "@vistal/core"
+} from "@valv/core"
+import { encodeCursor } from "@valv/core"
 import { introspectPrisma } from "./introspection"
 import { PgNotifyListener, PgLiveOptions } from "./live"
 
@@ -18,7 +18,7 @@ export interface PrismaAdapterOptions {
   live?: PgLiveOptions
 }
 
-export class PrismaAdapter implements VistalAdapter {
+export class PrismaAdapter implements ValvAdapter {
   private prisma: PrismaClient
   private schemaPath?: string
   private schemaMap?: SchemaMap

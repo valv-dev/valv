@@ -8,7 +8,7 @@ export interface ResourceSchema {
   tableName: string // "Order" (Prisma model name)
   fields: Record<string, FieldSchema>
   relations: Record<string, RelationSchema>
-  description?: string // from /// @vistal:description annotations
+  description?: string // from /// @valv:description annotations
 }
 
 export interface FieldSchema {
@@ -18,8 +18,8 @@ export interface FieldSchema {
   isId: boolean
   hasDefaultValue?: boolean // field has a DB/schema default (e.g. @default(now()), @default(uuid()))
   enumValues?: string[] // if type is "enum"
-  description?: string // from /// @vistal:description annotations
-  sensitive?: boolean // from /// @vistal:sensitive annotations
+  description?: string // from /// @valv:description annotations
+  sensitive?: boolean // from /// @valv:sensitive annotations
 }
 
 export type FieldType = "string" | "number" | "boolean" | "date" | "enum" | "uuid" | "json"
@@ -87,10 +87,10 @@ type _CamelToSnake<S extends string> = S extends `${infer Head}${infer Tail}`
   : S
 
 /**
- * Derives vistal resource names (snake_case) from a Prisma client type.
+ * Derives valv resource names (snake_case) from a Prisma client type.
  *
  * @example
- * const vistal = new Vistal<DefaultContext, InferResources<typeof prisma>>({ ... })
+ * const valv = new Valv<DefaultContext, InferResources<typeof prisma>>({ ... })
  * // policy() and getTools() are now type-safe with autocomplete for resource names
  */
 export type InferResources<TClient> = _CamelToSnake<

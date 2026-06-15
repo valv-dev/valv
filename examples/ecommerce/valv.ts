@@ -1,14 +1,14 @@
 import "dotenv/config"
 import { PrismaClient } from "@prisma/client"
-import { createVistal } from "@vistal/prisma"
+import { createValv } from "@valv/prisma"
 
-// Shared vistal setup + policies for the e-commerce example. Imported by both
+// Shared valv setup + policies for the e-commerce example. Imported by both
 // the in-process demo (index.ts) and the MCP server (mcp.ts) so the exact same
 // access policies govern both surfaces.
 
 export const prisma = new PrismaClient()
 
-export const vistal = createVistal(prisma, {
+export const valv = createValv(prisma, {
   defaultPolicy: "deny-all",
   onQuery: ({ toolName, resource, durationMs, error }) => {
     if (error)
@@ -21,7 +21,7 @@ export const vistal = createVistal(prisma, {
 
 // ── Policies ──────────────────────────────────────────────────────────────────
 
-vistal.policy("order", (ctx) => {
+valv.policy("order", (ctx) => {
   // Auditor: a read-mostly analyst role that exercises the richer policy surface —
   //   • operator row filter (sees only low-value orders)
   //   • aggregate ≠ read (can total ALL orders, but only read rows under the cap)
@@ -44,7 +44,7 @@ vistal.policy("order", (ctx) => {
     write: { tenant_id: ctx.tenant!.id },
     delete: false,
     fields: {
-      // internal_notes is @vistal:sensitive — auto-excluded from LLM
+      // internal_notes is @valv:sensitive — auto-excluded from LLM
       deny: ctx.user.role === "support" ? ["user_id"] : [],
     },
     relations: {
@@ -54,18 +54,18 @@ vistal.policy("order", (ctx) => {
   }
 })
 
-vistal.policy("user", (ctx) => ({
+valv.policy("user", (ctx) => ({
   read: { tenant_id: ctx.tenant!.id },
-  // password_hash is @vistal:sensitive — always excluded
+  // password_hash is @valv:sensitive — always excluded
   fields: { deny: ctx.user.role === "support" ? ["email"] : [] },
   write: false,
   delete: false,
 }))
 
-vistal.policy("product", (ctx) => ({
+valv.policy("product", (ctx) => ({
   read: { tenant_id: ctx.tenant!.id },
   write: { tenant_id: ctx.tenant!.id },
   delete: false,
 }))
 
-vistal.policy("order_item", () => ({ read: false }))
+valv.policy("order_item", () => ({ read: false }))

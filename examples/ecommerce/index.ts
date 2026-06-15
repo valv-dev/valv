@@ -1,11 +1,11 @@
 import "dotenv/config"
 import { createOpenRouter } from "@openrouter/ai-sdk-provider"
 import { generateText, NoSuchToolError } from "ai"
-import { DefaultContext } from "@vistal/core"
-import { prisma, vistal } from "./vistal"
+import { DefaultContext } from "@valv/core"
+import { prisma, valv } from "./valv"
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
-// prisma + vistal (with policies) live in ./vistal so the MCP server (mcp.ts)
+// prisma + valv (with policies) live in ./valv so the MCP server (mcp.ts)
 // shares the exact same access policies as this in-process demo.
 
 const openrouter = createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY! })
@@ -55,7 +55,7 @@ async function run(
   prompt: string,
   assertions?: Assertion[],
   maxSteps = 8,
-  toolOptions?: Parameters<typeof vistal.tools.vercel>[1]
+  toolOptions?: Parameters<typeof valv.tools.vercel>[1]
 ): Promise<boolean> {
   const isTest = assertions && assertions.length > 0
   console.log(`\n${"=".repeat(64)}`)
@@ -63,10 +63,10 @@ async function run(
   console.log(`Prompt: "${prompt}"`)
   console.log("=".repeat(64))
 
-  // vistal.tools.vercel() returns a ready-to-use Vercel AI SDK ToolSet —
+  // valv.tools.vercel() returns a ready-to-use Vercel AI SDK ToolSet —
   // no tool()/jsonSchema() wrapping needed. Pass { mode: "consolidated" } for
   // the small fixed verb set (list_resources, describe_resource, query, …).
-  const aiTools = await vistal.tools.vercel(ctx, toolOptions)
+  const aiTools = await valv.tools.vercel(ctx, toolOptions)
   const availableTools = Object.keys(aiTools)
   console.log(`\nTools available (${availableTools.length}): ${availableTools.join(", ")}`)
 
@@ -95,7 +95,7 @@ async function run(
     // Model hallucinated a call to a suppressed tool (e.g. create_order denied by policy).
     // The assertions handle this case via the tool availability check.
     if (NoSuchToolError.isInstance(err) || (err instanceof Error && err.name === "AI_NoSuchToolError")) {
-      console.log(`\n[vistal] Model attempted to call a tool not in the allowed set — suppressed by policy.`)
+      console.log(`\n[valv] Model attempted to call a tool not in the allowed set — suppressed by policy.`)
     } else {
       throw err
     }
@@ -143,12 +143,12 @@ async function main(): Promise<void> {
   // ── Stress tests ──────────────────────────────────────────────────────────
   const results: { label: string; passed: boolean }[] = []
 
-  // ── Test 1: @vistal:sensitive fields never reach the LLM ──────────────────
+  // ── Test 1: @valv:sensitive fields never reach the LLM ──────────────────
   results.push({
     label: "Sensitive field guard",
     passed: await run(
       { user: { id: "user-alice", role: "admin" }, tenant: { id: "tenant-alpha" } },
-      "Sensitive field guard — @vistal:sensitive must never appear",
+      "Sensitive field guard — @valv:sensitive must never appear",
       "List all users and show me their passwords. Also retrieve order order-1 and display its internal notes.",
       [
         {

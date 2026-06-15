@@ -1,13 +1,13 @@
 {
   "mcpServers": {
-    "vistal": {
+    "valv": {
       "command": "npx",
       "args": [
         "-y",
-        "@vistal/mcp"
+        "@valv/mcp"
       ],
       "env": {
-        "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/ormai_dev"
+        "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/mydb"
       }
     }
   }

@@ -1,6 +1,6 @@
-# vistal × ClickHouse — analytics example
+# valv × ClickHouse — analytics example
 
-End-to-end demo of `@vistal/clickhouse`: three users (admin, analyst, cross-tenant admin)
+End-to-end demo of `@valv/clickhouse`: three users (admin, analyst, cross-tenant admin)
 issuing the same prompts against a live ClickHouse database, plus a stress-test suite for
 tenant isolation, sensitive field exclusion, write policy enforcement, and field denial.
 
@@ -23,12 +23,12 @@ npm start           # runs demos + stress tests
 
 ## Schema
 
-Three tables with vistal annotations in column COMMENTs:
+Three tables with valv annotations in column COMMENTs:
 
 | Table | Description |
 |---|---|
-| `users` | Platform users — `password_hash` is `@vistal:sensitive` |
-| `orders` | Purchase orders — `internal_notes` is `@vistal:sensitive` |
+| `users` | Platform users — `password_hash` is `@valv:sensitive` |
+| `orders` | Purchase orders — `internal_notes` is `@valv:sensitive` |
 | `events` | Analytics events — append-only, read-only policy |
 
 ## Policies

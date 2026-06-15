@@ -1,5 +1,5 @@
 {
-  "name": "@vistal/mcp-sdk",
+  "name": "@valv/mcp-sdk",
   "version": "0.1.0",
   "description": "Library to turn your app's database into an MCP server for coding agents (Claude Code) — adapter-agnostic, row-level security, zero SQL",
   "keywords": [
@@ -42,12 +42,15 @@
     "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "peerDependencies": {
-    "@vistal/core": "^0.3.0",
+    "@valv/core": "^0.3.0",
     "express": "^4.0.0 || ^5.0.0"
   },
   "peerDependenciesMeta": {
     "express": {
       "optional": true
     }
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

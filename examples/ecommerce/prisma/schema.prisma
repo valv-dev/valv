@@ -21,13 +21,13 @@ enum OrderStatus {
   cancelled
 }
 
-/// @vistal:description "A user account in the system"
+/// @valv:description "A user account in the system"
 model User {
   id         String   @id @default(uuid())
   name       String
-  /// @vistal:description "User email address for login"
+  /// @valv:description "User email address for login"
   email      String   @unique
-  /// @vistal:sensitive
+  /// @valv:sensitive
   password_hash String
   role       UserRole
   tenant_id  String
@@ -36,14 +36,14 @@ model User {
   orders Order[]
 }
 
-/// @vistal:description "A product available for purchase"
+/// @valv:description "A product available for purchase"
 model Product {
   id          String   @id @default(uuid())
   name        String
   description String?
-  /// @vistal:description "Unit price in cents"
+  /// @valv:description "Unit price in cents"
   price       Decimal
-  /// @vistal:description "Units currently in stock"
+  /// @valv:description "Units currently in stock"
   stock       Int
   tenant_id   String
   created_at  DateTime @default(now())
@@ -51,13 +51,13 @@ model Product {
   order_items OrderItem[]
 }
 
-/// @vistal:description "A customer purchase order"
+/// @valv:description "A customer purchase order"
 model Order {
   id       String      @id @default(uuid())
   status   OrderStatus
-  /// @vistal:description "Order total in cents"
+  /// @valv:description "Order total in cents"
   total    Decimal
-  /// @vistal:sensitive
+  /// @valv:sensitive
   internal_notes String?
   tenant_id      String
   created_at     DateTime @default(now())
@@ -67,11 +67,11 @@ model Order {
   items    OrderItem[]
 }
 
-/// @vistal:description "A line item within an order"
+/// @valv:description "A line item within an order"
 model OrderItem {
   id         String  @id @default(uuid())
   quantity   Int
-  /// @vistal:description "Price at time of purchase, in cents"
+  /// @valv:description "Price at time of purchase, in cents"
   unit_price Decimal
 
   order_id String

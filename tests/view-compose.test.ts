@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { Vistal, compose, deriveView, generateViewTypes, ValidationError } from "@vistal/core"
-import type { VistalAdapter, SchemaMap, ResolvedQuery } from "@vistal/core"
+import { Valv, compose, deriveView, generateViewTypes, ValidationError } from "@valv/core"
+import type { ValvAdapter, SchemaMap, ResolvedQuery } from "@valv/core"
 
 interface Ctx {
   tenant: string
@@ -39,7 +39,7 @@ const schema: SchemaMap = {
   },
 }
 
-class MockAdapter implements VistalAdapter {
+class MockAdapter implements ValvAdapter {
   results: Record<string, unknown> = {}
   async introspect(): Promise<SchemaMap> {
     return schema
@@ -49,8 +49,8 @@ class MockAdapter implements VistalAdapter {
   }
 }
 
-function makeVistal(adapter: VistalAdapter) {
-  return new Vistal<Ctx>({ adapter })
+function makeValv(adapter: ValvAdapter) {
+  return new Valv<Ctx>({ adapter })
     .policy("order", (c) => ({ read: { tenant_id: c.tenant } }))
     .policy("customer", () => ({ read: true }))
 }
@@ -74,10 +74,10 @@ describe("compose()", () => {
     const adapter = new MockAdapter()
     adapter.results.order = { data: [{ id: "o1", amount: 10 }], hasMore: false }
     adapter.results.customer = { data: [{ id: "c1", name: "Ada" }], hasMore: false }
-    const vistal = makeVistal(adapter)
+    const valv = makeValv(adapter)
 
-    const orders = await vistal.view<OrderRow>("query_order", {}, ctx)
-    const customers = await vistal.view<CustomerRow>("query_customer", {}, ctx)
+    const orders = await valv.view<OrderRow>("query_order", {}, ctx)
+    const customers = await valv.view<CustomerRow>("query_customer", {}, ctx)
 
     const combined = compose([orders, customers], (o, c) => ({
       orderCount: o.data.length,
@@ -92,10 +92,10 @@ describe("compose()", () => {
     const adapter = new MockAdapter()
     adapter.results.order = { data: [{ id: "o1", amount: 10 }], hasMore: false }
     adapter.results.customer = { data: [{ id: "c1", name: "Ada" }], hasMore: false }
-    const vistal = makeVistal(adapter)
+    const valv = makeValv(adapter)
 
-    const orders = await vistal.view<OrderRow>("query_order", {}, ctx)
-    const customers = await vistal.view<CustomerRow>("query_customer", {}, ctx)
+    const orders = await valv.view<OrderRow>("query_order", {}, ctx)
+    const customers = await valv.view<CustomerRow>("query_customer", {}, ctx)
     const combined = compose([orders, customers], (o, c) => ({
       total: o.data.reduce((s, r) => s + r.amount, 0),
       customers: c.data.length,
@@ -128,8 +128,8 @@ describe("compose()", () => {
   it("routes transform errors to onError", async () => {
     vi.useFakeTimers()
     const adapter = new MockAdapter()
-    const vistal = makeVistal(adapter)
-    const orders = await vistal.view<OrderRow>("query_order", {}, ctx)
+    const valv = makeValv(adapter)
+    const orders = await valv.view<OrderRow>("query_order", {}, ctx)
     const boom = compose([orders], () => {
       throw new Error("bad transform")
     })
@@ -151,8 +151,8 @@ describe("deriveView()", () => {
   async function makeOrdersView() {
     const adapter = new MockAdapter()
     adapter.results.order = { data: orderRows, hasMore: false }
-    const vistal = makeVistal(adapter)
-    const view = await vistal.view<OrderRow>("query_order", {}, ctx)
+    const valv = makeValv(adapter)
+    const view = await valv.view<OrderRow>("query_order", {}, ctx)
     return { adapter, view }
   }
 
@@ -247,8 +247,8 @@ describe("deriveView()", () => {
 describe("generateViewTypes()", () => {
   it("emits row + result interfaces from a resultSchema", async () => {
     const adapter = new MockAdapter()
-    const vistal = makeVistal(adapter)
-    const view = await vistal.view("query_order", {}, ctx)
+    const valv = makeValv(adapter)
+    const view = await valv.view("query_order", {}, ctx)
     const src = generateViewTypes(view.resultSchema, "Order")
 
     expect(src).toContain("export interface OrderRow {")
@@ -264,8 +264,8 @@ describe("generateViewTypes()", () => {
   it("handles derived views and rejects non-view schemas", async () => {
     const adapter = new MockAdapter()
     adapter.results.order = { data: [], hasMore: false }
-    const vistal = makeVistal(adapter)
-    const view = await vistal.view<OrderRow>("query_order", {}, ctx)
+    const valv = makeValv(adapter)
+    const view = await valv.view<OrderRow>("query_order", {}, ctx)
     const derived = deriveView(view, {
       groupBy: ["status"],
       aggregations: [{ alias: "revenue", fn: "sum", field: "amount" }],

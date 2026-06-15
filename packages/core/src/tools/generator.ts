@@ -1,8 +1,8 @@
 import { SchemaMap, PolicyFn, ResourceSchema, FieldSchema } from "../types"
 import { evaluatePolicy, EvaluatedPolicy } from "../policy/engine"
-import type { GetToolsOptions, PaginationConfig } from "../vistal"
+import type { GetToolsOptions, PaginationConfig } from "../valv"
 
-/** Fallback pagination bounds for direct callers; production flows pass config from VistalConfig. */
+/** Fallback pagination bounds for direct callers; production flows pass config from ValvConfig. */
 export const DEFAULT_PAGINATION: PaginationConfig = { maxLimit: 100, defaultLimit: 50 }
 
 export const CONSOLIDATED_VERBS = [

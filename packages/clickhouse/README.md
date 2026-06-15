@@ -1,40 +1,40 @@
-# @vistal/clickhouse
+# @valv/clickhouse
 
-ClickHouse adapter for [vistal](https://github.com/vista-libs/vista) — row-level security and policy enforcement for AI agents querying ClickHouse.
+ClickHouse adapter for [valv](https://github.com/vista-libs/vista) — row-level security and policy enforcement for AI agents querying ClickHouse.
 
 ## Install
 
 ```bash
-npm install @vistal/clickhouse @vistal/core @clickhouse/client
+npm install @valv/clickhouse @valv/core @clickhouse/client
 ```
 
 ## Usage
 
 ```ts
 import { createClient } from "@clickhouse/client"
-import { createVistal } from "@vistal/clickhouse"
+import { createValv } from "@valv/clickhouse"
 
 const ch = createClient({ url: process.env.CLICKHOUSE_URL })
 
-const vistal = createVistal(ch, {
+const valv = createValv(ch, {
   database: "analytics",
   defaultPolicy: "deny-all",
 })
 
-vistal.policy("events", (ctx) => ({
+valv.policy("events", (ctx) => ({
   read:      { tenant_id: ctx.tenant!.id },
   aggregate: { tenant_id: ctx.tenant!.id },
   write: false,
   delete: false,
 }))
 
-const tools = await vistal.tools.vercel(ctx)
+const tools = await valv.tools.vercel(ctx)
 // pass tools to generateText / streamText as usual
 ```
 
 ## Schema annotations
 
-Vistal reads column and table comments to pick up schema metadata. Add them to your
+Valv reads column and table comments to pick up schema metadata. Add them to your
 `CREATE TABLE` statements:
 
 ```sql
@@ -43,16 +43,16 @@ CREATE TABLE orders
   id        UUID DEFAULT generateUUIDv4(),
   tenant_id String,
   status    Enum8('pending'=1, 'shipped'=2, 'delivered'=3)
-              COMMENT '@vistal:description "Current order status"',
-  total     Int64   COMMENT '@vistal:description "Order total in cents"',
-  notes     Nullable(String) COMMENT '@vistal:sensitive'
+              COMMENT '@valv:description "Current order status"',
+  total     Int64   COMMENT '@valv:description "Order total in cents"',
+  notes     Nullable(String) COMMENT '@valv:sensitive'
 )
 ENGINE = MergeTree
 ORDER BY (tenant_id, id)
-COMMENT '@vistal:description "Customer orders"';
+COMMENT '@valv:description "Customer orders"';
 ```
 
-The `@vistal:sensitive` tag strips the field from every schema, argument, and result
+The `@valv:sensitive` tag strips the field from every schema, argument, and result
 the LLM sees — enforcement happens at introspection time, not in the prompt.
 
 ## The `id` column
@@ -93,7 +93,7 @@ patterns instead.
 ## Options
 
 ```ts
-createVistal(client, {
+createValv(client, {
   database: "analytics",   // defaults to currentDatabase()
   defaultPolicy: "deny-all",
   onQuery: ({ toolName, resource, durationMs, error }) => { ... },
@@ -102,13 +102,13 @@ createVistal(client, {
 
 ## Exporting the adapter directly
 
-If you need to wire the adapter into an existing `Vistal` instance:
+If you need to wire the adapter into an existing `Valv` instance:
 
 ```ts
-import { ClickHouseAdapter } from "@vistal/clickhouse"
-import { Vistal } from "@vistal/core"
+import { ClickHouseAdapter } from "@valv/clickhouse"
+import { Valv } from "@valv/core"
 
-const vistal = new Vistal({
+const valv = new Valv({
   adapter: new ClickHouseAdapter(ch, { database: "analytics" }),
   defaultPolicy: "deny-all",
 })

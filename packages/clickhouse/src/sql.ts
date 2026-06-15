@@ -1,4 +1,4 @@
-import type { FilterNode } from "@vistal/core"
+import type { FilterNode } from "@valv/core"
 
 export function quoteIdent(name: string): string {
   return "`" + name.replace(/`/g, "``") + "`"

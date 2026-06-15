@@ -1,8 +1,8 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js"
-import { Vistal, serializeResult, ValidationError, PolicyViolationError } from "@vistal/core"
-import type { GetToolsOptions } from "@vistal/core"
-import type { ContextResolver, VistalMcpOptions } from "./types.js"
+import { Valv, serializeResult, ValidationError, PolicyViolationError } from "@valv/core"
+import type { GetToolsOptions } from "@valv/core"
+import type { ContextResolver, ValvMcpOptions } from "./types.js"
 
 const DEFAULT_VERSION = "0.1.0"
 
@@ -12,7 +12,7 @@ async function resolve<TContext>(context: ContextResolver<TContext>): Promise<TC
     : context
 }
 
-// Mirrors the private guard in @vistal/core: vistal's own errors are
+// Mirrors the private guard in @valv/core: valv's own errors are
 // author-written and safe to surface (the agent can act on them), but any other
 // error (e.g. a raw driver error) may carry internal details — file paths, query
 // dumps — so it is replaced with a generic message.
@@ -24,8 +24,8 @@ function safeErrorMessage(err: unknown): string {
 }
 
 /**
- * Build an MCP {@link Server} that fronts a configured {@link Vistal} instance.
- * Tool definitions and execution both run through vistal's public API, so every
+ * Build an MCP {@link Server} that fronts a configured {@link Valv} instance.
+ * Tool definitions and execution both run through valv's public API, so every
  * call is policy-gated exactly as it would be in-process — no SQL reaches the
  * agent, sensitive fields stay hidden, and row/field policies are enforced.
  *
@@ -33,22 +33,19 @@ function safeErrorMessage(err: unknown): string {
  * {@link startStdioServer} or {@link startHttpServer}.
  */
 export function createMcpServer<TContext, TResources extends string = string>(
-  vistal: Vistal<TContext, TResources>,
-  options: VistalMcpOptions<TContext>,
+  valv: Valv<TContext, TResources>,
+  options: ValvMcpOptions<TContext>,
 ): Server {
   const mode = options.mode ?? "consolidated"
 
-  const server = new Server(options.serverInfo ?? { name: "vistal", version: DEFAULT_VERSION }, {
+  const server = new Server(options.serverInfo ?? { name: "valv", version: DEFAULT_VERSION }, {
     capabilities: { tools: {} },
   })
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const ctx = await resolve(options.context)
-    // getTools returns the Anthropic shape: { name, description, input_schema }.
-    // toolOptions.resources are user-supplied strings; cast to the instance's
-    // resource union (vistal validates unknown resource names at runtime).
     const getToolsOptions = { ...options.toolOptions, mode } as GetToolsOptions<TResources>
-    const tools = await vistal.getTools(ctx, getToolsOptions)
+    const tools = await valv.getTools(ctx, getToolsOptions)
     return {
       tools: tools.map((t) => ({
         name: t.name,
@@ -62,7 +59,7 @@ export function createMcpServer<TContext, TResources extends string = string>(
     const ctx = await resolve(options.context)
     const { name, arguments: args } = req.params
     try {
-      const result = await vistal.executeTool(name, args ?? {}, ctx)
+      const result = await valv.executeTool(name, args ?? {}, ctx)
       return {
         content: [{ type: "text" as const, text: JSON.stringify(serializeResult(result)) }],
       }

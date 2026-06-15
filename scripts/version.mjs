@@ -6,7 +6,7 @@
 //
 // Examples:
 //   node scripts/version.mjs core minor          # 0.2.0 -> 0.3.0
-//   node scripts/version.mjs @vistal/prisma patch # 0.2.1 -> 0.2.2
+//   node scripts/version.mjs @valv/prisma patch # 0.2.1 -> 0.2.2
 //   node scripts/version.mjs mcp 1.0.0            # set explicit version
 //
 // When a package is bumped, any sibling that depends on it via a semver
@@ -62,7 +62,7 @@ function main() {
   }
 
   const pkgs = loadPackages();
-  const fullName = target.startsWith("@vistal/") ? target : `@vistal/${target}`;
+  const fullName = target.startsWith("@valv/") ? target : `@valv/${target}`;
   const entry = pkgs.get(fullName);
   if (!entry) {
     fail(`unknown package "${target}" (known: ${[...pkgs.keys()].join(", ")})`);
