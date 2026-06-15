@@ -47,9 +47,7 @@ export async function startValvMcpServer(config: ServerConfig): Promise<RunningS
 
   if (config.httpPort !== undefined) {
     await startHttpServer(valv, { ...options, port: config.httpPort })
-    process.stderr.write(
-      `[valv] MCP server listening on http://localhost:${config.httpPort}/mcp\n`,
-    )
+    process.stderr.write(`[valv] MCP server listening on http://localhost:${config.httpPort}/mcp\n`)
   } else {
     await startStdioServer(valv, options)
     process.stderr.write("[valv] MCP server ready on stdio.\n")

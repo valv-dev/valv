@@ -1,11 +1,5 @@
 import { getDMMF } from "@prisma/internals"
-import type {
-  SchemaMap,
-  ResourceSchema,
-  FieldSchema,
-  FieldType,
-  RelationSchema,
-} from "@valv/core"
+import type { SchemaMap, ResourceSchema, FieldSchema, FieldType, RelationSchema } from "@valv/core"
 
 export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
   const dmmf = await getDMMF({ datamodelPath: schemaPath })

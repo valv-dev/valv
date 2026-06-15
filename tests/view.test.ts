@@ -615,12 +615,9 @@ describe("shared engine", () => {
       inFlight--
       return { data: [], hasMore: false }
     }
-    const valv = new Valv<Ctx>({ adapter, maxConcurrentViewQueries: 2 }).policy(
-      "order",
-      (c) => ({
-        read: { tenant_id: c.tenant },
-      }),
-    )
+    const valv = new Valv<Ctx>({ adapter, maxConcurrentViewQueries: 2 }).policy("order", (c) => ({
+      read: { tenant_id: c.tenant },
+    }))
 
     // Five distinct views, all polling concurrently.
     const subs = []

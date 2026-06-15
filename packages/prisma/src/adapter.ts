@@ -1,11 +1,6 @@
+import { randomUUID } from "node:crypto"
 import type { PrismaClient } from "@prisma/client"
-import type {
-  ValvAdapter,
-  SchemaMap,
-  ResolvedQuery,
-  FilterNode,
-  ResolvedInclude,
-} from "@valv/core"
+import type { ValvAdapter, SchemaMap, ResolvedQuery, FilterNode, ResolvedInclude } from "@valv/core"
 import { encodeCursor } from "@valv/core"
 import { introspectPrisma } from "./introspection"
 import { PgNotifyListener, PgLiveOptions } from "./live"
@@ -161,8 +156,26 @@ export class PrismaAdapter implements ValvAdapter {
       }
 
       case "create": {
+        const data = { ...(query.data ?? {}) }
+        // Prisma's @default(uuid()) generates IDs at the client level, not the DB.
+        // prisma db pull loses that annotation, so we fill the gap here.
+        if (this.schemaMap) {
+          const resource = this.schemaMap.resources[query.resource]
+          if (resource) {
+            for (const field of Object.values(resource.fields)) {
+              if (
+                field.isId &&
+                field.type === "string" &&
+                !field.hasDefaultValue &&
+                !data[field.name]
+              ) {
+                data[field.name] = randomUUID()
+              }
+            }
+          }
+        }
         return model.create({
-          data: query.data ?? {},
+          data,
           select: selectWithIncludes,
         })
       }
