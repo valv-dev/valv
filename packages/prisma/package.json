@@ -1,6 +1,6 @@
 {
   "name": "@valv/prisma",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Prisma adapter for valv — row-level security and access control for AI agents",
   "keywords": [
     "prisma",
