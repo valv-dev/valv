@@ -97,6 +97,17 @@ database
 
 The model calls a typed tool with arguments. valv resolves it into an ORM operation, applies the policy before execution, and runs it. Enforcement happens in your process, on the server, not on the model's honor.
 
+### Why an ORM and not raw SQL?
+
+valv resolves every tool call through your ORM rather than compiling its own SQL. That's deliberate — the ORM does load-bearing work that sits directly on the security and correctness path:
+
+- **Parameterization, every dialect.** The ORM never concatenates model-supplied values into SQL. Hand-compiling queries would put injection safety on valv, for every operator and every introspected identifier — exactly where you don't want a homegrown layer.
+- **Consistent types.** Decimal, DateTime, BigInt, bytes, JSON come back as predictable JS values. Raw drivers (`pg`, `mysql2`, …) each return different shapes; valv's job is feeding *clean* structured data to a model.
+- **Relations.** Foreign-key inference plus the actual fetching — nested includes, join strategy, m2m junction tables. valv names the relation; the ORM does the hard part.
+- **One adapter, many databases.** Postgres, MySQL, SQLite, SQL Server, and MongoDB through a single interface, dialect quirks (quoting, `LIMIT`/`TOP`, booleans, `RETURNING`, pooling) already handled.
+
+The cost is that running against an unknown database discovered at runtime (the [URL path](#no-orm-just-a-url)) has to build an ORM client at startup. That's the price of these guarantees, not accidental overhead — so valv pays it rather than maintaining a second, hand-rolled query engine the policy and tool layers aren't tested against.
+
 ## Install
 
 ```bash
