@@ -113,6 +113,42 @@ npm install @valv/core @valv/prisma
 
 Pass `schemaPath` to `createValv` if your schema isn't at `./prisma/schema.prisma`.
 
+### No ORM? Just a URL
+
+When your project has no ORM client or schema wired up, point valv at a bare
+connection string. It infers the provider and introspects the live database on
+startup — the same path the MCP server uses.
+
+```ts
+const { createValvFromUrl } = require("@valv/prisma")
+
+const { valv, stop } = await createValvFromUrl("postgres://…", { defaultPolicy: "deny-all" })
+valv.policy("order", (ctx) => ({ /* … */ }))
+const tools = await valv.tools.anthropic(ctx)
+// …on shutdown
+await stop()
+```
+
+Pass `{ provider }` to skip inference. ClickHouse has the same helper in
+`@valv/clickhouse` (`createValvFromUrl(url, { database })`), which uses the
+`@clickhouse/client` peer dependency instead of the Prisma path below.
+
+Call it **once at startup** and keep the instance for the process lifetime —
+not per request. The Prisma path:
+
+- requires the `prisma` CLI installed (optional peer dependency);
+- runs `prisma db pull` + `generate` (~1–2s) into a throwaway client under a
+  **writable temp dir** — `os.tmpdir()` by default (works on read-only app
+  images and serverless, e.g. Lambda's `/tmp`). Pass `cacheDir` to pin a
+  specific writable location (e.g. a mounted volume). The app's `node_modules`
+  is never written to;
+- resources are introspected at runtime, so policy keys aren't statically typed
+  (`strictPolicyKeys` defaults to `true` here, so a misspelled resource throws).
+
+For the strictest environments (no `prisma` CLI, no writable disk at all),
+generate a client at build time and use the typed `createValv(prismaClient)`
+form instead. Call `stop()` on shutdown to disconnect and remove the temp client.
+
 ## Policy reference
 
 ### Operation keys

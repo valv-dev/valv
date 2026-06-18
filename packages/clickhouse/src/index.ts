@@ -1,6 +1,8 @@
 export { ClickHouseAdapter } from "./adapter"
 export type { ClickHouseAdapterOptions } from "./adapter"
 export { createValv } from "./create"
+export { createValvFromUrl } from "./url"
+export type { ValvFromUrl } from "./url"
 export { compileFilter, formatValue, quoteIdent, escapeString, escapeLikePattern } from "./sql"
 export { introspectClickHouse } from "./introspection"
 export type { ClickHouseClient } from "./introspection"

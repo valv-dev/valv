@@ -1,4 +1,7 @@
-export type Provider = "postgresql" | "mysql" | "sqlite" | "sqlserver" | "mongodb"
+import { inferProvider, type Provider } from "@valv/prisma"
+
+export type { Provider }
+export { inferProvider }
 
 export interface ServerConfig {
   /** Database connection string. */
@@ -15,24 +18,6 @@ export interface ServerConfig {
   context?: unknown
   /** When set, serve over Streamable HTTP on this port instead of stdio. */
   httpPort?: number
-}
-
-const PROVIDER_PATTERNS: [RegExp, Provider][] = [
-  [/^postgres(ql)?:\/\//i, "postgresql"],
-  [/^mysql:\/\//i, "mysql"],
-  [/^sqlserver:\/\//i, "sqlserver"],
-  [/^(file:|sqlite:)/i, "sqlite"],
-  [/^mongodb(\+srv)?:\/\//i, "mongodb"],
-]
-
-export function inferProvider(url: string): Provider {
-  for (const [pattern, provider] of PROVIDER_PATTERNS) {
-    if (pattern.test(url)) return provider
-  }
-  throw new Error(
-    `Could not infer the database provider from the connection string. ` +
-      `Set VALV_PROVIDER to one of: postgresql, mysql, sqlite, sqlserver, mongodb.`,
-  )
 }
 
 function csv(value: string | undefined): string[] | undefined {

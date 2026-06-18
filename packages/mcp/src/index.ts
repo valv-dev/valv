@@ -1,7 +1,6 @@
 import type { PrismaClient } from "@prisma/client"
-import { createValv } from "@valv/prisma"
+import { createValv, prepareDatabase } from "@valv/prisma"
 import { startStdioServer, startHttpServer } from "@valv/mcp-sdk"
-import { prepareDatabase } from "./prepare"
 import { applyAccess } from "./policy"
 import type { ServerConfig } from "./config"
 

@@ -28,8 +28,9 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     }
   },
   "files": [
@@ -44,10 +45,14 @@
   "peerDependencies": {
     "@prisma/client": "^5.0.0",
     "@valv/core": "^0.3.0",
-    "pg": "^8.0.0"
+    "pg": "^8.0.0",
+    "prisma": "^5.0.0"
   },
   "peerDependenciesMeta": {
     "pg": {
+      "optional": true
+    },
+    "prisma": {
       "optional": true
     }
   },
