@@ -4,7 +4,11 @@ export interface ClickHouseClient {
   // json() is non-generic here so the interface is structurally compatible with
   // @clickhouse/client's ResultSet (whose json() returns a concrete union type
   // rather than the arbitrary T the generic would require).
-  query(params: { query: string; format?: string }): Promise<{ json(): Promise<unknown> }>
+  query(params: {
+    query: string
+    format?: string
+    query_params?: Record<string, unknown>
+  }): Promise<{ json(): Promise<unknown> }>
 }
 
 interface SysColumn {

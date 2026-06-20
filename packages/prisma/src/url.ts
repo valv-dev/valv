@@ -5,7 +5,6 @@ import { tmpdir } from "node:os"
 import type { PrismaClient } from "@prisma/client"
 import type { Valv, DefaultContext, ValvConfig } from "@valv/core"
 import { createValv } from "./create"
-import type { PgLiveOptions } from "./live"
 
 export type Provider = "postgresql" | "mysql" | "sqlite" | "sqlserver" | "mongodb"
 
@@ -155,8 +154,6 @@ export interface ValvFromUrl<TContext> {
 type FromUrlConfig<TContext> = Omit<ValvConfig<TContext, string>, "adapter"> & {
   /** Prisma datasource provider. Inferred from the URL when omitted. */
   provider?: Provider
-  /** Postgres LISTEN/NOTIFY for live views (requires `pg` + installLiveTriggers()). */
-  live?: PgLiveOptions
   /** Writable dir for the generated throwaway client. Defaults to `os.tmpdir()`;
    *  point it at a mounted writable volume in locked-down environments. */
   cacheDir?: string
