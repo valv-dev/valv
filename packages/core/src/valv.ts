@@ -1,14 +1,16 @@
-import { SchemaMap, PolicyFn, PolicyResult, DefaultContext } from "./types"
+import type { SchemaMap } from "./catalog"
+import type { PolicyFn, PolicyResult, DefaultContext } from "./policy"
+import type { ValvAdapter } from "./adapter"
 import { ValidationError } from "./errors"
 
 export interface ValvConfig<TContext = DefaultContext, TResources extends string = string> {
   adapter: ValvAdapter
   defaultPolicy?: "deny-all" | "allow-all"
-  /** Warn (false, default) or throw (true) when policy() is called with an unknown resource name */
+  /** Warn (false, default) or throw (true) when policy() names an unknown resource. */
   strictPolicyKeys?: boolean
-  /** Fallback policy resolver for resources without an explicit policy() call */
+  /** Fallback policy for resources without an explicit policy() call. */
   resolvePolicy?: (resource: TResources, ctx: TContext) => PolicyResult
-  /** Called after every executeTool invocation, successful or not */
+  /** Called after every executeTool, successful or not. */
   onQuery?: (event: QueryEvent<TContext, TResources>) => void
 }
 
@@ -55,20 +57,6 @@ export interface ResourceDescriptor {
   policyStub: string
 }
 
-/**
- * Adapters expose the schema and run finished SQL. The query-construction layer
- * (JSON AST → policy injection → SQL compilation) is built on top of this; an
- * adapter never sees the AST, only the compiled, parameterized statement.
- */
-export interface ValvAdapter {
-  introspect(): Promise<SchemaMap>
-  /**
-   * Execute a compiled, parameterized SQL statement and return the result rows.
-   * Parameters are positional; the SQL dialect decides the placeholder syntax.
-   */
-  execute(sql: string, parameters?: unknown[]): Promise<unknown[]>
-}
-
 export class Valv<TContext = DefaultContext, TResources extends string = string> {
   private adapter: ValvAdapter
   private defaultPolicy: "deny-all" | "allow-all"
@@ -93,58 +81,53 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
   }
 
   /**
-   * Generate the tool definitions exposed to the model.
+   * Tool definitions exposed to the model.
    *
-   * TODO(json-ast): emit the single AST query tool whose input schema is derived
-   * from the catalog + evaluated policy. Returns [] until the new query path lands.
+   * TODO(json-ast): emit the single AST query tool, its input schema derived
+   * from the Catalog + evaluated policy. Returns [] until the query path lands.
    */
   async getTools(_ctx: TContext, _options?: GetToolsOptions<TResources>): Promise<LLMTool[]> {
     const schema = await this.loadSchema()
     this.validatePolicyKeys(schema)
-    // The effective policy set is resolved here so wildcard/resolver fallbacks
-    // are validated even before any tool is generated.
-    this.buildEffectivePolicies(schema)
+    this.buildEffectivePolicies(schema) // resolves wildcard/fallback so it's validated too
     return []
   }
 
   /**
    * Execute a model tool call.
    *
-   * TODO(json-ast): validate the AST → inject policy filters → compile to SQL
-   * (Kysely) → adapter.execute(). Throws until the new query path lands.
+   * TODO(json-ast): validate the AST → inject policy → emit SQL → adapter.execute.
+   * Throws until the query path lands.
    */
   async executeTool(toolName: string, _input: unknown, ctx: TContext): Promise<unknown> {
     const start = Date.now()
     const err = new ValidationError(
       "valv: the query execution path is being rebuilt on the JSON AST; executeTool() is not implemented yet.",
     )
-    if (this.onQueryFn) {
-      this.onQueryFn({
-        toolName,
-        resource: toolName as TResources,
-        operation: toolName,
-        ctx,
-        durationMs: Date.now() - start,
-        error: err,
-      })
-    }
+    this.onQueryFn?.({
+      toolName,
+      resource: toolName as TResources,
+      operation: toolName,
+      ctx,
+      durationMs: Date.now() - start,
+      error: err,
+    })
     throw err
   }
 
+  /** Introspect the schema once and cache it. */
   async loadSchema(): Promise<SchemaMap> {
-    if (!this.schemaCache) {
-      this.schemaCache = await this.adapter.introspect()
-    }
+    this.schemaCache ??= await this.adapter.introspect()
     return this.schemaCache
   }
 
-  /** Returns the list of resource names discovered from the schema. */
+  /** Resource names discovered from the schema. */
   async resources(): Promise<TResources[]> {
     const schema = await this.loadSchema()
     return Object.keys(schema.resources) as TResources[]
   }
 
-  /** Returns schema info + policy stubs for all resources — useful for discovering resource names. */
+  /** Schema info + policy stubs for every resource — useful for discovering names. */
   async describe(): Promise<ResourceDescriptor[]> {
     const schema = await this.loadSchema()
     return Object.values(schema.resources).map((r) => ({
@@ -166,21 +149,21 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
     }))
   }
 
+  // Expands the "*" wildcard and resolvePolicy fallback into a concrete
+  // per-resource map. Pure given the schema, so callers can validate eagerly.
   private buildEffectivePolicies(schema: SchemaMap): Record<string, PolicyFn<TContext>> {
     const wildcard = this.policies["*"]
     const resolver = this.resolvePolicyFn
-
     if (!wildcard && !resolver) return this.policies
 
     const effective: Record<string, PolicyFn<TContext>> = { ...this.policies }
     for (const resourceName of Object.keys(schema.resources)) {
-      if (!effective[resourceName]) {
-        if (wildcard) {
-          effective[resourceName] = wildcard
-        } else if (resolver) {
-          const captured = resourceName as TResources
-          effective[resourceName] = (ctx: TContext) => resolver(captured, ctx)
-        }
+      if (effective[resourceName]) continue
+      if (wildcard) {
+        effective[resourceName] = wildcard
+      } else if (resolver) {
+        const captured = resourceName as TResources
+        effective[resourceName] = (ctx: TContext) => resolver(captured, ctx)
       }
     }
     delete effective["*"]
@@ -190,12 +173,10 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
   private validatePolicyKeys(schema: SchemaMap): void {
     const resourceNames = new Set(Object.keys(schema.resources))
     for (const key of Object.keys(this.policies)) {
-      if (key === "*") continue
-      if (!resourceNames.has(key)) {
-        const msg = `[valv] policy() called with unknown resource "${key}". Known resources: ${[...resourceNames].join(", ")}. Use await valv.describe() to list them.`
-        if (this.strictPolicyKeys) throw new Error(msg)
-        else console.warn(msg)
-      }
+      if (key === "*" || resourceNames.has(key)) continue
+      const msg = `[valv] policy() named unknown resource "${key}". Known: ${[...resourceNames].join(", ")}. Use await valv.describe() to list them.`
+      if (this.strictPolicyKeys) throw new Error(msg)
+      console.warn(msg)
     }
   }
 }
@@ -203,8 +184,8 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
 function buildPolicyStub(resourceName: string): string {
   return [
     `valv.policy("${resourceName}", (ctx) => ({`,
-    `  read: true,    // or false, or { field: ctx.value } for row-level filter`,
-    `  write: false,  // or true, or { field: ctx.value } to auto-inject forced fields`,
+    `  read: true,    // or false, or { field: ctx.value } for a row filter`,
+    `  write: false,  // or true, or { field: ctx.value } to force fields`,
     `  delete: false,`,
     `  // fields: { deny: ["sensitive_field"] },`,
     `  // relations: { relName: false },`,

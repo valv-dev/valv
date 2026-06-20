@@ -6,10 +6,22 @@ export type {
   ResourceDescriptor,
   ResourceField,
   ResourceRelation,
-  ValvAdapter,
   ValvConfig,
 } from "./valv"
+export type { ValvAdapter } from "./adapter"
+
+export type {
+  SchemaMap,
+  ResourceSchema,
+  FieldSchema,
+  FieldType,
+  RelationSchema,
+  InferResources,
+} from "./catalog"
+export type { PolicyFn, PolicyResult, PolicyRule, FieldPolicy, DefaultContext } from "./policy"
+
 export { serializeResult } from "./serializer"
+export { PolicyViolationError, ValidationError } from "./errors"
 
 // Tool formatters — turn a provider-neutral tool into a provider-specific shape.
 export * as formats from "./formatters"
@@ -21,18 +33,3 @@ export type {
   OpenAITool,
   GeminiTool,
 } from "./formatters"
-
-export type {
-  PolicyFn,
-  PolicyResult,
-  PolicyRule,
-  FieldPolicy,
-  DefaultContext,
-  SchemaMap,
-  ResourceSchema,
-  FieldSchema,
-  FieldType,
-  RelationSchema,
-  InferResources,
-} from "./types"
-export { PolicyViolationError, ValidationError } from "./errors"

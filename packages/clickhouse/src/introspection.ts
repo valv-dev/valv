@@ -88,8 +88,10 @@ export async function introspectClickHouse(
       const fieldSchema: FieldSchema = {
         name: col.name,
         type: fieldType,
+        nativeType: baseType,
         isNullable,
         isId: col.name === idColName,
+        isPrimaryKeyPart: Number(col.is_in_primary_key) === 1,
         hasDefaultValue: col.default_kind !== "",
         description: parseDescription(comment) ?? undefined,
         sensitive: parseSensitive(comment),

@@ -3,6 +3,8 @@ import { introspectClickHouse, type ClickHouseClient } from "./introspection"
 
 export interface ClickHouseAdapterOptions {
   database?: string
+  /** Declare the schema by hand instead of querying system.* to introspect it. */
+  schema?: SchemaMap
 }
 
 export class ClickHouseAdapter implements ValvAdapter {
@@ -14,9 +16,8 @@ export class ClickHouseAdapter implements ValvAdapter {
   ) {}
 
   async introspect(): Promise<SchemaMap> {
-    if (!this.schemaCache) {
-      this.schemaCache = await introspectClickHouse(this.client, this.options.database)
-    }
+    this.schemaCache ??=
+      this.options.schema ?? (await introspectClickHouse(this.client, this.options.database))
     return this.schemaCache
   }
 

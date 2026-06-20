@@ -34,8 +34,12 @@ export async function introspectPrisma(schemaPath: string): Promise<SchemaMap> {
       const fieldSchema: FieldSchema = {
         name: field.name,
         type: fieldType,
+        // Prisma's scalar type (String/Int/…). Not the DB native type, but PG/MySQL
+        // bind params positionally and don't need one — only ClickHouse does.
+        nativeType: field.type,
         isNullable: !field.isRequired,
         isId: field.isId,
+        isPrimaryKeyPart: field.isId,
         hasDefaultValue: field.hasDefaultValue || field.isUpdatedAt || false,
         description: parseDescription(doc) ?? undefined,
         sensitive: parseSensitive(doc),

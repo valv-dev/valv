@@ -10,9 +10,9 @@ export function createValv<TContext = DefaultContext>(
   client: ClickHouseClient,
   config?: CreateConfig<TContext>,
 ): Valv<TContext, string> {
-  const { database, ...rest } = config ?? {}
+  const { database, schema, ...rest } = config ?? {}
   return new Valv<TContext, string>({
     ...rest,
-    adapter: new ClickHouseAdapter(client, { database }),
+    adapter: new ClickHouseAdapter(client, { database, schema }),
   })
 }

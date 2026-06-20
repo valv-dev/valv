@@ -1,10 +1,5 @@
-/** Serialize a query result so it's safe to send to an LLM.
- *
- *  - Prisma Decimal   → number  (duck-typed via .toNumber() — works even when minified)
- *  - Date             → ISO 8601 string
- *  - BigInt           → string  (JSON.stringify would throw)
- *  - Arrays / objects → recursed
- */
+// Make a query result JSON-safe for an LLM: Decimal → number, Date → ISO string,
+// BigInt → string, recursing through arrays and objects.
 export function serializeResult(value: unknown): unknown {
   if (value === null || value === undefined) return value
 
