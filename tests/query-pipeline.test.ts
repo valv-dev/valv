@@ -29,7 +29,7 @@ const schema: SchemaMap = {
 
 const ctx: DefaultContext = { user: { id: "u1", role: "member" }, tenant: { id: "acme" } }
 
-function setup() {
+async function setup() {
   const calls: {
     query: string
     query_params?: Record<string, unknown>
@@ -45,14 +45,14 @@ function setup() {
       return { json: async () => [{ plan: "pro", latency: 42 }] }
     },
   }
-  const valv = createValv<DefaultContext>(client, { schema })
+  const valv = await createValv<DefaultContext>(client, { schema })
   valv.policy("events", (c) => ({ read: { tenant_id: c.tenant!.id } }))
   return { valv, calls }
 }
 
 describe("query pipeline (slice 1)", () => {
   it("validates, injects the tenant filter, emits typed CH SQL, runs it, serializes", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     const rows = await valv.executeTool(
       "query",
       {
@@ -74,7 +74,7 @@ describe("query pipeline (slice 1)", () => {
   })
 
   it("applies ClickHouse cost caps on every query", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     await valv.executeTool("query", { from: "events", select: [{ col: "plan" }] }, ctx)
     expect(calls[0].clickhouse_settings).toMatchObject({
       max_execution_time: 30,
@@ -83,21 +83,21 @@ describe("query pipeline (slice 1)", () => {
   })
 
   it("rejects a sensitive field", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool("query", { from: "events", select: [{ col: "secret" }] }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
   it("rejects an unknown column (same message as a denied one)", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool("query", { from: "events", select: [{ col: "nope" }] }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
   it("defaults the limit and always injects the tenant filter", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     await valv.executeTool("query", { from: "events", select: [{ col: "plan" }] }, ctx)
     expect(calls[0].query).toBe(
       "SELECT `plan` FROM `events_t` WHERE (`tenant_id` = {p0:String}) LIMIT 100",

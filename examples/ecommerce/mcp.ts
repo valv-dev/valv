@@ -1,6 +1,10 @@
 import "dotenv/config"
 import { startStdioServer } from "@valv/mcp-sdk"
-import { prisma, valv } from "./valv"
+import { prisma, getValv } from "./valv"
+
+// NOTE: the MCP SDK is mid-migration to the new tool surface (list/search/
+// describe/query). Until that lands it exposes no tools; the policies + setup
+// below are already on the new API.
 
 // Expose the e-commerce database to a coding agent (e.g. Claude Code) as an MCP
 // server. The same policies defined in ./valv apply here — no SQL reaches the
@@ -23,6 +27,7 @@ import { prisma, valv } from "./valv"
 //   }
 
 async function main(): Promise<void> {
+  const valv = await getValv()
   await startStdioServer(valv, {
     // Env-friendly context resolver — policy context is read on every request,
     // so changing VALV_ROLE / VALV_TENANT reshapes what the agent can do

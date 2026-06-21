@@ -10,7 +10,7 @@ export interface ValvFromUrl<TContext> {
 }
 
 type FromUrlConfig<TContext> = Omit<ValvConfig<TContext, string>, "adapter"> &
-  ClickHouseAdapterOptions
+  Omit<ClickHouseAdapterOptions, "schema">
 
 /**
  * Build a policy-gated valv instance from just a ClickHouse URL — constructs the
@@ -29,9 +29,10 @@ export async function createValvFromUrl<TContext = DefaultContext>(
   try {
     // strictPolicyKeys defaults to true: resources are introspected at runtime
     // and untyped, so a misspelled policy key would silently no-op otherwise.
-    const valv = createValv<TContext>(client as unknown as ClickHouseClient, {
+    const valv = await createValv<TContext>(client as unknown as ClickHouseClient, {
       strictPolicyKeys: true,
       ...config,
+      schema: "introspect",
     })
     return { valv, stop }
   } catch (err) {

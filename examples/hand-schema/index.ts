@@ -8,7 +8,7 @@
  *   npm start    (from this folder)
  */
 import { createValv, type ClickHouseClient } from "@valv/clickhouse"
-import type { SchemaMap, DefaultContext } from "@valv/core"
+import type { SchemaMap, DefaultContext, Query } from "@valv/core"
 
 // ── 1. The schema you hand-define ─────────────────────────────────────────────
 
@@ -50,32 +50,31 @@ const client: ClickHouseClient = {
   async query({ query, query_params }) {
     console.log("    SQL    →", query)
     console.log("    params →", query_params ?? {})
-    return { json: async () => [{ event_type: "checkout", latency_ms: 1240 }] }
+    return { json: async () => [{ event_type: "checkout", p95_ms: 1240 }] }
   },
 }
-
-// ── 3. Build valv on the hand-defined schema + policies ───────────────────────
-
-const valv = createValv<DefaultContext>(client, { schema, database: "analytics" })
-valv.policy("events", (ctx) => ({ read: { tenant_id: ctx.tenant!.id } }))
-valv.policy("users", (ctx) => ({ read: { tenant_id: ctx.tenant!.id } }))
 
 // Who's asking — the trusted context the tenant filter is resolved from.
 const ctx: DefaultContext = { user: { id: "u_1", role: "member" }, tenant: { id: "acme" } }
 
-// ── 4. Run hand-written AST queries (the model would emit these) ──────────────
-
-async function run(label: string, ast: unknown) {
-  console.log(`\n▶ ${label}`)
-  try {
-    const rows = await valv.executeTool("query", ast, ctx)
-    console.log("    rows   →", rows)
-  } catch (e) {
-    console.log("    ✗ rejected →", (e as Error).message)
-  }
-}
-
 async function main() {
+  // ── 3. Build valv on the hand-defined schema + policies ─────────────────────
+  const valv = await createValv<DefaultContext>(client, { schema, database: "analytics" })
+  valv.policy("events", (ctx) => ({ read: { tenant_id: ctx.tenant!.id } }))
+  valv.policy("users", (ctx) => ({ read: { tenant_id: ctx.tenant!.id } }))
+
+  const run = async (label: string, query: Query) => {
+    console.log(`\n▶ ${label}`)
+    try {
+      const rows = await valv.run(query, ctx)
+      console.log("    rows   →", rows)
+    } catch (e) {
+      console.log("    ✗ rejected →", (e as Error).message)
+    }
+  }
+
+  // ── 4. Run queries (the model would emit these) ─────────────────────────────
+
   await run("slow events (watch the tenant filter get injected)", {
     from: "events",
     select: [{ col: "event_type" }, { col: "latency_ms" }],
@@ -88,10 +87,21 @@ async function main() {
     select: [{ col: "email" }, { col: "password_hash" }],
   })
 
-  await run("no limit given → default 100, tenant filter still injected", {
+  // p95 latency per event type — an aggregate over a computed percentile.
+  const dashboard: Query = {
     from: "events",
-    select: [{ col: "event_type" }],
-  })
+    select: [
+      { col: "event_type" },
+      { fn: "quantileTiming", args: [{ kind: "value", value: 0.95 }, { kind: "col", name: "latency_ms" }], as: "p95_ms" },
+    ],
+    groupBy: ["event_type"],
+    orderBy: [{ col: "p95_ms", dir: "desc" }],
+  }
+  await run("p95 latency per event type (group + order by the aggregate)", dashboard)
+
+  // The output shape of that query, without running it — drives a dashboard.
+  console.log("\n▶ result schema (no execution)")
+  console.log("    columns →", valv.resultSchema(dashboard))
 }
 
 main()

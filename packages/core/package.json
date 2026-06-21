@@ -43,5 +43,13 @@
   },
   "dependencies": {
     "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "ai": "^5.0.0 || ^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
   }
 }

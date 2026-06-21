@@ -27,7 +27,7 @@ export async function startValvMcpServer(config: ServerConfig): Promise<RunningS
   const provider = config.provider ?? "postgresql"
   const prepared = await prepareDatabase(config.databaseUrl, provider)
 
-  const valv = createValv<PrismaClient, Ctx>(prepared.prisma, {
+  const valv = await createValv<PrismaClient, Ctx>(prepared.prisma, {
     schemaPath: prepared.schemaPath,
     defaultPolicy: "deny-all",
   })

@@ -21,7 +21,7 @@ const ctx = (tenant?: string): DefaultContext => ({
   ...(tenant ? { tenant: { id: tenant } } : {}),
 })
 
-function setup(onError?: (e?: Error) => void) {
+async function setup(onError?: (e?: Error) => void) {
   const calls: { query: string; query_params?: Record<string, unknown> }[] = []
   const client: ClickHouseClient = {
     async query(p) {
@@ -29,7 +29,7 @@ function setup(onError?: (e?: Error) => void) {
       return { json: async () => [] }
     },
   }
-  const valv = createValv<DefaultContext>(client, {
+  const valv = await createValv<DefaultContext>(client, {
     schema,
     onQuery: onError ? (e) => onError(e.error) : undefined,
   })
@@ -40,7 +40,7 @@ function setup(onError?: (e?: Error) => void) {
 
 describe("security hardening", () => {
   it("fails closed when a policy filter value is undefined (no leak)", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     await expect(
       valv.executeTool("query", { from: "events", select: [{ col: "plan" }] }, ctx(undefined)),
     ).rejects.toThrow(/refusing to run an unscoped query/)
@@ -50,7 +50,7 @@ describe("security hardening", () => {
   it("rejects a pathologically deep query without crashing", async () => {
     let node: unknown = { kind: "col", name: "plan" }
     for (let i = 0; i < 3000; i++) node = { kind: "not", arg: node }
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool("query", { from: "events", select: [{ col: "plan" }], where: node }, ctx("acme")),
     ).rejects.toThrow(/too deeply nested|too large/)
@@ -58,14 +58,14 @@ describe("security hardening", () => {
 
   it("rejects a pathologically wide query", async () => {
     const args = Array.from({ length: 20000 }, () => ({ kind: "col", name: "plan" }))
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool("query", { from: "events", select: [{ col: "plan" }], where: { kind: "and", args } }, ctx("acme")),
     ).rejects.toThrow(/too large|too deeply nested/)
   })
 
   it("rejects a non-scalar parameter value", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool(
         "query",
@@ -82,7 +82,7 @@ describe("security hardening", () => {
         throw new Error("CH internal: node-7 down, SQL=SELECT secret FROM users")
       },
     }
-    const valv = createValv<DefaultContext>(client, { schema, onQuery: (e) => (logged = e.error) })
+    const valv = await createValv<DefaultContext>(client, { schema, onQuery: (e) => (logged = e.error) })
     valv.policy("events", (c) => ({ read: { tenant_id: c.tenant?.id } }))
 
     await expect(
@@ -92,7 +92,7 @@ describe("security hardening", () => {
   })
 
   it("handles dangerous prototype keys cleanly", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool("query", { from: "constructor", select: [{ col: "plan" }] }, ctx("acme")),
     ).rejects.toThrow(/Unknown resource/)
@@ -109,7 +109,7 @@ describe("security hardening", () => {
         return { json: async () => [{ data: deep }] }
       },
     }
-    const valv = createValv<DefaultContext>(client, { schema })
+    const valv = await createValv<DefaultContext>(client, { schema })
     valv.policy("events", (c) => ({ read: { tenant_id: c.tenant?.id } }))
     await expect(
       valv.executeTool("query", { from: "events", select: [{ col: "plan" }] }, ctx("acme")),
@@ -131,7 +131,7 @@ describe("security hardening", () => {
       },
     }
     const client: ClickHouseClient = { async query() { return { json: async () => [] } } }
-    const valv = createValv<DefaultContext>(client, { schema: badSchema })
+    const valv = await createValv<DefaultContext>(client, { schema: badSchema })
     valv.policy("events", (c) => ({ read: { tenant_id: c.tenant?.id } }))
     await expect(
       valv.executeTool(
@@ -143,7 +143,7 @@ describe("security hardening", () => {
   })
 
   it("rejects a malformed alias and empty boolean groups", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool("query", { from: "events", select: [{ col: "plan", as: "x); DROP" }] }, ctx("acme")),
     ).rejects.toThrow()
@@ -153,7 +153,7 @@ describe("security hardening", () => {
   })
 
   it("keeps the tenant filter AND-ed even under a top-level OR", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     await valv.executeTool(
       "query",
       {

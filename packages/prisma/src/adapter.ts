@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import type { PrismaClient } from "@prisma/client"
-import type { ValvAdapter, SchemaMap, Query, CompiledQuery } from "@valv/core"
-import { emit } from "@valv/core"
+import type { ValvAdapter, SchemaMap, Query, CompiledQuery, FnDef } from "@valv/core"
+import { emit, BASE_FUNCTIONS } from "@valv/core"
 import { introspectPrisma } from "./introspection"
 import { dialectForProvider } from "./dialects"
 
@@ -32,6 +32,10 @@ export class PrismaAdapter implements ValvAdapter {
 
   compile(query: Query, catalog: SchemaMap): CompiledQuery {
     return emit(query, catalog, dialectForProvider(this.resolveProvider()))
+  }
+
+  functions(): Record<string, FnDef> {
+    return { ...BASE_FUNCTIONS, ...dialectForProvider(this.resolveProvider()).functions }
   }
 
   /**

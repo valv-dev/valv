@@ -183,11 +183,11 @@ export async function createValvFromUrl<TContext = DefaultContext>(
     // strictPolicyKeys defaults to true here: resources are introspected at
     // runtime and untyped (`string`), so a misspelled policy key would silently
     // no-op without it. Callers can override via config.
-    const valv = createValv<PrismaClient, TContext>(prepared.prisma, {
+    const valv = (await createValv<PrismaClient, TContext>(prepared.prisma, {
       strictPolicyKeys: true,
       ...rest,
       schemaPath: prepared.schemaPath,
-    }) as Valv<TContext, string>
+    })) as Valv<TContext, string>
     return { valv, stop }
   } catch (err) {
     await stop()

@@ -14,7 +14,10 @@ export type { Query, Expr, SelectItem, ColumnSelect, FnSelect, OrderBy, CmpOp } 
 export { emit } from "./emit"
 export type { Dialect } from "./dialect"
 export { BASE_FUNCTIONS } from "./functions"
-export type { FnDef, ArgSpec } from "./functions"
+export type { FnDef, ArgSpec, FnReturn } from "./functions"
+export { resultSchema } from "./result-schema"
+export type { ResultColumn } from "./result-schema"
+export type { DiscoveryToggle } from "./tools"
 
 export type {
   SchemaMap,

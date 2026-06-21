@@ -1,12 +1,14 @@
 /**
- * A provider-neutral tool definition: a name, a description, and a JSON Schema
- * for its parameters. Formatters convert this into the shape a specific LLM
- * provider expects.
+ * A provider-neutral tool definition: a name, a description, a JSON Schema for
+ * its parameters, and a context-bound `execute`. Provider formatters convert the
+ * definition into the shape a specific LLM provider expects (and ignore
+ * `execute`, which is local); call `execute` to handle the model's tool call.
  */
 export interface NeutralTool {
   name: string
   description: string
   parameters: object
+  execute: (input: unknown) => Promise<unknown>
 }
 
 /**

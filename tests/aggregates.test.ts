@@ -29,7 +29,7 @@ const schema: SchemaMap = {
 
 const ctx: DefaultContext = { user: { id: "u1", role: "member" }, tenant: { id: "acme" } }
 
-function setup() {
+async function setup() {
   const calls: { query: string; query_params?: Record<string, unknown> }[] = []
   const client: ClickHouseClient = {
     async query(params) {
@@ -37,7 +37,7 @@ function setup() {
       return { json: async () => [{ plan: "pro", p95: 42 }] }
     },
   }
-  const valv = createValv<DefaultContext>(client, { schema })
+  const valv = await createValv<DefaultContext>(client, { schema })
   valv.policy("events", (c) => ({ read: { tenant_id: c.tenant!.id } }))
   return { valv, calls }
 }
@@ -47,7 +47,7 @@ const val = (value: string | number) => ({ kind: "value" as const, value })
 
 describe("aggregates (slice 2)", () => {
   it("emits a grouped query with a parametric ClickHouse function, ordering, and the tenant filter", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     await valv.executeTool(
       "query",
       {
@@ -70,7 +70,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("emits count(*) for a column-less aggregate", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     await valv.executeTool("query", { from: "events", select: [{ fn: "count", args: [], as: "n" }] }, ctx)
     expect(calls[0].query).toBe(
       "SELECT count(*) AS `n` FROM `events_t` WHERE (`tenant_id` = {p0:String}) LIMIT 100",
@@ -78,7 +78,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("buckets time and counts distinct via Tier-2 functions", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     await valv.executeTool(
       "query",
       {
@@ -98,7 +98,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("parameterises the predicate of a conditional aggregate (countIf)", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     await valv.executeTool(
       "query",
       {
@@ -122,7 +122,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("rejects an enum unit outside the allowlist", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool(
         "query",
@@ -138,14 +138,14 @@ describe("aggregates (slice 2)", () => {
   // The landmine: aggregation must not become a side channel to denied columns —
   // including a column hidden inside a predicate argument.
   it("rejects a sensitive column reached through an aggregate", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool("query", { from: "events", select: [{ fn: "avg", args: [col("secret")] }] }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
   it("rejects a sensitive column hidden inside a countIf predicate", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool(
         "query",
@@ -161,7 +161,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("groups by a SELECT alias (time-series over a computed bucket)", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     await valv.executeTool(
       "query",
       {
@@ -182,7 +182,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("orders by an aggregate alias (top-N)", async () => {
-    const { valv, calls } = setup()
+    const { valv, calls } = await setup()
     await valv.executeTool(
       "query",
       {
@@ -203,7 +203,7 @@ describe("aggregates (slice 2)", () => {
   // An alias only excuses GROUP BY/ORDER BY — it can't smuggle a denied column
   // that isn't actually a defined alias.
   it("still rejects a denied column in orderBy when it isn't a select alias", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool(
         "query",
@@ -219,7 +219,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("rejects a denied/unknown column in groupBy", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool(
         "query",
@@ -230,7 +230,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("rejects a denied/unknown column in orderBy", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool(
         "query",
@@ -241,14 +241,14 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("rejects an unknown function name", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool("query", { from: "events", select: [{ fn: "evil", args: [col("plan")] }] }, ctx),
     ).rejects.toThrow(/not available/)
   })
 
   it("rejects a prototype-key function name (allowlist isn't bypassable)", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     for (const fn of ["constructor", "toString", "hasOwnProperty"]) {
       await expect(
         valv.executeTool("query", { from: "events", select: [{ fn, args: [] }] }, ctx),
@@ -257,7 +257,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("rejects a function called with the wrong arity", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool(
         "query",
@@ -268,7 +268,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("rejects a non-column where a column argument is expected", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     await expect(
       valv.executeTool(
         "query",
@@ -279,7 +279,7 @@ describe("aggregates (slice 2)", () => {
   })
 
   it("rejects a quantile level outside [0, 1]", async () => {
-    const { valv } = setup()
+    const { valv } = await setup()
     for (const level of [99, -0.1, 1.5]) {
       await expect(
         valv.executeTool(

@@ -10,13 +10,20 @@ type CreateConfig<TContext, TClient extends PrismaClient> = Omit<
   schemaPath?: string
 }
 
-export function createValv<TClient extends PrismaClient, TContext = DefaultContext>(
+/**
+ * Build a policy-gated valv instance over a Prisma client. Reads the schema from
+ * the Prisma datasource (DMMF) on construction, so the returned instance is ready
+ * to use — `await` it once at startup.
+ */
+export async function createValv<TClient extends PrismaClient, TContext = DefaultContext>(
   prisma: TClient,
   config?: CreateConfig<TContext, TClient>,
-): Valv<TContext, InferResources<TClient>> {
+): Promise<Valv<TContext, InferResources<TClient>>> {
   const { schemaPath, ...rest } = config ?? {}
-  return new Valv<TContext, InferResources<TClient>>({
+  const valv = new Valv<TContext, InferResources<TClient>>({
     ...rest,
     adapter: new PrismaAdapter(prisma, { schemaPath }),
   })
+  await valv.loadSchema()
+  return valv
 }

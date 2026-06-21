@@ -1,3 +1,4 @@
+import type { FieldType } from "./catalog"
 import { ValidationError } from "./errors"
 
 // The function allowlist + signatures. A function name in the AST is attacker-
@@ -14,8 +15,14 @@ export type ArgSpec =
   | { kind: "enum"; values: readonly string[] } // an allowlisted literal → inlined
   | { kind: "predicate" } // a boolean Expr → emitted (and so parameterised)
 
+// The coarse output type of a function: a fixed type (count → number), or
+// "same as the column at arg N" for type-preserving aggregates (max → its arg).
+// Used by resultSchema to predict a query's output shape without running it.
+export type FnReturn = FieldType | { fromArg: number }
+
 export interface FnDef {
   args: readonly ArgSpec[]
+  returns: FnReturn
   // Assemble the SQL from each argument already rendered to a string (or
   // undefined for an omitted trailing optional column, e.g. count(*)).
   render(parts: (string | undefined)[]): string
@@ -23,11 +30,11 @@ export interface FnDef {
 
 // Standard SQL aggregates every dialect emits identically.
 export const BASE_FUNCTIONS: Record<string, FnDef> = {
-  count: { args: [{ kind: "column", optional: true }], render: ([c]) => `count(${c ?? "*"})` },
-  sum: { args: [{ kind: "column" }], render: ([c]) => `sum(${c})` },
-  avg: { args: [{ kind: "column" }], render: ([c]) => `avg(${c})` },
-  min: { args: [{ kind: "column" }], render: ([c]) => `min(${c})` },
-  max: { args: [{ kind: "column" }], render: ([c]) => `max(${c})` },
+  count: { args: [{ kind: "column", optional: true }], returns: "number", render: ([c]) => `count(${c ?? "*"})` },
+  sum: { args: [{ kind: "column" }], returns: "number", render: ([c]) => `sum(${c})` },
+  avg: { args: [{ kind: "column" }], returns: "number", render: ([c]) => `avg(${c})` },
+  min: { args: [{ kind: "column" }], returns: { fromArg: 0 }, render: ([c]) => `min(${c})` },
+  max: { args: [{ kind: "column" }], returns: { fromArg: 0 }, render: ([c]) => `max(${c})` },
 }
 
 // Resolve a function name against base ∪ dialect functions. The own-property

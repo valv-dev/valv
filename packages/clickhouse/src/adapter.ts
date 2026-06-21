@@ -1,5 +1,5 @@
-import type { ValvAdapter, SchemaMap, Query, CompiledQuery } from "@valv/core"
-import { emit } from "@valv/core"
+import type { ValvAdapter, SchemaMap, Query, CompiledQuery, FnDef } from "@valv/core"
+import { emit, BASE_FUNCTIONS } from "@valv/core"
 import { introspectClickHouse, type ClickHouseClient } from "./introspection"
 import { clickhouseDialect } from "./dialect"
 
@@ -36,6 +36,10 @@ export class ClickHouseAdapter implements ValvAdapter {
 
   compile(query: Query, catalog: SchemaMap): CompiledQuery {
     return emit(query, catalog, clickhouseDialect, { database: this.options.database })
+  }
+
+  functions(): Record<string, FnDef> {
+    return { ...BASE_FUNCTIONS, ...clickhouseDialect.functions }
   }
 
   /**
