@@ -1,7 +1,17 @@
 import type { SchemaMap } from "./catalog"
 import type { PolicyFn, PolicyResult, DefaultContext } from "./policy"
 import type { ValvAdapter } from "./adapter"
-import { ValidationError } from "./errors"
+import { QuerySchema } from "./ast"
+import { assertWithinLimits } from "./limits"
+import { evaluateRead } from "./evaluate"
+import { validateQuery } from "./validate"
+import { injectPolicy } from "./inject"
+import { serializeResult } from "./serializer"
+import { ValidationError, PolicyViolationError } from "./errors"
+
+// Hardcoded query bounds — surfaced as config only if a real need appears.
+const MAX_LIMIT = 1000
+const DEFAULT_LIMIT = 100
 
 export interface ValvConfig<TContext = DefaultContext, TResources extends string = string> {
   adapter: ValvAdapter
@@ -94,25 +104,61 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
   }
 
   /**
-   * Execute a model tool call.
-   *
-   * TODO(json-ast): validate the AST → inject policy → emit SQL → adapter.execute.
-   * Throws until the query path lands.
+   * Execute a model tool call. The only tool is "query": its input is a JSON
+   * AST that is structurally validated, semantically checked against the catalog
+   * + policy, policy-injected, emitted to SQL, and run.
    */
-  async executeTool(toolName: string, _input: unknown, ctx: TContext): Promise<unknown> {
+  async executeTool(toolName: string, input: unknown, ctx: TContext): Promise<unknown> {
     const start = Date.now()
-    const err = new ValidationError(
-      "valv: the query execution path is being rebuilt on the JSON AST; executeTool() is not implemented yet.",
+    const resource = (
+      typeof input === "object" && input !== null && "from" in input
+        ? String((input as { from: unknown }).from)
+        : toolName
+    ) as TResources
+    let error: Error | undefined
+    try {
+      if (toolName !== "query") throw new ValidationError(`Unknown tool "${toolName}".`)
+      return await this.runQuery(input, ctx)
+    } catch (e) {
+      // Surface valv's own (safe, actionable) errors; replace anything else —
+      // Zod, RangeError, raw driver errors — with a generic message so internal
+      // details never reach the caller. The original is kept for onQuery.
+      error = e as Error
+      throw toSafeError(error)
+    } finally {
+      this.onQueryFn?.({
+        toolName,
+        resource,
+        operation: "query",
+        ctx,
+        durationMs: Date.now() - start,
+        error,
+      })
+    }
+  }
+
+  private async runQuery(input: unknown, ctx: TContext): Promise<unknown> {
+    assertWithinLimits(input)
+    const query = QuerySchema.parse(input)
+    const catalog = await this.loadSchema()
+    if (!hasOwn(catalog.resources, query.from)) {
+      throw new ValidationError(`Unknown resource "${query.from}".`)
+    }
+    const resource = catalog.resources[query.from]
+
+    const policies = this.buildEffectivePolicies(catalog)
+    const policy = hasOwn(policies, query.from) ? policies[query.from] : undefined
+    const evaluated = evaluateRead(policy, ctx, resource, this.defaultPolicy)
+    if (!evaluated.allowed) throw new PolicyViolationError(`Read access to "${query.from}" is denied.`)
+
+    validateQuery(query, resource, evaluated, MAX_LIMIT)
+    const injected = injectPolicy(query, evaluated, DEFAULT_LIMIT, MAX_LIMIT)
+    const compiled = this.adapter.compile(injected, catalog)
+    const rows = await this.adapter.execute(
+      compiled.sql,
+      compiled.params.map((p) => p.value),
     )
-    this.onQueryFn?.({
-      toolName,
-      resource: toolName as TResources,
-      operation: toolName,
-      ctx,
-      durationMs: Date.now() - start,
-      error: err,
-    })
-    throw err
+    return serializeResult(rows)
   }
 
   /** Introspect the schema once and cache it. */
@@ -179,6 +225,18 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
       console.warn(msg)
     }
   }
+}
+
+function hasOwn(obj: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key)
+}
+
+// valv's own errors are author-written and safe for the caller to act on; any
+// other throwable may carry internal details (SQL, paths, schema), so it's
+// replaced with a generic message.
+function toSafeError(err: Error): Error {
+  if (err instanceof ValidationError || err instanceof PolicyViolationError) return err
+  return new ValidationError("The query could not be processed.")
 }
 
 function buildPolicyStub(resourceName: string): string {

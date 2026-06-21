@@ -1,0 +1,49 @@
+import { ValidationError } from "./errors"
+
+// The aggregate-function allowlist + signatures. A function name in the AST is
+// attacker-controlled, so emission only renders names with an entry here (or in
+// a dialect's own registry); unknown names are rejected, never spliced. The
+// signature declares each positional argument's kind, which is how emission
+// stays safe by construction (see emit.ts): columns are allowlist-checked,
+// numbers are finite, enums are membership-checked, predicates are parameterised.
+// This registry is also the discovery surface getTools reads.
+
+// One argument of a function call, mirroring how SQL functions take positional
+// args. The AST supplies each as an Expr; the spec says how to read it.
+export type ArgSpec =
+  | { kind: "column"; optional?: boolean } // a column reference → quoted identifier
+  | { kind: "number"; range?: [number, number] } // a finite literal → inlined
+  | { kind: "enum"; values: readonly string[] } // an allowlisted literal → inlined
+  | { kind: "predicate" } // a boolean Expr → emitted (and so parameterised)
+
+export interface FnDef {
+  args: readonly ArgSpec[]
+  // Assemble the SQL from each argument already rendered to a string (or
+  // undefined for an omitted trailing optional column, e.g. count(*)).
+  render(parts: (string | undefined)[]): string
+}
+
+// Standard SQL aggregates every dialect emits identically.
+export const BASE_FUNCTIONS: Record<string, FnDef> = {
+  count: { args: [{ kind: "column", optional: true }], render: ([c]) => `count(${c ?? "*"})` },
+  sum: { args: [{ kind: "column" }], render: ([c]) => `sum(${c})` },
+  avg: { args: [{ kind: "column" }], render: ([c]) => `avg(${c})` },
+  min: { args: [{ kind: "column" }], render: ([c]) => `min(${c})` },
+  max: { args: [{ kind: "column" }], render: ([c]) => `max(${c})` },
+}
+
+// Resolve a function name against base ∪ dialect functions. The own-property
+// check holds the allowlist even if a caller passes a registry with a prototype
+// (the dialect-merged one is null-prototype), so names like "constructor" or
+// "toString" can't resolve to an inherited member.
+export function lookupFunction(registry: Record<string, FnDef>, fn: string): FnDef {
+  const def = Object.prototype.hasOwnProperty.call(registry, fn) ? registry[fn] : undefined
+  if (!def) throw new ValidationError(`Function "${fn}" is not available.`)
+  return def
+}
+
+// How many leading arguments a function requires (only a trailing optional
+// column may be omitted, e.g. count).
+export function requiredArgs(def: FnDef): number {
+  return def.args.filter((s) => !(s.kind === "column" && s.optional)).length
+}

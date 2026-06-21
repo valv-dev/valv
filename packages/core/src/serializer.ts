@@ -1,10 +1,21 @@
+import { ValidationError } from "./errors"
+
 // Make a query result JSON-safe for an LLM: Decimal → number, Date → ISO string,
-// BigInt → string, recursing through arrays and objects.
+// BigInt → string, recursing through arrays and objects. Depth is bounded so a
+// pathologically nested row value (e.g. a deep JSON/Array column) surfaces a
+// clean error instead of overflowing the stack.
+const MAX_DEPTH = 64
+
 export function serializeResult(value: unknown): unknown {
+  return serialize(value, 0)
+}
+
+function serialize(value: unknown, depth: number): unknown {
+  if (depth > MAX_DEPTH) throw new ValidationError("Result value is too deeply nested.")
   if (value === null || value === undefined) return value
 
   if (Array.isArray(value)) {
-    return value.map(serializeResult)
+    return value.map((v) => serialize(v, depth + 1))
   }
 
   if (typeof value === "bigint") {
@@ -17,15 +28,15 @@ export function serializeResult(value: unknown): unknown {
 
   if (typeof value === "object") {
     const v = value as Record<string, unknown>
-    // Duck-type Decimal.js — constructor name is minified in Prisma's build ("i" not "Decimal"),
-    // but prototype method names are preserved as public API so this check is reliable.
+    // Duck-type Decimal.js — constructor name is minified in Prisma's build, but
+    // the public method names are preserved, so this check stays reliable.
     if (typeof v.toNumber === "function" && typeof v.toFixed === "function") {
       return (value as { toNumber(): number }).toNumber()
     }
 
     const out: Record<string, unknown> = {}
     for (const [k, val] of Object.entries(v)) {
-      out[k] = serializeResult(val)
+      out[k] = serialize(val, depth + 1)
     }
     return out
   }

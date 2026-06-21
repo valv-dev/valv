@@ -1,0 +1,64 @@
+import { z } from "zod"
+
+// The query AST the model emits. One tree flows through every stage — validate,
+// inject, emit — with no conversions. Supports single-table select + filter +
+// aggregates (group/order/limit); joins and subqueries are added as new node
+// variants later.
+
+export type CmpOp = "=" | "!=" | ">" | "<" | ">=" | "<="
+
+// A select entry is either a bare column or a function call. `as` names the
+// output column. A function's args are Exprs interpreted positionally against
+// its registry signature: a column (sum), a literal (quantileTiming(0.95)), an
+// enum unit (toStartOfInterval(ts, INTERVAL 1 hour)), or a boolean predicate
+// (countIf(status >= 500)).
+export type ColumnSelect = { col: string; as?: string }
+export type FnSelect = { fn: string; args: Expr[]; as?: string }
+export type SelectItem = ColumnSelect | FnSelect
+
+export type OrderBy = { col: string; dir: "asc" | "desc" }
+
+export type Expr =
+  | { kind: "col"; name: string }
+  | { kind: "value"; value: unknown } // a caller value → bound param at emit
+  | { kind: "cmp"; op: CmpOp; left: Expr; right: Expr }
+  | { kind: "and"; args: Expr[] }
+  | { kind: "or"; args: Expr[] }
+  | { kind: "not"; arg: Expr }
+
+const cmpOp = z.enum(["=", "!=", ">", "<", ">=", "<="])
+
+// Recursive schema: annotate via cast, the idiomatic Zod pattern (the inferred
+// output differs only in that z.unknown() makes `value` optional).
+export const ExprSchema = z.lazy(() =>
+  z.union([
+    z.object({ kind: z.literal("col"), name: z.string() }),
+    z.object({ kind: z.literal("value"), value: z.union([z.string(), z.number(), z.boolean(), z.null()]) }),
+    z.object({ kind: z.literal("cmp"), op: cmpOp, left: ExprSchema, right: ExprSchema }),
+    z.object({ kind: z.literal("and"), args: z.array(ExprSchema).min(1).max(100) }),
+    z.object({ kind: z.literal("or"), args: z.array(ExprSchema).min(1).max(100) }),
+    z.object({ kind: z.literal("not"), arg: ExprSchema }),
+  ]),
+) as unknown as z.ZodType<Expr>
+
+// `as`/`fn` are output/identifier names, constrained to safe characters here;
+// `col`/`column` are allowlist-checked against the catalog downstream.
+const identifier = z.string().regex(/^[A-Za-z0-9_]+$/)
+
+const columnSelect = z.object({ col: z.string(), as: identifier.optional() })
+const fnSelect = z.object({
+  fn: identifier,
+  args: z.array(ExprSchema).max(8),
+  as: identifier.optional(),
+})
+
+export const QuerySchema = z.object({
+  from: z.string(),
+  select: z.array(z.union([fnSelect, columnSelect])).min(1).max(100),
+  where: ExprSchema.optional(),
+  groupBy: z.array(z.string()).max(100).optional(),
+  orderBy: z.array(z.object({ col: z.string(), dir: z.enum(["asc", "desc"]) })).max(100).optional(),
+  limit: z.number().int().positive().optional(),
+})
+
+export type Query = z.infer<typeof QuerySchema>

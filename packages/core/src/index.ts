@@ -8,7 +8,13 @@ export type {
   ResourceRelation,
   ValvConfig,
 } from "./valv"
-export type { ValvAdapter } from "./adapter"
+export type { ValvAdapter, CompiledQuery, BoundParam } from "./adapter"
+export { QuerySchema, ExprSchema } from "./ast"
+export type { Query, Expr, SelectItem, ColumnSelect, FnSelect, OrderBy, CmpOp } from "./ast"
+export { emit } from "./emit"
+export type { Dialect } from "./emit"
+export { BASE_FUNCTIONS } from "./functions"
+export type { FnDef, ArgSpec } from "./functions"
 
 export type {
   SchemaMap,
