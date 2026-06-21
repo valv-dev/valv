@@ -53,6 +53,16 @@ function toClickHouseUrl(url: string): string {
     .replace(/^clickhouse(\+http)?:\/\//i, "http://")
 }
 
+/** Connect, introspect, and return the resource (table) names — used by `init`. */
+export async function listDatabaseResources(config: ServerConfig): Promise<string[]> {
+  const { valv, stop } = await buildValv(config)
+  try {
+    return await valv.resources()
+  } finally {
+    await stop()
+  }
+}
+
 /**
  * Boot a zero-config valv MCP server against a live database: introspect the
  * schema, build a policy-gated valv instance (read-only by default), and serve
