@@ -91,13 +91,6 @@ export async function runInit(): Promise<void> {
     p.note("Wrote valv.policy.cjs — edit it to scope access per resource.", "Policy")
   }
 
-  const tenant = await p.text({
-    message: "Tenant id for the agent's context (optional)",
-    placeholder: "blank to skip",
-  })
-  if (p.isCancel(tenant)) return void p.cancel("Cancelled.")
-  if (tenant.trim()) env.VALV_CONTEXT = JSON.stringify({ tenant: { id: tenant.trim() } })
-
   const name = await p.text({ message: "Name this server", initialValue: defaultName(url, database) })
   if (p.isCancel(name)) return void p.cancel("Cancelled.")
 
@@ -144,13 +137,13 @@ function defaultName(url: string, database?: string): string {
 function policyStub(resources: string[]): string {
   const example = resources[0] ?? "orders"
   return [
-    "// valv policy — full control over access. Receives the configured valv instance.",
-    "// Context comes from VALV_CONTEXT (JSON). Resources without a policy are denied.",
+    "// valv policy — controls what the agent can read. Receives the configured",
+    "// valv instance. Tables without a policy are denied (deny-all).",
     `// Discovered tables: ${resources.join(", ") || "(none)"}`,
     "module.exports = (valv) => {",
-    `  valv.policy(${JSON.stringify(example)}, (ctx) => ({`,
-    "    read: { tenant_id: ctx.tenant?.id }, // row filter: only this tenant's rows",
-    "    fields: { deny: [] },                // column names to hide from the agent",
+    `  valv.policy(${JSON.stringify(example)}, () => ({`,
+    "    read: true,            // allow reads (or { column: value } to filter rows)",
+    "    fields: { deny: [] },  // column names to hide from the agent",
     "  }))",
     "}",
     "",

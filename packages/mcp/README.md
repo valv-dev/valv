@@ -57,20 +57,20 @@ All via environment variables:
 
 ## Policy file
 
-Without one, access is **read-only across all tables**. For real access control — tenant scoping, hidden columns — point `VALV_POLICY_FILE` at a module that receives the configured valv instance:
+Without one, access is **read-only across all tables**. To restrict what the agent can see — which tables, which columns — point `VALV_POLICY_FILE` at a module that receives the configured valv instance:
 
 ```js
 // valv.policy.cjs
 module.exports = (valv) => {
-  valv.policy("orders", (ctx) => ({
-    read:   { tenant_id: ctx.tenant.id }, // ctx comes from VALV_CONTEXT
-    fields: { deny: ["internal_notes"] },
+  valv.policy("orders", () => ({
+    read:   true,                          // allow reads (or { column: value } to filter rows)
+    fields: { deny: ["internal_notes"] },  // hide columns from the agent
   }))
   // Tables without a policy are denied (deny-all).
 }
 ```
 
-For full code-level control (your own client, typed policies, per-request identity), use [`@valv/mcp-sdk`](../mcp-sdk) instead.
+Need per-request row scoping by tenant/user? That belongs in the app-controlled path, where your code supplies real identity per request — use [`@valv/mcp-sdk`](../mcp-sdk) (or pass a fixed `VALV_CONTEXT` and read it in the policy here).
 
 ## License
 
