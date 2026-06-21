@@ -1,7 +1,7 @@
 import type { ValvAdapter, SchemaMap, Query, CompiledQuery } from "@valv/core"
 import { emit } from "@valv/core"
 import { introspectClickHouse, type ClickHouseClient } from "./introspection"
-import { clickhouseDialect } from "./emit"
+import { clickhouseDialect } from "./dialect"
 
 export interface ClickHouseAdapterOptions {
   database?: string
@@ -40,8 +40,8 @@ export class ClickHouseAdapter implements ValvAdapter {
 
   /**
    * Run a compiled, parameterized SQL statement and return rows. Positional
-   * parameters are bound as named ClickHouse query params (`p0`, `p1`, …); the
-   * SQL emitter (Kysely ClickHouse dialect) produces matching placeholders.
+   * parameters are bound as named ClickHouse query params (`p0`, `p1`, …),
+   * matching the `{pN:Type}` placeholders the dialect emits.
    */
   async execute(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
     const result = await this.client.query({

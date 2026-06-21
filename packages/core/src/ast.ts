@@ -41,8 +41,9 @@ export const ExprSchema = z.lazy(() =>
   ]),
 ) as unknown as z.ZodType<Expr>
 
-// `as`/`fn` are output/identifier names, constrained to safe characters here;
-// `col`/`column` are allowlist-checked against the catalog downstream.
+// `as`/`fn` are output/function names, constrained to safe characters here.
+// Column references (`col`, and columns inside function args) are instead
+// allowlist-checked against the catalog downstream, in validate.ts.
 const identifier = z.string().regex(/^[A-Za-z0-9_]+$/)
 
 const columnSelect = z.object({ col: z.string(), as: identifier.optional() })

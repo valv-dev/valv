@@ -1,12 +1,10 @@
 import { ValidationError } from "./errors"
 
-// The aggregate-function allowlist + signatures. A function name in the AST is
-// attacker-controlled, so emission only renders names with an entry here (or in
-// a dialect's own registry); unknown names are rejected, never spliced. The
-// signature declares each positional argument's kind, which is how emission
-// stays safe by construction (see emit.ts): columns are allowlist-checked,
-// numbers are finite, enums are membership-checked, predicates are parameterised.
-// This registry is also the discovery surface getTools reads.
+// The function allowlist + signatures. A function name in the AST is attacker-
+// controlled, so emission renders only names with an entry here (or in a
+// dialect's registry) — unknown names are rejected, never spliced. Each
+// signature declares its argument kinds, which is how the emitter keeps args
+// safe by construction (see emit.ts). Also the discovery surface getTools reads.
 
 // One argument of a function call, mirroring how SQL functions take positional
 // args. The AST supplies each as an Expr; the spec says how to read it.
