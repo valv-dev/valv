@@ -112,7 +112,14 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
       error = e as Error
       throw toSafeError(error)
     } finally {
-      this.onQueryFn?.({ toolName: "query", resource, operation: "query", ctx, durationMs: Date.now() - start, error })
+      this.onQueryFn?.({
+        toolName: "query",
+        resource,
+        operation: "query",
+        ctx,
+        durationMs: Date.now() - start,
+        error,
+      })
     }
   }
 
@@ -141,7 +148,14 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
       error = e as Error
       throw toSafeError(error)
     } finally {
-      this.onQueryFn?.({ toolName: op, resource, operation: op, ctx, durationMs: Date.now() - start, error })
+      this.onQueryFn?.({
+        toolName: op,
+        resource,
+        operation: op,
+        ctx,
+        durationMs: Date.now() - start,
+        error,
+      })
     }
   }
 
@@ -167,7 +181,8 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
     const policy = hasOwn(policies, mutation.from) ? policies[mutation.from] : undefined
 
     const write = evaluateWrite(policy, ctx, resource, op, this.defaultPolicy)
-    if (!write.allowed) throw new PolicyViolationError(`${op} access to "${mutation.from}" is denied.`)
+    if (!write.allowed)
+      throw new PolicyViolationError(`${op} access to "${mutation.from}" is denied.`)
     // The read policy governs which columns a WHERE may filter on.
     const read = evaluateRead(policy, ctx, resource, this.defaultPolicy)
 
@@ -205,8 +220,7 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
       gemini: (ctx: TContext, toggle?: ToolToggle): GeminiTool[] =>
         this.neutralTools(ctx, toggle).map(gemini),
       // Vercel AI SDK tool set (async — imports the optional `ai` peer dep).
-      aisdk: (ctx: TContext, toggle?: ToolToggle) =>
-        toAiSdk(this.neutralTools(ctx, toggle)),
+      aisdk: (ctx: TContext, toggle?: ToolToggle) => toAiSdk(this.neutralTools(ctx, toggle)),
     }
   }
 
@@ -253,7 +267,8 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
     const policies = this.buildEffectivePolicies(catalog)
     const policy = hasOwn(policies, query.from) ? policies[query.from] : undefined
     const evaluated = evaluateRead(policy, ctx, resource, this.defaultPolicy)
-    if (!evaluated.allowed) throw new PolicyViolationError(`Read access to "${query.from}" is denied.`)
+    if (!evaluated.allowed)
+      throw new PolicyViolationError(`Read access to "${query.from}" is denied.`)
 
     validateQuery(query, resource, evaluated, MAX_LIMIT)
     const injected = injectPolicy(query, evaluated, DEFAULT_LIMIT, MAX_LIMIT)
@@ -275,7 +290,9 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
   // primes the cache, so this is populated for factory-built instances.
   private requireSchema(): SchemaMap {
     if (!this.schemaCache) {
-      throw new Error("[valv] schema not loaded — build the instance with createValv(), which introspects on construction.")
+      throw new Error(
+        "[valv] schema not loaded — build the instance with createValv(), which introspects on construction.",
+      )
     }
     return this.schemaCache
   }

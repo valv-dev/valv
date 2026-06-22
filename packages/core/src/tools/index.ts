@@ -1,12 +1,7 @@
 import type { NeutralTool } from "../formatters"
 import { ValidationError } from "../errors"
 import { buildQuerySchema, mutationSchema } from "./query-schema"
-import {
-  listResources,
-  searchResources,
-  describeResource,
-  type VisibleResource,
-} from "./discovery"
+import { listResources, searchResources, describeResource, type VisibleResource } from "./discovery"
 
 // Which tools to expose. `query` is always present; the three discovery tools
 // default ON (set false to drop); the three write tools default OFF (set true to
@@ -118,13 +113,28 @@ export function buildTools<TContext>(args: BuildToolsArgs<TContext>): NeutralToo
 
   // Write tools — opt-in (default off).
   if (toggle?.create && write) {
-    tools.push({ name: "create", description: CREATE_DESCRIPTION, parameters: mutationSchema("create"), execute: write.create })
+    tools.push({
+      name: "create",
+      description: CREATE_DESCRIPTION,
+      parameters: mutationSchema("create"),
+      execute: write.create,
+    })
   }
   if (toggle?.update && write) {
-    tools.push({ name: "update", description: UPDATE_DESCRIPTION, parameters: mutationSchema("update"), execute: write.update })
+    tools.push({
+      name: "update",
+      description: UPDATE_DESCRIPTION,
+      parameters: mutationSchema("update"),
+      execute: write.update,
+    })
   }
   if (toggle?.delete && write) {
-    tools.push({ name: "delete", description: DELETE_DESCRIPTION, parameters: mutationSchema("delete"), execute: write.delete })
+    tools.push({
+      name: "delete",
+      description: DELETE_DESCRIPTION,
+      parameters: mutationSchema("delete"),
+      execute: write.delete,
+    })
   }
 
   return tools

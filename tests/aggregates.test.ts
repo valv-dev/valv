@@ -66,7 +66,11 @@ describe("aggregates (slice 2)", () => {
 
   it("emits count(*) for a column-less aggregate", async () => {
     const { valv, calls } = await setup()
-    await valv.runTool("query", { from: "events", select: [{ fn: "count", args: [], as: "n" }] }, ctx)
+    await valv.runTool(
+      "query",
+      { from: "events", select: [{ fn: "count", args: [], as: "n" }] },
+      ctx,
+    )
     expect(calls[0].query).toBe(
       "SELECT count(*) AS `n` FROM `events_t` WHERE (`tenant_id` = {p0:String}) LIMIT 100",
     )
@@ -135,7 +139,11 @@ describe("aggregates (slice 2)", () => {
   it("rejects a sensitive column reached through an aggregate", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool("query", { from: "events", select: [{ fn: "avg", args: [col("secret")] }] }, ctx),
+      valv.runTool(
+        "query",
+        { from: "events", select: [{ fn: "avg", args: [col("secret")] }] },
+        ctx,
+      ),
     ).rejects.toThrow(/not accessible/)
   })
 
@@ -147,7 +155,10 @@ describe("aggregates (slice 2)", () => {
         {
           from: "events",
           select: [
-            { fn: "countIf", args: [{ kind: "cmp", op: "!=", left: col("secret"), right: val("") }] },
+            {
+              fn: "countIf",
+              args: [{ kind: "cmp", op: "!=", left: col("secret"), right: val("") }],
+            },
           ],
         },
         ctx,
@@ -265,11 +276,7 @@ describe("aggregates (slice 2)", () => {
   it("rejects a non-column where a column argument is expected", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool(
-        "query",
-        { from: "events", select: [{ fn: "sum", args: [val(5)] }] },
-        ctx,
-      ),
+      valv.runTool("query", { from: "events", select: [{ fn: "sum", args: [val(5)] }] }, ctx),
     ).rejects.toThrow(/expects a column/)
   })
 
@@ -279,7 +286,10 @@ describe("aggregates (slice 2)", () => {
       await expect(
         valv.runTool(
           "query",
-          { from: "events", select: [{ fn: "quantileTiming", args: [val(level), col("latency")] }] },
+          {
+            from: "events",
+            select: [{ fn: "quantileTiming", args: [val(level), col("latency")] }],
+          },
           ctx,
         ),
       ).rejects.toThrow(/within \[0, 1\]/)

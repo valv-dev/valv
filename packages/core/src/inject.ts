@@ -31,7 +31,12 @@ export function injectMutation(
   }
   if (op === "update") {
     const update = mutation as Update
-    return { op: "update", from: update.from, set: update.set, where: andWhere(update.where, write.predicate) }
+    return {
+      op: "update",
+      from: update.from,
+      set: update.set,
+      where: andWhere(update.where, write.predicate),
+    }
   }
   const del = mutation as Delete
   return { op: "delete", from: del.from, where: andWhere(del.where, write.predicate) }

@@ -30,7 +30,11 @@ export interface FnDef {
 
 // Standard SQL aggregates every dialect emits identically.
 export const BASE_FUNCTIONS: Record<string, FnDef> = {
-  count: { args: [{ kind: "column", optional: true }], returns: "number", render: ([c]) => `count(${c ?? "*"})` },
+  count: {
+    args: [{ kind: "column", optional: true }],
+    returns: "number",
+    render: ([c]) => `count(${c ?? "*"})`,
+  },
   sum: { args: [{ kind: "column" }], returns: "number", render: ([c]) => `sum(${c})` },
   avg: { args: [{ kind: "column" }], returns: "number", render: ([c]) => `avg(${c})` },
   min: { args: [{ kind: "column" }], returns: { fromArg: 0 }, render: ([c]) => `min(${c})` },

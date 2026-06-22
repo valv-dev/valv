@@ -91,7 +91,10 @@ export async function runInit(): Promise<void> {
     p.note("Wrote valv.policy.cjs — edit it to scope access per resource.", "Policy")
   }
 
-  const name = await p.text({ message: "Name this server", initialValue: defaultName(url, database) })
+  const name = await p.text({
+    message: "Name this server",
+    initialValue: defaultName(url, database),
+  })
   if (p.isCancel(name)) return void p.cancel("Cancelled.")
 
   p.note(snippet(name, env), "Add to your MCP client config")

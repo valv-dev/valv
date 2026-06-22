@@ -21,7 +21,13 @@ const schema: SchemaMap = {
       relations: {},
       fields: {
         id: { name: "id", type: "uuid", nativeType: "UUID", isNullable: false, isId: true },
-        latency: { name: "latency", type: "number", nativeType: "UInt32", isNullable: false, isId: false },
+        latency: {
+          name: "latency",
+          type: "number",
+          nativeType: "UInt32",
+          isNullable: false,
+          isId: false,
+        },
       },
     },
   },

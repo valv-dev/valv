@@ -33,7 +33,10 @@ const cmpOp = z.enum(["=", "!=", ">", "<", ">=", "<="])
 export const ExprSchema = z.lazy(() =>
   z.union([
     z.object({ kind: z.literal("col"), name: z.string() }),
-    z.object({ kind: z.literal("value"), value: z.union([z.string(), z.number(), z.boolean(), z.null()]) }),
+    z.object({
+      kind: z.literal("value"),
+      value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+    }),
     z.object({ kind: z.literal("cmp"), op: cmpOp, left: ExprSchema, right: ExprSchema }),
     z.object({ kind: z.literal("and"), args: z.array(ExprSchema).min(1).max(100) }),
     z.object({ kind: z.literal("or"), args: z.array(ExprSchema).min(1).max(100) }),
@@ -55,10 +58,16 @@ const fnSelect = z.object({
 
 export const QuerySchema = z.object({
   from: z.string(),
-  select: z.array(z.union([fnSelect, columnSelect])).min(1).max(100),
+  select: z
+    .array(z.union([fnSelect, columnSelect]))
+    .min(1)
+    .max(100),
   where: ExprSchema.optional(),
   groupBy: z.array(z.string()).max(100).optional(),
-  orderBy: z.array(z.object({ col: z.string(), dir: z.enum(["asc", "desc"]) })).max(100).optional(),
+  orderBy: z
+    .array(z.object({ col: z.string(), dir: z.enum(["asc", "desc"]) }))
+    .max(100)
+    .optional(),
   limit: z.number().int().positive().optional(),
 })
 

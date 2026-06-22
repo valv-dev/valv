@@ -55,7 +55,9 @@ export function configFromEnv(env: NodeJS.ProcessEnv, argv: string[]): ServerCon
     )
   }
 
-  const provider = env.VALV_PROVIDER ? (env.VALV_PROVIDER as McpProvider) : inferProvider(databaseUrl)
+  const provider = env.VALV_PROVIDER
+    ? (env.VALV_PROVIDER as McpProvider)
+    : inferProvider(databaseUrl)
 
   let context: unknown = {}
   if (env.VALV_CONTEXT) {

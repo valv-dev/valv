@@ -3,7 +3,11 @@ import { createValv } from "@valv/clickhouse"
 import type { SchemaMap, DefaultContext, FieldSchema, RelationSchema } from "@valv/core"
 import { fakeClient } from "./helpers"
 
-const f = (name: string, type: FieldSchema["type"], extra: Partial<FieldSchema> = {}): FieldSchema => ({
+const f = (
+  name: string,
+  type: FieldSchema["type"],
+  extra: Partial<FieldSchema> = {},
+): FieldSchema => ({
   name,
   type,
   nativeType: type === "number" ? "UInt32" : "String",
@@ -120,7 +124,9 @@ describe("tool layer", () => {
 
   it("search ranks resources by keyword", async () => {
     const { valv } = await setup()
-    const hits = (await valv.runTool("search_resources", { query: "order" }, ctx)) as { name: string }[]
+    const hits = (await valv.runTool("search_resources", { query: "order" }, ctx)) as {
+      name: string
+    }[]
     expect(hits[0].name).toBe("orders")
   })
 

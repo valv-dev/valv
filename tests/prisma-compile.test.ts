@@ -11,7 +11,13 @@ const schema: SchemaMap = {
       relations: {},
       fields: {
         id: { name: "id", type: "number", nativeType: "Int", isNullable: false, isId: true },
-        email: { name: "email", type: "string", nativeType: "String", isNullable: false, isId: false },
+        email: {
+          name: "email",
+          type: "string",
+          nativeType: "String",
+          isNullable: false,
+          isId: false,
+        },
       },
     },
   },
@@ -20,7 +26,12 @@ const schema: SchemaMap = {
 const query: Query = {
   from: "users",
   select: [{ col: "email" }],
-  where: { kind: "cmp", op: "=", left: { kind: "col", name: "id" }, right: { kind: "value", value: 1 } },
+  where: {
+    kind: "cmp",
+    op: "=",
+    left: { kind: "col", name: "id" },
+    right: { kind: "value", value: 1 },
+  },
   limit: 10,
 }
 

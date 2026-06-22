@@ -117,7 +117,12 @@ export function evaluateWrite<TContext>(
   }
   if (!allowed) return { allowed: false, writableFields: [] }
 
-  return { allowed, forced, predicate, writableFields: writableFields(resource, result.fields, scopeColumns) }
+  return {
+    allowed,
+    forced,
+    predicate,
+    writableFields: writableFields(resource, result.fields, scopeColumns),
+  }
 }
 
 // Server-owned create values. Fails closed on undefined/null exactly like the

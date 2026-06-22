@@ -20,7 +20,9 @@ export interface RunningServer {
 
 // Build a valv instance + a cleanup fn for the configured database. ClickHouse
 // connects over its HTTP client; everything else introspects via Prisma.
-async function buildValv(config: ServerConfig): Promise<{ valv: DbValv; stop: () => Promise<void> }> {
+async function buildValv(
+  config: ServerConfig,
+): Promise<{ valv: DbValv; stop: () => Promise<void> }> {
   if (config.provider === "clickhouse") {
     const { createValvFromUrl } = await import("@valv/clickhouse")
     const { valv, stop } = await createValvFromUrl<Ctx>(toClickHouseUrl(config.databaseUrl), {

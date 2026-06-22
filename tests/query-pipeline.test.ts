@@ -45,7 +45,12 @@ describe("query pipeline (slice 1)", () => {
       {
         from: "events",
         select: [{ col: "plan" }, { col: "latency" }],
-        where: { kind: "cmp", op: ">", left: { kind: "col", name: "latency" }, right: { kind: "value", value: 10 } },
+        where: {
+          kind: "cmp",
+          op: ">",
+          left: { kind: "col", name: "latency" },
+          right: { kind: "value", value: 10 },
+        },
         limit: 50,
       },
       ctx,

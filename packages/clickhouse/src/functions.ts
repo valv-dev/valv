@@ -1,6 +1,15 @@
 import type { FnDef } from "@valv/core"
 
-const INTERVAL_UNITS = ["second", "minute", "hour", "day", "week", "month", "quarter", "year"] as const
+const INTERVAL_UNITS = [
+  "second",
+  "minute",
+  "hour",
+  "day",
+  "week",
+  "month",
+  "quarter",
+  "year",
+] as const
 
 // ClickHouse-specific functions, merged over the standard aggregates in core's
 // BASE_FUNCTIONS at emit time. This is the list that grows as analytics needs
@@ -16,8 +25,16 @@ export const clickhouseFunctions: Record<string, FnDef> = {
 
   // Fixed-grain time bucketing.
   toDate: { args: [{ kind: "column" }], returns: "date", render: ([c]) => `toDate(${c})` },
-  toStartOfHour: { args: [{ kind: "column" }], returns: "date", render: ([c]) => `toStartOfHour(${c})` },
-  toStartOfDay: { args: [{ kind: "column" }], returns: "date", render: ([c]) => `toStartOfDay(${c})` },
+  toStartOfHour: {
+    args: [{ kind: "column" }],
+    returns: "date",
+    render: ([c]) => `toStartOfHour(${c})`,
+  },
+  toStartOfDay: {
+    args: [{ kind: "column" }],
+    returns: "date",
+    render: ([c]) => `toStartOfDay(${c})`,
+  },
 
   // Arbitrary-grain bucketing toStartOfInterval(ts, INTERVAL n unit); unit is
   // membership-checked and n is finite, so both are safe inlined.
