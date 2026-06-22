@@ -1,6 +1,6 @@
 {
   "name": "@valv/mcp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Zero-config MCP server for any database — point it at a DATABASE_URL and let coding agents (Claude Code) query it safely, no SQL and no code",
   "keywords": [
     "mcp",
@@ -47,7 +47,7 @@
     "@valv/clickhouse": "^0.4.0",
     "@valv/core": "^0.5.0",
     "@valv/mcp-sdk": "^0.3.0",
-    "@valv/prisma": "^0.5.0",
+    "@valv/prisma": "^0.5.1",
     "prisma": "^5.0.0"
   },
   "publishConfig": {

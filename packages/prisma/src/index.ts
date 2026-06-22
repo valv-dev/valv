@@ -1,5 +1,5 @@
 export { PrismaAdapter } from "./adapter"
 export type { PrismaAdapterOptions } from "./adapter"
 export { createValv } from "./create"
-export { createValvFromUrl, inferProvider, prepareDatabase } from "./url"
-export type { Provider, PreparedDatabase, ValvFromUrl } from "./url"
+export { createValvFromUrl, inferProvider, prepareDatabase, sanitizeSchemaText } from "./url"
+export type { Provider, PreparedDatabase, ValvFromUrl, FieldRename } from "./url"
