@@ -1,20 +1,26 @@
 # @valv/mcp
 
-**Point it at a database URL. Claude talks to your data. No SQL, no code.**
+**Point it at a database URL. Your agent queries it safely. No SQL, no code.**
 
-A zero-config [MCP](https://modelcontextprotocol.io) server for any database
-[valv](https://github.com/vista-libs/vista) supports through Prisma
-(PostgreSQL, MySQL, SQLite, SQL Server). Give it a `DATABASE_URL` and it:
+A zero-config [MCP](https://modelcontextprotocol.io) server built on [valv](../../README.md). Give it a connection string and it introspects your live schema, serves four tools (`list_resources`, `search_resources`, `describe_resource`, `query`) **read-only by default**, and enforces your policies — no SQL ever reaches the model, and it can only read what you allow.
 
-1. introspects your live schema (`prisma db pull`) — no `schema.prisma` needed,
-2. generates the typed tools an agent uses to query it,
-3. serves them over MCP — **read-only by default**, scoped by your policies.
+Works with any **Prisma**-supported database (PostgreSQL, MySQL, SQLite, CockroachDB) **and ClickHouse**.
 
-No SQL ever reaches the model, and it can only do what the policy allows.
+[![npm](https://img.shields.io/npm/v/@valv/mcp)](https://www.npmjs.com/package/@valv/mcp) [![license](https://img.shields.io/npm/l/@valv/mcp)](../../LICENSE)
 
-## Quick start (Claude Code)
+## Guided setup
 
-Add it to your `.mcp.json` — nothing to install or write:
+The fastest way in — it probes your database, lets you choose access, and writes the config:
+
+```bash
+npx @valv/mcp init
+```
+
+It prompts for a connection string, confirms the dialect, connects and shows your tables, then offers read-only / pick-tables / a policy-file stub — and writes the `.mcp.json` entry for you.
+
+## Manual setup
+
+Add it to your `.mcp.json` (or Claude Desktop config):
 
 ```json
 {
@@ -28,83 +34,43 @@ Add it to your `.mcp.json` — nothing to install or write:
 }
 ```
 
-That's it. Claude can now discover your tables (`list_resources`,
-`describe_resource`) and read them (`query`, `get`, `aggregate`) — all
-policy-gated, all without writing SQL.
+For **ClickHouse**, use its HTTP URL and a database name:
 
-You can also run it directly:
-
-```bash
-DATABASE_URL="postgresql://…" npx @valv/mcp
-# or pass the URL as the first argument
-npx @valv/mcp "postgresql://…"
+```json
+"env": { "DATABASE_URL": "http://localhost:8123", "VALV_DATABASE": "analytics" }
 ```
-
-## Defaults & safety
-
-- **Read-only.** Out of the box only `query` / `get` / `aggregate` are exposed —
-  never `create` / `update` / `delete`. Writes require a policy file (below).
-- **All tables, opt-out.** Every table is exposed; narrow it with allow/deny lists.
-- **No SQL, no leaks.** The model calls typed tools; valv turns them into scoped
-  queries server-side. Fields marked sensitive in your schema never reach it.
 
 ## Configuration
 
 All via environment variables:
 
 | Variable | Description |
-| --- | --- |
-| `DATABASE_URL` | Connection string (required; or pass as the first arg). |
-| `VALV_PROVIDER` | `postgresql` \| `mysql` \| `sqlite` \| `sqlserver` \| `mongodb`. Inferred from the URL when omitted. |
-| `VALV_TABLES` | Comma-separated allow-list. Only these tables are exposed. |
+|---|---|
+| `DATABASE_URL` | Connection string (required; or pass as the first CLI arg). |
+| `VALV_PROVIDER` | `postgresql` \| `mysql` \| `sqlite` \| `clickhouse`. Inferred from the URL when omitted. |
+| `VALV_DATABASE` | Database name (ClickHouse). |
+| `VALV_TABLES` | Comma-separated allow-list — only these tables are exposed. |
 | `VALV_EXCLUDE` | Comma-separated deny-list, applied after the allow-list. |
-| `VALV_POLICY_FILE` | Path to a policy module that takes full control (enables writes — see below). |
-| `VALV_CONTEXT` | JSON policy context passed to your policy file. Defaults to `{}`. |
+| `VALV_POLICY_FILE` | Path to a policy module (below) for tenant scoping / hidden fields. |
+| `VALV_CONTEXT` | JSON context the policy reads (e.g. `{"tenant":{"id":"acme"}}`). |
 | `VALV_HTTP_PORT` | Serve over Streamable HTTP on this port instead of stdio. |
 
-### Enabling writes / richer policies
+## Policy file
 
-For anything beyond read-only, point `VALV_POLICY_FILE` at a CommonJS module
-that receives the configured valv instance and declares
-[policies](https://github.com/vista-libs/vista#policy-reference). It takes full
-control of access (the allow/deny lists are then ignored):
+Without one, access is **read-only across all tables**. To restrict what the agent can see — which tables, which columns — point `VALV_POLICY_FILE` at a module that receives the configured valv instance:
 
 ```js
-// db-policy.cjs
+// valv.policy.cjs
 module.exports = (valv) => {
-  valv.policy("orders", () => ({ read: true, write: true, delete: false }))
-  valv.policy("users", () => ({ read: true, write: false, delete: false }))
+  valv.policy("orders", () => ({
+    read:   true,                          // allow reads (or { column: value } to filter rows)
+    fields: { deny: ["internal_notes"] },  // hide columns from the agent
+  }))
+  // Tables without a policy are denied (deny-all).
 }
 ```
 
-```json
-{ "env": {
-  "DATABASE_URL": "postgresql://…",
-  "VALV_POLICY_FILE": "./db-policy.cjs"
-} }
-```
-
-Use `VALV_CONTEXT` to feed runtime context (tenant, role, …) your policies read:
-`"VALV_CONTEXT": "{\"tenant\":{\"id\":\"acme\"}}"`.
-
-## How it works
-
-```
-Claude Code ─MCP─▶ @valv/mcp
-                     │  prisma db pull + generate  → live schema + typed client
-                     │  @valv/core               → policy engine (read-only default)
-                     ▼
-                  @valv/prisma → PrismaClient → your database
-```
-
-The generated client lives in a temp directory and is removed on shutdown; your
-project is never modified. Requires network access to the database and the
-ability to run the bundled Prisma CLI.
-
-## Need policies-in-code instead?
-
-If you'd rather define your adapter and policies yourself and embed an MCP server
-in your own app, use [`@valv/mcp-sdk`](../mcp-sdk/README.md) directly.
+Need per-request row scoping by tenant/user? That belongs in the app-controlled path, where your code supplies real identity per request — use [`@valv/mcp-sdk`](../mcp-sdk) (or pass a fixed `VALV_CONTEXT` and read it in the policy here).
 
 ## License
 

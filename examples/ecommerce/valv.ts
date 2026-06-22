@@ -2,70 +2,40 @@ import "dotenv/config"
 import { PrismaClient } from "@prisma/client"
 import { createValv } from "@valv/prisma"
 
-// Shared valv setup + policies for the e-commerce example. Imported by both
-// the in-process demo (index.ts) and the MCP server (mcp.ts) so the exact same
-// access policies govern both surfaces.
+// Shared valv setup + policies for the e-commerce example. Imported by the
+// in-process demo (index.ts), the dashboard (live-dashboard.ts), and the MCP
+// server (mcp.ts) so the exact same access policies govern every surface.
 
 export const prisma = new PrismaClient()
 
-export const valv = createValv(prisma, {
-  defaultPolicy: "deny-all",
-  onQuery: ({ toolName, resource, durationMs, error }) => {
-    if (error)
-      console.warn(
-        `  [audit] ${toolName} on ${resource} failed in ${durationMs}ms: ${error.message}`,
-      )
-    else console.log(`  [audit] ${toolName} on ${resource} (${durationMs}ms)`)
-  },
-})
+// Built lazily and memoized — createValv is async (it reads the schema on
+// construction), and CommonJS has no top-level await.
+let cached: ReturnType<typeof build> | null = null
+export function getValv() {
+  return (cached ??= build())
+}
 
-// ── Policies ──────────────────────────────────────────────────────────────────
+async function build() {
+  const valv = await createValv(prisma, {
+    defaultPolicy: "deny-all",
+    onQuery: ({ resource, durationMs, error }) =>
+      console.log(`  [audit] query on ${resource} (${durationMs}ms)${error ? ` — ${error.message}` : ""}`),
+  })
 
-valv.policy("order", (ctx) => {
-  // Auditor: a read-mostly analyst role that exercises the richer policy surface —
-  //   • operator row filter (sees only low-value orders)
-  //   • aggregate ≠ read (can total ALL orders, but only read rows under the cap)
-  //   • create ≠ update (may amend orders, never open new ones)
-  //   • read-only field (status is visible but not writable)
-  if (ctx.user.role === "auditor") {
-    return {
-      read: { tenant_id: ctx.tenant!.id, total: { lt: 50000 } },
-      aggregate: { tenant_id: ctx.tenant!.id },
-      create: false,
-      update: { tenant_id: ctx.tenant!.id },
-      delete: false,
-      fields: { readOnly: ["status"] },
-      relations: { customer: false, items: true },
-    }
-  }
-
-  return {
+  // Reads are tenant-scoped; sensitive columns are denied per role. (Prisma has
+  // no schema-level sensitivity, so name them here.)
+  valv.policy("order", (ctx) => ({
     read: { tenant_id: ctx.tenant!.id },
-    write: { tenant_id: ctx.tenant!.id },
-    delete: false,
-    fields: {
-      // internal_notes is @valv:sensitive — auto-excluded from LLM
-      deny: ctx.user.role === "support" ? ["user_id"] : [],
-    },
-    relations: {
-      customer: ctx.user.role === "admin",
-      items: true,
-    },
-  }
-})
+    fields: { deny: ctx.user.role === "support" ? ["user_id", "internal_notes"] : ["internal_notes"] },
+  }))
 
-valv.policy("user", (ctx) => ({
-  read: { tenant_id: ctx.tenant!.id },
-  // password_hash is @valv:sensitive — always excluded
-  fields: { deny: ctx.user.role === "support" ? ["email"] : [] },
-  write: false,
-  delete: false,
-}))
+  valv.policy("user", (ctx) => ({
+    read: { tenant_id: ctx.tenant!.id },
+    fields: { deny: ctx.user.role === "support" ? ["password_hash", "email"] : ["password_hash"] },
+  }))
 
-valv.policy("product", (ctx) => ({
-  read: { tenant_id: ctx.tenant!.id },
-  write: { tenant_id: ctx.tenant!.id },
-  delete: false,
-}))
+  valv.policy("product", (ctx) => ({ read: { tenant_id: ctx.tenant!.id } }))
+  valv.policy("order_item", () => ({ read: false }))
 
-valv.policy("order_item", () => ({ read: false }))
+  return valv
+}

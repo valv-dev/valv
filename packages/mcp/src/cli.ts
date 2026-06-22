@@ -3,6 +3,13 @@ import { configFromEnv } from "./config"
 import { startValvMcpServer } from "./index"
 
 async function main(): Promise<void> {
+  // `valv-mcp init` runs the interactive setup wizard; otherwise serve.
+  if (process.argv[2] === "init") {
+    const { runInit } = await import("./init")
+    await runInit()
+    return
+  }
+
   const config = configFromEnv(process.env, process.argv.slice(2))
   const server = await startValvMcpServer(config)
 

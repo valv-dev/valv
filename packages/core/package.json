@@ -20,7 +20,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vista-libs/vista.git",
+    "url": "https://github.com/vistal-dev/vistal.git",
     "directory": "packages/core"
   },
   "main": "dist/index.js",
@@ -40,5 +40,16 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "ai": "^5.0.0 || ^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
   }
 }

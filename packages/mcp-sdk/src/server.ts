@@ -1,7 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js"
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js"
-import { Valv, serializeResult, ValidationError, PolicyViolationError } from "@valv/core"
-import type { GetToolsOptions } from "@valv/core"
+import { Valv, ValidationError, PolicyViolationError } from "@valv/core"
 import type { ContextResolver, ValvMcpOptions } from "./types.js"
 
 const DEFAULT_VERSION = "0.1.0"
@@ -36,21 +35,19 @@ export function createMcpServer<TContext, TResources extends string = string>(
   valv: Valv<TContext, TResources>,
   options: ValvMcpOptions<TContext>,
 ): Server {
-  const mode = options.mode ?? "consolidated"
-
   const server = new Server(options.serverInfo ?? { name: "valv", version: DEFAULT_VERSION }, {
     capabilities: { tools: {} },
   })
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const ctx = await resolve(options.context)
-    const getToolsOptions = { ...options.toolOptions, mode } as GetToolsOptions<TResources>
-    const tools = await valv.getTools(ctx, getToolsOptions)
+    // The four policy-filtered tools (query + list/search/describe), in MCP shape.
+    const tools = valv.tools.neutral(ctx, options.discovery)
     return {
       tools: tools.map((t) => ({
         name: t.name,
         description: t.description,
-        inputSchema: t.input_schema as { type: "object"; [k: string]: unknown },
+        inputSchema: t.parameters as { type: "object"; [k: string]: unknown },
       })),
     }
   })
@@ -59,9 +56,11 @@ export function createMcpServer<TContext, TResources extends string = string>(
     const ctx = await resolve(options.context)
     const { name, arguments: args } = req.params
     try {
-      const result = await valv.executeTool(name, args ?? {}, ctx)
+      // runTool dispatches the call; query results are already serialized, and
+      // discovery results are plain JSON-safe objects.
+      const result = await valv.runTool(name, args ?? {}, ctx)
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(serializeResult(result)) }],
+        content: [{ type: "text" as const, text: JSON.stringify(result) }],
       }
     } catch (err) {
       return {

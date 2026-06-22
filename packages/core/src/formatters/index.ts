@@ -1,13 +1,24 @@
-import { NeutralTool } from "../tools/generator"
+/**
+ * A provider-neutral tool definition: a name, a description, a JSON Schema for
+ * its parameters, and a context-bound `execute`. Provider formatters convert the
+ * definition into the shape a specific LLM provider expects (and ignore
+ * `execute`, which is local); call `execute` to handle the model's tool call.
+ */
+export interface NeutralTool {
+  name: string
+  description: string
+  parameters: object
+  execute: (input: unknown) => Promise<unknown>
+}
 
 /**
  * A tool formatter converts a provider-neutral {@link NeutralTool} into the
  * shape a specific LLM provider expects. Built-ins are exported below; pass your
- * own function to `valv.tools.format(ctx, fn)` to support any other provider.
+ * own function to support any other provider.
  */
 export type ToolFormatter<T = unknown> = (tool: NeutralTool) => T
 
-/** Anthropic Messages API tool shape (also the default `getTools()` shape). */
+/** Anthropic Messages API tool shape, as emitted by `valv.tools.anthropic()`. */
 export interface AnthropicTool {
   name: string
   description: string

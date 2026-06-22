@@ -1,25 +1,19 @@
 # @valv/prisma
 
-**Row-level security and access control for AI agents — Prisma adapter.**
+Prisma adapter for [valv](../../README.md) — let an LLM query your relational database (PostgreSQL, MySQL, SQLite, CockroachDB), scoped by policies you write in code. The model emits a structured query; valv validates it, injects your tenant/row filter, and compiles it to SQL.
 
-[![npm](https://img.shields.io/npm/v/@valv/prisma)](https://www.npmjs.com/package/@valv/prisma) [![license](https://img.shields.io/npm/l/@valv/prisma)](../../LICENSE) [![TypeScript](https://img.shields.io/badge/types-TypeScript-blue)](./src/index.ts)
+[![npm](https://img.shields.io/npm/v/@valv/prisma)](https://www.npmjs.com/package/@valv/prisma) [![license](https://img.shields.io/npm/l/@valv/prisma)](../../LICENSE)
 
-Reads your Prisma schema, generates typed LLM tools, and enforces row-level security and field-level access control server-side on every query — in code, not prompts.
-
----
-
-## Installation
+## Install
 
 ```bash
-npm install @valv/prisma @valv/core
-npm install --save-dev prisma
+npm i @valv/prisma @prisma/client
+npm i -D prisma
 ```
 
-Requires Prisma 5+ and `@prisma/client` as peer dependencies.
+Requires Prisma 5+.
 
----
-
-## Setup
+## Usage
 
 ```ts
 import { PrismaClient } from "@prisma/client"
@@ -27,171 +21,59 @@ import { createValv } from "@valv/prisma"
 
 const prisma = new PrismaClient()
 
-const valv = createValv(prisma, { defaultPolicy: "deny-all" })
+// Reads the schema from your .prisma datasource on construction — call once.
+const valv = await createValv(prisma, { defaultPolicy: "deny-all" })
+
+valv.policy("order", (ctx) => ({
+  read:   { tenant_id: ctx.tenant.id },   // every read is scoped to this tenant
+  fields: { deny: ["internal_notes"] },   // hide a column from the model
+}))
+
+const tools = await valv.tools.aisdk(ctx) // or .anthropic / .openai / .gemini / .neutral
 ```
 
-`createValv` infers resource names from your Prisma client type — policy keys are type-checked, so a typo is a compile error. Prisma model names are converted to `snake_case` resource names (`OrderItem` → `order_item`).
+Resource names are inferred from your Prisma client type and converted to `snake_case` (`OrderItem` → `order_item`), so policy keys are **type-checked** — a typo is a compile error. Pass `schemaPath` if your schema isn't at `./prisma/schema.prisma`.
 
-If your schema isn't at `./prisma/schema.prisma`, pass `schemaPath`:
+See the [root README](../../README.md) for policies, the tool layer, and saved queries.
 
-```ts
-const valv = createValv(prisma, {
-  defaultPolicy: "deny-all",
-  schemaPath: "./db/schema.prisma",
-})
-```
+## Databases
 
----
+One adapter covers every provider Prisma can introspect — the right dialect (identifier quoting, `$1` vs `?` placeholders) is selected from your datasource:
 
-## Schema annotations
-
-Use `///` doc comments to give the LLM better context and mark fields that should never leave the server:
-
-```prisma
-/// @valv:description "A customer purchase order"
-model Order {
-  id        String      @id @default(uuid())
-  tenant_id String
-  status    OrderStatus
-  total     Decimal
-
-  /// @valv:description "Order total in cents"
-  total     Decimal
-
-  /// @valv:sensitive
-  internal_notes String?
-}
-```
-
-| Annotation | Effect |
+| Provider | Quoting / placeholders |
 |---|---|
-| `@valv:description "..."` | Added to the tool description so the LLM understands the resource or field |
-| `@valv:sensitive` | Field is stripped at introspection — never appears in tool schemas, arguments, or results |
+| `postgresql`, `cockroachdb` | `"col"`, `$1` |
+| `mysql` | `` `col` ``, `?` |
+| `sqlite` | `"col"`, `?` |
 
-`@valv:sensitive` is enforced before policy runs. The field doesn't exist as far as the LLM is concerned.
+Mark hidden columns in your **policy** (`fields.deny`); valv reads structure from Prisma's DMMF, which has no notion of "sensitive".
 
----
+## Writes
 
-## Policies
+All three operations, **off** until you allow them in policy and expose the tool:
 
 ```ts
 valv.policy("order", (ctx) => ({
-  read:   { tenant_id: ctx.tenant.id },   // row filter — AND-ed into every read
-  write:  { tenant_id: ctx.tenant.id },   // force-injected on INSERT, AND-ed into UPDATE WHERE
-  delete: false,                           // delete_order tool never generated
-  fields:    { deny: ctx.user.role === "support" ? ["internal_notes"] : [] },
-  relations: { items: true, customer: ctx.user.role === "admin" },
-}))
-
-// Wildcard fallback for resources without an explicit policy()
-valv.policy("*", (ctx) => ({
   read:   { tenant_id: ctx.tenant.id },
-  write:  false,
-  delete: false,
+  create: { tenant_id: ctx.tenant.id },   // tenant_id force-set on insert
+  update: { tenant_id: ctx.tenant.id },   // AND-injected into the WHERE
+  delete: false,                          // never deletable
 }))
+const tools = await valv.tools.aisdk(ctx, { create: true, update: true })
+
+await valv.create({ from: "order", values: { status: "pending", total: 1200 } }, ctx)
 ```
 
-`read`, `write`, and `delete` accept:
+`create` force-injects owned fields; `update`/`delete` AND the scope predicate into a **required** `where`, and the model can only set writable columns. See [Writes](../../README.md#writes) in the root README.
 
-| Value | Meaning |
-|---|---|
-| `true` | allow |
-| `false` | deny — no tool generated for this operation |
-| `{ field: value }` | row filter (read/delete) or force-injected field (write) |
+## Zero-config from a URL
 
----
-
-## Connecting to your LLM provider
+No client or generated schema? `createValvFromUrl(url, { provider? })` infers the provider, runs `prisma db pull` + `generate` into a throwaway client under a writable temp dir (`os.tmpdir()`, so it works on read-only/serverless filesystems), and introspects — all at startup. This is the path the [`@valv/mcp`](../mcp) CLI uses. Requires the `prisma` CLI available. Call `stop()` on shutdown.
 
 ```ts
-// Vercel AI SDK (requires the `ai` package)
-const tools = await valv.tools.vercel(ctx)
-const { text } = await generateText({ model, tools, maxSteps: 8, prompt })
-
-// Anthropic
-const tools = await valv.tools.anthropic(ctx)
-await anthropic.messages.create({ tools: tools.map(t => t.definition) })
-const result = await tools.find(t => t.name === block.name)!.execute(block.input)
-
-// OpenAI
-const tools = await valv.tools.openai(ctx)
-
-// Gemini
-const tools = await valv.tools.gemini(ctx)
+import { createValvFromUrl } from "@valv/prisma"
+const { valv, stop } = await createValvFromUrl("postgres://…", { defaultPolicy: "deny-all" })
 ```
-
----
-
-## How Prisma model names map to resource names
-
-Prisma model names (PascalCase) are converted to snake_case resource names:
-
-| Prisma model | valv resource |
-|---|---|
-| `Order` | `order` |
-| `OrderItem` | `order_item` |
-| `UserProfile` | `user_profile` |
-
-These are the strings you pass to `policy()` and that appear in generated tool names (`query_order_item`, `create_order_item`, …).
-
----
-
-## Security properties
-
-| Property | How Prisma enforces it |
-|---|---|
-| Row filters on read | `where` clause passed to `findMany` / `findFirst` |
-| Write scoping | `write: { tenant_id }` is injected into `create` data and AND-ed into `updateMany` / `deleteMany` WHERE — cross-tenant records won't match |
-| `update` / `delete` use `Many` | Ensures the full policy `where` (id + forced filter) is applied — a mismatched tenant gets `{ count: 0 }`, not an error that leaks existence |
-| `belongsTo` relation filters | Enforced post-fetch in memory (Prisma doesn't support `where` on to-one includes) |
-| Sensitive fields | Stripped at introspection via `@valv:sensitive` — never passed to Prisma in `select`, `data`, or returned in results |
-
----
-
-## Live views with LISTEN/NOTIFY
-
-Live views poll by default. On Postgres you can replace polling with native change notifications (requires the optional peer dependency `pg`):
-
-```ts
-import { createValv, installLiveTriggers } from "@valv/prisma"
-
-// Once per database — e.g. in a migration step. Table names are the actual
-// Postgres table names (the Prisma model name unless @@map is used).
-await installLiveTriggers(prisma, ["Order", "User"])
-
-const valv = createValv(prisma, {
-  live: {
-    connectionString: process.env.DATABASE_URL!,
-    channel: "valv_changes",   // default
-    debounceMs: 250,             // coalesce notification bursts (default)
-    onError: (e) => logger.warn("live updates unavailable", e),
-  },
-})
-```
-
-How it works: statement-level triggers `pg_notify` the **table name only** on one channel; a single dedicated `pg` connection LISTENs and routes notifications to the views watching that table (including tables of eager-loaded relations). On a notification the view re-executes through the full policy pipeline — notifications never carry data, so they can never bypass policy. The LISTEN connection starts lazily with the first subscription and closes with the last. If the connection can't be established (e.g. `pg` missing), `onError` fires and affected views go stale — monitor it, or omit `live` to stay on polling.
-
-`liveTriggersSQL(tables, channel?)` returns the raw SQL if you prefer to manage triggers in your own migrations.
-
----
-
-## Exports
-
-| Export | Purpose |
-|---|---|
-| `createValv(prisma, config?)` | Main entry point — creates a `Valv` instance with the Prisma adapter wired up and resource types inferred |
-| `PrismaAdapter` | The adapter class if you need to instantiate it separately |
-| `translateFilter` | Converts a valv `FilterNode` to a Prisma `where` object — useful when building a custom adapter on top of Prisma |
-| `installLiveTriggers` / `liveTriggersSQL` | Install (or emit) the LISTEN/NOTIFY triggers for live views |
-| `PgNotifyListener` | The LISTEN connection manager, if you need to wire it manually |
-
----
-
-## Other adapters
-
-For ClickHouse, use [`@valv/clickhouse`](https://www.npmjs.com/package/@valv/clickhouse) instead — same policy API, no relations, schema annotations via column COMMENTs.
-
----
 
 ## License
 

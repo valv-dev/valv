@@ -1,4 +1,4 @@
-import type { GetToolsOptions } from "@valv/core"
+import type { ToolToggle } from "@valv/core"
 
 /**
  * A policy context resolver: either a fixed value or a function (sync or async)
@@ -14,15 +14,10 @@ export interface ValvMcpOptions<TContext> {
    */
   context: ContextResolver<TContext>
   /**
-   * Tool generation mode. Defaults to "consolidated" — a small fixed verb set
-   * (list_resources, describe_resource, query, get, create, update, delete,
-   * aggregate) that the agent uses to discover the schema at runtime. Best for
-   * MCP because the tool count stays low and stable. "per-resource" emits one
-   * tool per resource×operation instead.
+   * Which discovery tools to expose alongside `query`. All on by default; set a
+   * tool false to drop it (e.g. `{ list: false }`).
    */
-  mode?: "consolidated" | "per-resource"
-  /** Forwarded to valv — restrict to specific resources and/or cap tool count. */
-  toolOptions?: Omit<GetToolsOptions, "mode">
+  discovery?: ToolToggle
   /** Advertised MCP server identity. Defaults to { name: "valv", version }. */
   serverInfo?: { name: string; version: string }
 }

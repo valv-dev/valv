@@ -5,7 +5,6 @@ import { tmpdir } from "node:os"
 import type { PrismaClient } from "@prisma/client"
 import type { Valv, DefaultContext, ValvConfig } from "@valv/core"
 import { createValv } from "./create"
-import type { PgLiveOptions } from "./live"
 
 export type Provider = "postgresql" | "mysql" | "sqlite" | "sqlserver" | "mongodb"
 
@@ -155,8 +154,6 @@ export interface ValvFromUrl<TContext> {
 type FromUrlConfig<TContext> = Omit<ValvConfig<TContext, string>, "adapter"> & {
   /** Prisma datasource provider. Inferred from the URL when omitted. */
   provider?: Provider
-  /** Postgres LISTEN/NOTIFY for live views (requires `pg` + installLiveTriggers()). */
-  live?: PgLiveOptions
   /** Writable dir for the generated throwaway client. Defaults to `os.tmpdir()`;
    *  point it at a mounted writable volume in locked-down environments. */
   cacheDir?: string
@@ -186,11 +183,11 @@ export async function createValvFromUrl<TContext = DefaultContext>(
     // strictPolicyKeys defaults to true here: resources are introspected at
     // runtime and untyped (`string`), so a misspelled policy key would silently
     // no-op without it. Callers can override via config.
-    const valv = createValv<PrismaClient, TContext>(prepared.prisma, {
+    const valv = (await createValv<PrismaClient, TContext>(prepared.prisma, {
       strictPolicyKeys: true,
       ...rest,
       schemaPath: prepared.schemaPath,
-    }) as Valv<TContext, string>
+    })) as Valv<TContext, string>
     return { valv, stop }
   } catch (err) {
     await stop()

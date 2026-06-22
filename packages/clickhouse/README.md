@@ -1,11 +1,13 @@
 # @valv/clickhouse
 
-ClickHouse adapter for [valv](https://github.com/vista-libs/vista) — row-level security and policy enforcement for AI agents querying ClickHouse.
+ClickHouse adapter for [valv](../../README.md) — let an LLM run analytics over ClickHouse, scoped by policies you write in code. The model emits a structured query; valv validates it, injects your tenant/row filter, and compiles it to ClickHouse SQL.
+
+[![npm](https://img.shields.io/npm/v/@valv/clickhouse)](https://www.npmjs.com/package/@valv/clickhouse) [![license](https://img.shields.io/npm/l/@valv/clickhouse)](../../LICENSE)
 
 ## Install
 
 ```bash
-npm install @valv/clickhouse @valv/core @clickhouse/client
+npm i @valv/clickhouse @clickhouse/client
 ```
 
 ## Usage
@@ -16,100 +18,61 @@ import { createValv } from "@valv/clickhouse"
 
 const ch = createClient({ url: process.env.CLICKHOUSE_URL })
 
-const valv = createValv(ch, {
-  database: "analytics",
-  defaultPolicy: "deny-all",
-})
+// Introspects the live database on construction — call once at startup.
+const valv = await createValv(ch, { schema: "introspect", database: "analytics", defaultPolicy: "deny-all" })
 
 valv.policy("events", (ctx) => ({
-  read:      { tenant_id: ctx.tenant!.id },
-  aggregate: { tenant_id: ctx.tenant!.id },
-  write: false,
-  delete: false,
+  read:   { tenant_id: ctx.tenant.id },   // every read is scoped to this tenant
+  fields: { deny: ["raw_payload"] },      // hide a column from the model
 }))
 
-const tools = await valv.tools.vercel(ctx)
-// pass tools to generateText / streamText as usual
+const tools = await valv.tools.aisdk(ctx) // or .anthropic / .openai / .gemini / .neutral
 ```
 
-## Schema annotations
+See the [root README](../../README.md) for policies, the tool layer, and saved queries.
 
-Valv reads column and table comments to pick up schema metadata. Add them to your
-`CREATE TABLE` statements:
+## ClickHouse functions
 
-```sql
-CREATE TABLE orders
-(
-  id        UUID DEFAULT generateUUIDv4(),
-  tenant_id String,
-  status    Enum8('pending'=1, 'shipped'=2, 'delivered'=3)
-              COMMENT '@valv:description "Current order status"',
-  total     Int64   COMMENT '@valv:description "Order total in cents"',
-  notes     Nullable(String) COMMENT '@valv:sensitive'
-)
-ENGINE = MergeTree
-ORDER BY (tenant_id, id)
-COMMENT '@valv:description "Customer orders"';
-```
+On top of the standard aggregates (`count`, `sum`, `avg`, `min`, `max`), this dialect adds ClickHouse-native functions the model can call:
 
-The `@valv:sensitive` tag strips the field from every schema, argument, and result
-the LLM sees — enforcement happens at introspection time, not in the prompt.
+| Function | Use |
+|---|---|
+| `quantileTiming(level)(col)` | percentiles, e.g. p95 latency |
+| `toDate` / `toStartOfHour` / `toStartOfDay` | fixed-grain time buckets |
+| `toStartOfInterval(col, n, unit)` | arbitrary-grain time buckets |
+| `uniq` / `uniqExact` | distinct counts (DAU/MAU) |
+| `countIf(pred)` / `sumIf(col, pred)` | conditional aggregation |
 
-## The `id` column
+Each is type-checked, and any literal a function compares against becomes a bound parameter — never string-concatenated.
 
-The core builder routes `get_`, `update`, and `delete` tool calls through a filter
-on the field literally named `id`. If your table uses a different primary key name
-(e.g. `event_id`), those three operations will not match rows correctly. Name the
-primary key `id`, or accept that only `query_` and `aggregate_` are useful on that
-table.
+## Schema: introspect or hand-define
 
-## Relations
+- **`schema: "introspect"`** queries `system.columns` to build the catalog (table → columns with native types, primary-key parts).
+- **`schema: <SchemaMap>`** lets you declare the schema by hand — useful for per-tenant tables, or to add relations ClickHouse can't introspect. See [`examples/hand-schema`](../../examples/hand-schema).
 
-ClickHouse has no foreign-key metadata, so introspection produces no relations.
-The `include` parameter and relation policies are unavailable. For cross-table
-joins, run an aggregate on each table separately and correlate in the agent.
+ClickHouse has no schema-level notion of "sensitive", so mark hidden columns in your **policy** (`fields.deny`), not the schema.
 
-## Writes: ALTER … UPDATE and lightweight DELETE
+## Safety caps
 
-ClickHouse is an append-optimised OLAP engine. Updates and deletes are implemented
-as:
+Every query runs with conservative ClickHouse settings — `max_execution_time`, `max_result_rows`/`bytes`, `result_overflow_mode: throw` — so a structurally-valid query can't run away on the server. Raise them per deployment if your analytics needs more headroom.
 
-| operation | SQL | behavior |
-|---|---|---|
-| `create` | `INSERT INTO … FORMAT JSONEachRow` | immediate |
-| `update` | `ALTER TABLE … UPDATE … WHERE …` | synchronous (`mutations_sync=2`); returns `{ ok: true }` |
-| `delete` | `DELETE FROM … WHERE …` | lightweight delete; returns `{ ok: true }` |
+## Writes
 
-Both `update` and `delete` require a WHERE clause — the adapter throws if the
-resolved query carries no filters. Since the policy engine always injects the row
-filter before the adapter sees it, a `deny-all`-default setup with no explicit `read`
-predicate will throw rather than silently mutate the whole table.
-
-`mutations_sync: 2` makes `ALTER … UPDATE` wait for the mutation to complete before
-returning. On large tables this may be slow; consider setting `update: false` in
-policies for high-cardinality tables and relying on INSERT for time-series append
-patterns instead.
-
-## Options
+ClickHouse is **insert-only** here (`UPDATE`/`DELETE` are heavy async mutations, so they're not exposed). Allow inserts in policy and turn the tool on:
 
 ```ts
-createValv(client, {
-  database: "analytics",   // defaults to currentDatabase()
-  defaultPolicy: "deny-all",
-  onQuery: ({ toolName, resource, durationMs, error }) => { ... },
-})
+valv.policy("events", (ctx) => ({ create: { tenant_id: ctx.tenant.id } }))
+const tools = await valv.tools.aisdk(ctx, { create: true })
+
+await valv.create({ from: "events", values: { event: "click", latency: 12 } }, ctx)
 ```
 
-## Exporting the adapter directly
+Forced fields (`tenant_id`) are set server-side — the model can't choose, omit, or override them. See [Writes](../../README.md#writes) in the root README.
 
-If you need to wire the adapter into an existing `Valv` instance:
+## Zero-config from a URL
 
-```ts
-import { ClickHouseAdapter } from "@valv/clickhouse"
-import { Valv } from "@valv/core"
+No client wired up? `createValvFromUrl(url, { database })` builds the client and introspects for you. This is also what the [`@valv/mcp`](../mcp) CLI uses for ClickHouse.
 
-const valv = new Valv({
-  adapter: new ClickHouseAdapter(ch, { database: "analytics" }),
-  defaultPolicy: "deny-all",
-})
-```
+## License
+
+MIT

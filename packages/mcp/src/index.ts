@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client"
+import type { Valv } from "@valv/core"
 import { createValv, prepareDatabase } from "@valv/prisma"
 import { startStdioServer, startHttpServer } from "@valv/mcp-sdk"
 import { applyAccess } from "./policy"
@@ -7,13 +8,59 @@ import type { ServerConfig } from "./config"
 // Policy context is arbitrary JSON (VALV_CONTEXT). The default read-only policy
 // ignores it; a policy file may read whatever shape the user passes.
 type Ctx = Record<string, unknown>
+type DbValv = Valv<Ctx, string>
 
-export type { ServerConfig, Provider } from "./config"
+export type { ServerConfig, Provider, McpProvider } from "./config"
 export { configFromEnv, inferProvider } from "./config"
 
 export interface RunningServer {
   /** Disconnect the database and remove the generated temp client. */
   stop: () => Promise<void>
+}
+
+// Build a valv instance + a cleanup fn for the configured database. ClickHouse
+// connects over its HTTP client; everything else introspects via Prisma.
+async function buildValv(config: ServerConfig): Promise<{ valv: DbValv; stop: () => Promise<void> }> {
+  if (config.provider === "clickhouse") {
+    const { createValvFromUrl } = await import("@valv/clickhouse")
+    const { valv, stop } = await createValvFromUrl<Ctx>(toClickHouseUrl(config.databaseUrl), {
+      database: config.database,
+      defaultPolicy: "deny-all",
+    })
+    return { valv, stop }
+  }
+
+  const prepared = await prepareDatabase(config.databaseUrl, config.provider ?? "postgresql")
+  const valv = (await createValv<PrismaClient, Ctx>(prepared.prisma, {
+    schemaPath: prepared.schemaPath,
+    defaultPolicy: "deny-all",
+  })) as DbValv
+  const stop = async () => {
+    try {
+      await prepared.prisma.$disconnect()
+    } finally {
+      prepared.cleanup()
+    }
+  }
+  return { valv, stop }
+}
+
+// ClickHouse's HTTP client takes an http(s):// URL; normalize a clickhouse://
+// (or clickhouse+https://) scheme to it.
+function toClickHouseUrl(url: string): string {
+  return url
+    .replace(/^clickhouse\+https:\/\//i, "https://")
+    .replace(/^clickhouse(\+http)?:\/\//i, "http://")
+}
+
+/** Connect, introspect, and return the resource (table) names — used by `init`. */
+export async function listDatabaseResources(config: ServerConfig): Promise<string[]> {
+  const { valv, stop } = await buildValv(config)
+  try {
+    return await valv.resources()
+  } finally {
+    await stop()
+  }
 }
 
 /**
@@ -24,13 +71,7 @@ export interface RunningServer {
  * All progress is logged to stderr so stdout stays a clean MCP channel.
  */
 export async function startValvMcpServer(config: ServerConfig): Promise<RunningServer> {
-  const provider = config.provider ?? "postgresql"
-  const prepared = await prepareDatabase(config.databaseUrl, provider)
-
-  const valv = createValv<PrismaClient, Ctx>(prepared.prisma, {
-    schemaPath: prepared.schemaPath,
-    defaultPolicy: "deny-all",
-  })
+  const { valv, stop } = await buildValv(config)
 
   const { resources } = await applyAccess(valv, config)
   process.stderr.write(
@@ -39,9 +80,10 @@ export async function startValvMcpServer(config: ServerConfig): Promise<RunningS
       `: ${resources.join(", ") || "(none)"}\n`,
   )
 
+  // Resource scoping is enforced by policy (applyAccess denies non-allowed
+  // tables); discovery is policy-filtered, so denied tables never appear.
   const options = {
     context: (): Ctx => (config.context as Ctx) ?? {},
-    toolOptions: { resources },
   }
 
   if (config.httpPort !== undefined) {
@@ -52,12 +94,5 @@ export async function startValvMcpServer(config: ServerConfig): Promise<RunningS
     process.stderr.write("[valv] MCP server ready on stdio.\n")
   }
 
-  const stop = async () => {
-    try {
-      await prepared.prisma.$disconnect()
-    } finally {
-      prepared.cleanup()
-    }
-  }
   return { stop }
 }

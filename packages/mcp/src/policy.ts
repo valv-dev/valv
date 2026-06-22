@@ -50,19 +50,20 @@ export async function applyAccess(
     return { resources: all }
   }
 
-  // Default: read-only everywhere.
-  valv.policy("*", () => ({ read: true, aggregate: true, write: false, delete: false }))
+  // Default: read-only everywhere. (The query path is read-only today; writes
+  // get their own policy axes when that slice lands.)
+  valv.policy("*", () => ({ read: true }))
 
   // Table scoping: allow-list first (if given), then deny-list.
   let allowed = config.tables ? all.filter((t: string) => config.tables!.includes(t)) : all
   if (config.exclude) allowed = allowed.filter((t: string) => !config.exclude!.includes(t))
 
   // Authoritatively deny everything not allowed, so a model can't reach an
-  // excluded table even by passing its name to a consolidated verb.
+  // excluded table even by passing its name straight to the query tool.
   const allowedSet = new Set(allowed)
   for (const name of all) {
     if (!allowedSet.has(name)) {
-      valv.policy(name, () => ({ read: false, write: false, delete: false }))
+      valv.policy(name, () => ({ read: false }))
     }
   }
 

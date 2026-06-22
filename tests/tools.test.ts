@@ -1,370 +1,149 @@
 import { describe, it, expect } from "vitest"
-import { generateTools } from "../packages/core/src/tools/generator"
-import type { SchemaMap } from "@valv/core"
+import { createValv } from "@valv/clickhouse"
+import type { SchemaMap, DefaultContext, FieldSchema, RelationSchema } from "@valv/core"
+import { fakeClient } from "./helpers"
+
+const f = (name: string, type: FieldSchema["type"], extra: Partial<FieldSchema> = {}): FieldSchema => ({
+  name,
+  type,
+  nativeType: type === "number" ? "UInt32" : "String",
+  isNullable: false,
+  isId: false,
+  ...extra,
+})
+
+const rel = (name: string, target: string): RelationSchema => ({
+  name,
+  targetResource: target,
+  type: "belongsTo",
+  foreignKey: `${target}_id`,
+})
 
 const schema: SchemaMap = {
   resources: {
     orders: {
       name: "orders",
-      tableName: "Order",
-      description: "Customer purchase orders",
+      tableName: "orders_t",
+      description: "Customer orders",
+      relations: { customer: rel("customer", "users"), log: rel("log", "audit") },
       fields: {
-        id: { name: "id", type: "uuid", isNullable: false, isId: true, hasDefaultValue: true },
-        status: {
-          name: "status",
-          type: "enum",
-          isNullable: false,
-          isId: false,
-          enumValues: ["pending", "shipped", "delivered"],
-          description: "Current order status",
-        },
-        amount: { name: "amount", type: "number", isNullable: false, isId: false },
-        created_at: {
-          name: "created_at",
-          type: "date",
-          isNullable: false,
-          isId: false,
-          hasDefaultValue: true,
-        },
-        secret_key: {
-          name: "secret_key",
-          type: "string",
-          isNullable: true,
-          isId: false,
-          sensitive: true,
-        },
-        notes: { name: "notes", type: "string", isNullable: true, isId: false },
+        tenant_id: f("tenant_id", "string"),
+        total: f("total", "number"),
+        status: f("status", "string"),
+        internal_notes: f("internal_notes", "string", { sensitive: true }),
       },
-      relations: {
-        items: { name: "items", targetResource: "items", type: "hasMany", foreignKey: "order_id" },
-        customer: {
-          name: "customer",
-          targetResource: "customers",
-          type: "belongsTo",
-          foreignKey: "customer_id",
-        },
-      },
+    },
+    users: {
+      name: "users",
+      tableName: "users_t",
+      description: "People who place orders",
+      relations: {},
+      fields: { id: f("id", "string", { isId: true }), email: f("email", "string") },
+    },
+    audit: {
+      name: "audit",
+      tableName: "audit_t",
+      relations: {},
+      fields: { id: f("id", "string"), action: f("action", "string") },
     },
   },
 }
 
-describe("generateTools", () => {
-  it("read: false → no tools generated", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: false }),
-      },
-      {},
-      "deny-all",
-    )
-    expect(tools).toHaveLength(0)
+const ctx: DefaultContext = { user: { id: "u1", role: "member" }, tenant: { id: "acme" } }
+
+async function setup() {
+  const client = fakeClient([{ status: "paid" }])
+  // deny-all: orders + users get policies; audit has none → invisible.
+  const valv = await createValv<DefaultContext>(client, { schema, defaultPolicy: "deny-all" })
+  valv.policy("orders", (c) => ({ read: { tenant_id: c.tenant!.id } }))
+  valv.policy("users", () => ({ read: true }))
+  return { valv, calls: client.calls }
+}
+
+describe("tool layer", () => {
+  it("exposes query + the three discovery tools, with a per-tool toggle", async () => {
+    const { valv } = await setup()
+    expect(valv.tools.neutral(ctx).map((t) => t.name)).toEqual([
+      "list_resources",
+      "search_resources",
+      "describe_resource",
+      "query",
+    ])
+    expect(valv.tools.neutral(ctx, { list: false, search: false }).map((t) => t.name)).toEqual([
+      "describe_resource",
+      "query",
+    ])
+    // query always survives, even with every discovery tool off.
+    expect(
+      valv.tools.neutral(ctx, { list: false, search: false, describe: false }).map((t) => t.name),
+    ).toEqual(["query"])
   })
 
-  it("read allowed + no write → only query/get tools", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, write: false }),
-      },
-      {},
-      "deny-all",
-    )
-    const names = tools.map((t) => t.name)
-    expect(names).toContain("query_orders")
-    expect(names).toContain("get_orders")
-    expect(names).not.toContain("create_orders")
-    expect(names).not.toContain("update_orders")
-    expect(names).not.toContain("delete_orders")
+  it("enumerates the available functions in the query tool's `fn` field", async () => {
+    const { valv } = await setup()
+    const query = valv.tools.neutral(ctx).find((t) => t.name === "query")!
+    const params = query.parameters as any
+    const fnVariant = params.properties.select.items.anyOf.find((v: any) => v.properties?.fn)
+    expect(fnVariant.properties.fn.enum).toContain("count")
+    expect(fnVariant.properties.fn.enum).toContain("quantileTiming")
   })
 
-  it("write allowed → create and update tools present", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, write: true }),
-      },
-      {},
-      "deny-all",
-    )
-    const names = tools.map((t) => t.name)
-    expect(names).toContain("create_orders")
-    expect(names).toContain("update_orders")
+  it("formats per provider (anthropic shape)", async () => {
+    const { valv } = await setup()
+    const [first] = valv.tools.anthropic(ctx)
+    expect(first).toHaveProperty("name")
+    expect(first).toHaveProperty("input_schema")
+    expect(first).not.toHaveProperty("execute") // execute is local, never sent to the API
   })
 
-  it("delete allowed → delete tool present", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, delete: true }),
-      },
-      {},
-      "deny-all",
-    )
-    const names = tools.map((t) => t.name)
-    expect(names).toContain("delete_orders")
+  it("policy-filters discovery: an unreadable resource is invisible", async () => {
+    const { valv } = await setup()
+    const list = valv.tools.neutral(ctx).find((t) => t.name === "list_resources")!
+    const names = ((await list.execute({})) as { name: string }[]).map((r) => r.name)
+    expect(names.sort()).toEqual(["orders", "users"]) // audit hidden (no policy under deny-all)
   })
 
-  it("enum fields use correct values in schema", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true }),
-      },
-      {},
-      "deny-all",
-    )
-    const queryTool = tools.find((t) => t.name === "query_orders")!
-    const schema_ = queryTool.parameters as Record<string, unknown>
-    const filters = schema_.properties as Record<string, unknown>
-    const statusFilter = filters.filters as Record<string, unknown>
-    const statusProps = statusFilter.properties as Record<string, unknown>
-    const statusSchema = statusProps.status as Record<string, unknown>
-    const oneOf = statusSchema.oneOf as Array<Record<string, unknown>>
-    const enumDef = oneOf.find((s: Record<string, unknown>) => s.enum !== undefined)
-    expect(enumDef?.enum).toEqual(["pending", "shipped", "delivered"])
+  it("describe strips sensitive fields and relations to hidden resources", async () => {
+    const { valv } = await setup()
+    const detail = (await valv.runTool("describe_resource", { resource: "orders" }, ctx)) as any
+    expect(detail.fields.map((f: any) => f.name).sort()).toEqual(["status", "tenant_id", "total"])
+    // internal_notes (sensitive) is gone; relation to users (visible) stays, to audit (hidden) is dropped.
+    expect(detail.relations.map((r: any) => r.target)).toEqual(["users"])
   })
 
-  it("sensitive fields absent from tool input schema", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, write: true }),
-      },
-      {},
-      "deny-all",
+  it("describe of an inaccessible resource is rejected", async () => {
+    const { valv } = await setup()
+    await expect(valv.runTool("describe_resource", { resource: "audit" }, ctx)).rejects.toThrow(
+      /not accessible/,
     )
-    const queryTool = tools.find((t) => t.name === "query_orders")!
-    const schema_ = queryTool.parameters as Record<string, unknown>
-    const filters = schema_.properties as Record<string, unknown>
-    const filterSchema = filters.filters as Record<string, unknown>
-    const filterProps = filterSchema.properties as Record<string, unknown>
-    expect(filterProps).not.toHaveProperty("secret_key")
-
-    const createTool = tools.find((t) => t.name === "create_orders")!
-    const createSchema = createTool.parameters as Record<string, unknown>
-    const createProps = createSchema.properties as Record<string, unknown>
-    expect(createProps).not.toHaveProperty("secret_key")
   })
 
-  it("description annotation appears in tool description", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true }),
-      },
-      {},
-      "deny-all",
-    )
-    const queryTool = tools.find((t) => t.name === "query_orders")!
-    expect(queryTool.description).toContain("Customer purchase orders")
+  it("search ranks resources by keyword", async () => {
+    const { valv } = await setup()
+    const hits = (await valv.runTool("search_resources", { query: "order" }, ctx)) as { name: string }[]
+    expect(hits[0].name).toBe("orders")
   })
 
-  it("denied relation not in include enum", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, relations: { customer: false, items: true } }),
-      },
-      {},
-      "deny-all",
-    )
-    const queryTool = tools.find((t) => t.name === "query_orders")!
-    const schema_ = queryTool.parameters as Record<string, unknown>
-    const props = schema_.properties as Record<string, unknown>
-    const includeSchema = props.include as Record<string, unknown>
-    const items = includeSchema.items as Record<string, unknown>
-    expect(items.enum).not.toContain("customer")
-    expect(items.enum).toContain("items")
+  it("runTool('query', …) runs the query pipeline", async () => {
+    const { valv, calls } = await setup()
+    const rows = await valv.runTool("query", { from: "orders", select: [{ col: "status" }] }, ctx)
+    expect(rows).toEqual([{ status: "paid" }])
+    expect(calls[0].query).toContain("WHERE (`tenant_id` = {p0:String})")
   })
 
-  it("options.resources limits generated tools", () => {
-    const tools = generateTools(
-      schema,
-      { orders: () => ({ read: true }) },
-      {},
-      "deny-all",
-      undefined,
-      { resources: [] },
-    )
-    expect(tools).toHaveLength(0)
+  it("rejects an unknown tool name", async () => {
+    const { valv } = await setup()
+    await expect(valv.runTool("drop_table", {}, ctx)).rejects.toThrow(/Unknown tool/)
   })
 
-  it("allow-all default policy generates tools without explicit policy", () => {
-    const tools = generateTools(schema, {}, {}, "allow-all")
-    const names = tools.map((t) => t.name)
-    expect(names).toContain("query_orders")
-    expect(names).toContain("get_orders")
-  })
+  it("formats as a Vercel AI SDK tool set whose tools self-execute", async () => {
+    const { valv, calls } = await setup()
+    const tools = await valv.tools.aisdk(ctx, { list: false, search: false })
+    expect(Object.keys(tools).sort()).toEqual(["describe_resource", "query"])
 
-  it("fields with hasDefaultValue not required in create tool", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, write: true }),
-      },
-      {},
-      "deny-all",
-    )
-    const createTool = tools.find((t) => t.name === "create_orders")!
-    const required = ((createTool.parameters as Record<string, unknown>).required as string[]) ?? []
-    // created_at has hasDefaultValue: true → should NOT be required
-    expect(required).not.toContain("created_at")
-    // amount has no default and is not nullable → should be required
-    expect(required).toContain("amount")
-  })
-
-  it("force-injected fields absent from create and update tool schemas", () => {
-    const tools = generateTools(
-      schema,
-      {
-        // write: { status: "pending" } → status is force-injected, should not appear
-        orders: () => ({ read: true, write: { status: "pending" } }),
-      },
-      {},
-      "deny-all",
-    )
-    const createTool = tools.find((t) => t.name === "create_orders")!
-    const createProps = (createTool.parameters as Record<string, unknown>).properties as Record<
-      string,
-      unknown
-    >
-    expect(createProps).not.toHaveProperty("status")
-    const createRequired =
-      ((createTool.parameters as Record<string, unknown>).required as string[]) ?? []
-    expect(createRequired).not.toContain("status")
-
-    const updateTool = tools.find((t) => t.name === "update_orders")!
-    const updateProps = (updateTool.parameters as Record<string, unknown>).properties as Record<
-      string,
-      unknown
-    >
-    expect(updateProps).not.toHaveProperty("status")
-  })
-
-  it("aggregate tool generated for resources with numeric fields", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true }),
-      },
-      {},
-      "deny-all",
-    )
-    const names = tools.map((t) => t.name)
-    expect(names).toContain("aggregate_orders")
-  })
-
-  it("aggregate tool input schema has aggregations and groupBy", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true }),
-      },
-      {},
-      "deny-all",
-    )
-    const aggTool = tools.find((t) => t.name === "aggregate_orders")!
-    const props = (aggTool.parameters as Record<string, unknown>).properties as Record<
-      string,
-      unknown
-    >
-    expect(props).toHaveProperty("aggregations")
-    expect(props).toHaveProperty("groupBy")
-  })
-
-  it("create allowed but update denied → only create tool", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, create: true, update: false }),
-      },
-      {},
-      "deny-all",
-    )
-    const names = tools.map((t) => t.name)
-    expect(names).toContain("create_orders")
-    expect(names).not.toContain("update_orders")
-  })
-
-  it("update allowed but create denied → only update tool", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, create: false, update: true }),
-      },
-      {},
-      "deny-all",
-    )
-    const names = tools.map((t) => t.name)
-    expect(names).not.toContain("create_orders")
-    expect(names).toContain("update_orders")
-  })
-
-  it("aggregate denied while read allowed → no aggregate tool", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, aggregate: false }),
-      },
-      {},
-      "deny-all",
-    )
-    const names = tools.map((t) => t.name)
-    expect(names).toContain("query_orders")
-    expect(names).not.toContain("aggregate_orders")
-  })
-
-  it("aggregate allowed while row reads denied → aggregate tool but no query/get", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: false, aggregate: true }),
-      },
-      {},
-      "deny-all",
-    )
-    const names = tools.map((t) => t.name)
-    expect(names).toContain("aggregate_orders")
-    expect(names).not.toContain("query_orders")
-    expect(names).not.toContain("get_orders")
-  })
-
-  it("readOnly field is filterable but not writable", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, write: true, fields: { readOnly: ["notes"] } }),
-      },
-      {},
-      "deny-all",
-    )
-
-    const queryTool = tools.find((t) => t.name === "query_orders")!
-    const filterProps = ((queryTool.parameters as any).properties.filters as any).properties
-    expect(filterProps).toHaveProperty("notes")
-
-    const createTool = tools.find((t) => t.name === "create_orders")!
-    expect((createTool.parameters as any).properties).not.toHaveProperty("notes")
-    const updateTool = tools.find((t) => t.name === "update_orders")!
-    expect((updateTool.parameters as any).properties).not.toHaveProperty("notes")
-  })
-
-  it("writeOnly field is writable but not readable", () => {
-    const tools = generateTools(
-      schema,
-      {
-        orders: () => ({ read: true, write: true, fields: { writeOnly: ["notes"] } }),
-      },
-      {},
-      "deny-all",
-    )
-
-    const queryTool = tools.find((t) => t.name === "query_orders")!
-    const filterProps = ((queryTool.parameters as any).properties.filters as any).properties
-    expect(filterProps).not.toHaveProperty("notes")
-
-    const createTool = tools.find((t) => t.name === "create_orders")!
-    expect((createTool.parameters as any).properties).toHaveProperty("notes")
+    const query = tools.query as unknown as { execute: (input: unknown) => Promise<unknown> }
+    const rows = await query.execute({ from: "orders", select: [{ col: "status" }] })
+    expect(rows).toEqual([{ status: "paid" }])
+    expect(calls[0].query).toContain("WHERE (`tenant_id` = {p0:String})")
   })
 })

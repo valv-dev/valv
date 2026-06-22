@@ -1,6 +1,6 @@
 import "dotenv/config"
 import { startStdioServer } from "@valv/mcp-sdk"
-import { prisma, valv } from "./valv"
+import { prisma, getValv } from "./valv"
 
 // Expose the e-commerce database to a coding agent (e.g. Claude Code) as an MCP
 // server. The same policies defined in ./valv apply here — no SQL reaches the
@@ -23,6 +23,7 @@ import { prisma, valv } from "./valv"
 //   }
 
 async function main(): Promise<void> {
+  const valv = await getValv()
   await startStdioServer(valv, {
     // Env-friendly context resolver — policy context is read on every request,
     // so changing VALV_ROLE / VALV_TENANT reshapes what the agent can do
@@ -34,7 +35,9 @@ async function main(): Promise<void> {
       },
       tenant: { id: process.env.VALV_TENANT ?? "tenant-alpha" },
     }),
-    // mode defaults to "consolidated" — the small fixed verb set ideal for MCP.
+    // Exposes the four policy-filtered tools — query plus the list/search/
+    // describe discovery tools. Pass `discovery` to drop any of the three
+    // (e.g. `discovery: { search: false }`); query is always present.
     serverInfo: { name: "valv-ecommerce", version: "0.1.0" },
   })
 

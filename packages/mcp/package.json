@@ -19,7 +19,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vista-libs/vista.git",
+    "url": "https://github.com/vistal-dev/vistal.git",
     "directory": "packages/mcp"
   },
   "main": "dist/index.js",
@@ -41,7 +41,10 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@clack/prompts": "^1.6.0",
+    "@clickhouse/client": "^1.0.0",
     "@prisma/client": "^5.0.0",
+    "@valv/clickhouse": "^0.3.0",
     "@valv/core": "^0.4.0",
     "@valv/mcp-sdk": "^0.2.0",
     "@valv/prisma": "^0.4.0",

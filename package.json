@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "build": "npm run build -w @valv/core && npm run build -w @valv/prisma && npm run build -w @valv/clickhouse && npm run build -w @valv/mcp-sdk && npm run build -w @valv/mcp",
-    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/prisma && tsc --noEmit -p packages/clickhouse && tsc --noEmit -p packages/mcp-sdk && tsc --noEmit -p packages/mcp",
+    "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/prisma && tsc --noEmit -p packages/clickhouse && tsc --noEmit -p packages/mcp-sdk && tsc --noEmit -p packages/mcp && tsc --noEmit -p tests",
     "test": "vitest run",
     "test:watch": "vitest",
     "bump": "node scripts/version.mjs",
@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "ai": "^4.0.0",
+    "ai": "^6.0.0",
     "prettier": "^3.8.3",
     "typescript": "^5.0.0",
     "vitest": "^1.0.0"

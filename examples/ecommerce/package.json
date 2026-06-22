@@ -17,17 +17,17 @@
     "db:generate": "prisma generate"
   },
   "dependencies": {
-    "@openrouter/ai-sdk-provider": "^0.4.0",
+    "@openrouter/ai-sdk-provider": "^2.9.1",
     "@prisma/client": "^5.0.0",
     "@valv/core": "*",
     "@valv/mcp-sdk": "*",
     "@valv/prisma": "*",
-    "ai": "^4.0.0",
+    "ai": "^6.0.0",
     "dotenv": "^16.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.19.41",
-    "ai": "^4.3.19",
+    "ai": "^6.0.0",
     "prisma": "^5.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"

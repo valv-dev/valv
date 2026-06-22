@@ -1,0 +1,58 @@
+// The Catalog: the database shape valv discovers via introspection. Adapters
+// produce a SchemaMap; the query path validates and emits against it.
+
+export interface SchemaMap {
+  resources: Record<string, ResourceSchema>
+}
+
+export interface ResourceSchema {
+  name: string // logical snake_case name, e.g. "orders"
+  tableName: string // real table name, e.g. "Order"
+  fields: Record<string, FieldSchema>
+  relations: Record<string, RelationSchema>
+  description?: string
+}
+
+export type FieldType = "string" | "number" | "boolean" | "date" | "enum" | "uuid" | "json"
+
+export interface FieldSchema {
+  name: string
+  type: FieldType // coarse, cross-dialect semantic type
+  nativeType: string // the database's own type, e.g. "UInt32", "VarChar(255)" — used to emit typed params
+  isNullable: boolean
+  isId: boolean
+  isPrimaryKeyPart?: boolean // part of the primary/sort key — used for query cost limits
+  hasDefaultValue?: boolean // has a DB/schema default, e.g. @default(now())
+  enumValues?: string[] // when type is "enum"
+  description?: string
+  sensitive?: boolean // stripped from the model's view before policy runs
+}
+
+export interface RelationSchema {
+  name: string
+  targetResource: string
+  type: "belongsTo" | "hasMany" | "manyToMany"
+  foreignKey: string
+  junctionTable?: string // for manyToMany
+}
+
+// camelCase → snake_case at the type level, so resource names inferred from a
+// Prisma client match the snake_case keys valv uses.
+type CamelToSnake<S extends string> = S extends `${infer Head}${infer Tail}`
+  ? Head extends Uppercase<Head>
+    ? Head extends Lowercase<Head>
+      ? `${Head}${CamelToSnake<Tail>}`
+      : `_${Lowercase<Head>}${CamelToSnake<Tail>}`
+    : `${Head}${CamelToSnake<Tail>}`
+  : S
+
+/**
+ * Resource names (snake_case) derived from a Prisma client type, giving
+ * policy() and tools.* autocomplete.
+ *
+ * @example
+ * const valv = new Valv<DefaultContext, InferResources<typeof prisma>>({ ... })
+ */
+export type InferResources<TClient> = CamelToSnake<
+  Exclude<keyof TClient, `$${string}` | symbol | number> & string
+>

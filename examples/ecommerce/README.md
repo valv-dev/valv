@@ -1,71 +1,86 @@
 # valv ecommerce example
 
-Demonstrates valv's core value: the same LLM agent, the same question, different access context → different data visible.
+Demonstrates valv's core value: the same LLM agent and the same question return
+different data depending on who's asking. Policies are declared once in
+[`valv.ts`](./valv.ts) and govern every surface — the in-process agent
+([`index.ts`](./index.ts)), a saved-query dashboard ([`live-dashboard.ts`](./live-dashboard.ts)),
+and an MCP server ([`mcp.ts`](./mcp.ts)).
 
-Three scenarios run back-to-back against a real Postgres database:
+The agent gets four tools — `list_resources`, `search_resources`,
+`describe_resource`, and a single structured `query`. It discovers the schema
+and emits JSON queries that valv validates, tenant-scopes, and compiles to SQL.
+No SQL reaches the model, and `internal_notes` / `password_hash`
+(`@valv:sensitive`) never appear regardless of role.
 
-| Scenario | User | What changes |
-|----------|------|--------------|
-| Admin | alice @ tenant-alpha | Full access: all fields, customer relation, write tools |
-| Support | bob @ tenant-alpha | No customer relation, `user_id` field stripped, no write tools |
-| Cross-tenant | carol @ tenant-beta | Zero results — tenant-alpha data is invisible |
+## Policies (`valv.ts`)
 
-`internal_notes` on orders is marked `@valv:sensitive` in the schema and is **never** sent to the LLM regardless of role.
+All reads are scoped to the caller's tenant; sensitive columns are denied per
+role:
+
+| Resource | Rule |
+|---|---|
+| `order` | tenant-scoped read; `internal_notes` always denied, `user_id` denied for `support` |
+| `user` | tenant-scoped read; `password_hash` always denied, `email` denied for `support` |
+| `product` | tenant-scoped read |
+| `order_item` | not readable |
+
+`index.ts` runs as `support` @ `tenant-alpha` — change `ctx` (role or tenant) to
+watch the visible tools and results shift.
 
 ## Prerequisites
 
 - Docker
 - Node.js 20+
-- A Google AI Studio API key (aistudio.google.com)
+- An [OpenRouter](https://openrouter.ai) API key (optional — without it the demo
+  prints the tools the agent would receive)
 
 ## Quick start
 
 ```bash
-# 1. Build the valv library
-cd /path/to/valv
+# From the repo root: build the library
 npm install && npm run build
 
-# 2. Install example dependencies
+# Configure environment
 cd examples/ecommerce
-npm install
+cp .env.example .env        # set OPENROUTER_API_KEY
 
-# 3. Configure environment
-cp .env.example .env
-# edit .env and set GOOGLE_AI_API_KEY
-
-# 4. Start Postgres, migrate, seed
+# Start Postgres, push the schema, seed
 npm run db:start
-npm run db:push   # runs prisma migrate dev (creates tables)
+npm run db:push
 npm run db:generate
-npm run db:seed      # inserts fixture data
+npm run db:seed
 
-# 5. Run the demo
+# Run the agent
 npm start
 ```
 
-## Database scripts
+## Scripts
 
 | Script | Description |
 |--------|-------------|
-| `npm run db:start` | Start Postgres container (or resume if stopped) |
-| `npm run db:stop` | Stop container (data preserved) |
-| `npm run db:reset` | Wipe and recreate the container |
-| `npm run db:migrate` | Apply Prisma migrations |
+| `npm start` | Run the in-process agent demo (`index.ts`) |
+| `npm run dashboard` | Run the live saved-query dashboard (`live-dashboard.ts`) |
+| `npm run mcp` | Start the MCP server (`mcp.ts`) |
+| `npm run db:start` / `db:stop` / `db:reset` | Manage the Postgres container |
+| `npm run db:push` / `db:migrate` | Apply the Prisma schema |
+| `npm run db:generate` | Generate the Prisma client |
 | `npm run db:seed` | Insert fixture data |
 | `npm run db:studio` | Open Prisma Studio |
 
 ## Live dashboard (`live-dashboard.ts`)
 
-Shows valv **views**: the agent builds a query once, the app captures the tool call with `valv.view()` and owns it from there — typed result schema, policy-enforced re-execution, and a `subscribe()` loop driving a live ASCII revenue chart while a background writer inserts orders. The rows are reshaped into the chart series with `deriveView()` (group by status, sum revenue, sort) — a declarative spec validated against the view's schema. The LLM is out of the loop after the capture.
+Shows a **saved query**: the agent would build a query once, the app stores it
+as plain data (`Query`) and owns it from there — no LLM in the loop. Each refresh
+replays it through `valv.run(query, ctx)`, so the tenant filter and field rules
+are re-applied live on the current context. `valv.resultSchema(query)` gives the
+column shape up front to drive rendering. A background writer inserts orders
+between refreshes while an ASCII bar chart redraws revenue by status.
 
 ```bash
-npm run dashboard
+npm run dashboard   # no API key needed — the query is fixed
 ```
 
-Runs with or without `OPENROUTER_API_KEY` — without it, a canned tool call stands in for the agent. Needs the seeded database from the quick start. The demo cleans up the orders it creates.
+## MCP server (`mcp.ts`)
 
-## Key code sections in `index.ts`
-
-- **Lines 20–55** — policy definitions: where role-based and tenant-based rules are declared
-- **Lines 57–110** — `runAgentDemo`: the agentic loop that calls Claude and executes tool calls through valv
-- **Lines 115–135** — `main`: three identical prompts run under three different contexts
+Exposes the same policy-gated tools to a coding agent (e.g. Claude Code) over
+stdio. See the header of [`mcp.ts`](./mcp.ts) for the client config.

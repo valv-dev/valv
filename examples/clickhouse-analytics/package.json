@@ -12,10 +12,10 @@
   },
   "dependencies": {
     "@clickhouse/client": "^1.0.0",
-    "@openrouter/ai-sdk-provider": "^0.4.0",
+    "@openrouter/ai-sdk-provider": "^2.9.1",
     "@valv/clickhouse": "*",
     "@valv/core": "*",
-    "ai": "^4.0.0",
+    "ai": "^6.0.0",
     "dotenv": "^16.0.0"
   },
   "devDependencies": {

@@ -1,53 +1,54 @@
 # valv × ClickHouse — analytics example
 
-End-to-end demo of `@valv/clickhouse`: three users (admin, analyst, cross-tenant admin)
-issuing the same prompts against a live ClickHouse database, plus a stress-test suite for
-tenant isolation, sensitive field exclusion, write policy enforcement, and field denial.
+LLM-driven analytics over a live ClickHouse database, gated by valv. An agent
+(analyst @ `tenant-alpha`) discovers the schema and answers a question by
+emitting a structured `query` — no SQL ever reaches the model, sensitive fields
+are stripped, and every read is tenant-scoped.
 
 ## Prerequisites
 
 - Docker (to run ClickHouse)
-- An [OpenRouter](https://openrouter.ai) API key
+- An [OpenRouter](https://openrouter.ai) API key (optional — without it the demo
+  just prints the tools the agent would receive)
 
 ## Quick start
 
 ```bash
 cp .env.example .env
-# Fill in OPENROUTER_API_KEY
+# set OPENROUTER_API_KEY (CLICKHOUSE_* already point at the Docker container)
 
 npm install
-npm run db:start    # starts clickhouse/clickhouse-server in Docker on port 8123
-npm run db:seed     # creates tables and inserts sample data
-npm start           # runs demos + stress tests
+npm run db:start    # ClickHouse in Docker on port 8123
+npm run db:seed     # creates the tables and inserts sample data
+npm start           # runs the agent (or lists its tools if no API key)
 ```
 
 ## Schema
 
-Three tables with valv annotations in column COMMENTs:
+Three tables, annotated in ClickHouse column `COMMENT`s (`@valv:sensitive`,
+`@valv:description`) and introspected at startup:
 
-| Table | Description |
+| Table | Notes |
 |---|---|
 | `users` | Platform users — `password_hash` is `@valv:sensitive` |
 | `orders` | Purchase orders — `internal_notes` is `@valv:sensitive` |
-| `events` | Analytics events — append-only, read-only policy |
+| `events` | Analytics events |
 
 ## Policies
 
-| Role | orders | users | events |
-|---|---|---|---|
-| `admin` | read/write/aggregate scoped to tenant | read scoped to tenant | read/aggregate scoped to tenant |
-| `analyst` | same + `user_id` denied | same | same |
+All reads are scoped to the caller's `tenant_id`; the two sensitive columns are
+denied on top (ClickHouse has no schema-level sensitivity, so the example names
+them in the policy):
 
-`delete: false` on all resources — no `delete_*` tools generated.
+```ts
+valv.policy("orders", (c) => ({ read: { tenant_id: c.tenant!.id }, fields: { deny: ["internal_notes"] } }))
+valv.policy("users",  (c) => ({ read: { tenant_id: c.tenant!.id }, fields: { deny: ["password_hash"] } }))
+valv.policy("events", (c) => ({ read: { tenant_id: c.tenant!.id } }))
+```
 
-## Stress tests
+## Tools
 
-| Test | What it checks |
-|---|---|
-| Sensitive field guard | `password_hash` and `internal_notes` never reach the LLM |
-| Cross-tenant isolation | alice (tenant-alpha) cannot see tenant-beta rows |
-| Write policy | `tenant_id` is force-injected on INSERT |
-| Analyst field denial | `user_id` absent even when explicitly requested |
-| Delete firewall | `delete_orders` tool not generated |
-| Aggregation scoping | Revenue totals only reflect the caller's tenant |
-| Consolidated mode | Agent discovers schema via `list_resources`/`describe_resource` |
+The agent receives four tools — `list_resources`, `search_resources`,
+`describe_resource`, and the structured `query`. It discovers the schema, then
+emits one grouped query that valv validates, tenant-scopes, and compiles to
+ClickHouse SQL. Writes are not exposed (reads only).

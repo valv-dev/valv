@@ -4,7 +4,14 @@ export interface ClickHouseClient {
   // json() is non-generic here so the interface is structurally compatible with
   // @clickhouse/client's ResultSet (whose json() returns a concrete union type
   // rather than the arbitrary T the generic would require).
-  query(params: { query: string; format?: string }): Promise<{ json(): Promise<unknown> }>
+  query(params: {
+    query: string
+    format?: string
+    query_params?: Record<string, unknown>
+    clickhouse_settings?: Record<string, unknown>
+  }): Promise<{ json(): Promise<unknown> }>
+  // Inserts go through the client's structured insert, not a SQL statement.
+  insert(params: { table: string; values: unknown[]; format?: string }): Promise<unknown>
 }
 
 interface SysColumn {
@@ -14,12 +21,6 @@ interface SysColumn {
   position: number
   default_kind: string
   is_in_primary_key: number
-  comment: string
-}
-
-interface SysTable {
-  name: string
-  comment: string
 }
 
 export async function introspectClickHouse(
@@ -28,34 +29,17 @@ export async function introspectClickHouse(
 ): Promise<SchemaMap> {
   const db = database ?? (await resolveDatabase(client))
 
-  const [columns, tables] = await Promise.all([
-    client
-      .query({
-        query: `
-        SELECT table, name, type, position, default_kind, is_in_primary_key, comment
+  const columns = await client
+    .query({
+      query: `
+        SELECT table, name, type, position, default_kind, is_in_primary_key
         FROM system.columns
         WHERE database = '${db}'
         ORDER BY table, position
       `,
-        format: "JSONEachRow",
-      })
-      .then((r) => r.json() as Promise<SysColumn[]>),
-    client
-      .query({
-        query: `
-        SELECT name, comment
-        FROM system.tables
-        WHERE database = '${db}'
-      `,
-        format: "JSONEachRow",
-      })
-      .then((r) => r.json() as Promise<SysTable[]>),
-  ])
-
-  const tableComments: Record<string, string> = {}
-  for (const t of tables) {
-    tableComments[t.name] = t.comment ?? ""
-  }
+      format: "JSONEachRow",
+    })
+    .then((r) => r.json() as Promise<SysColumn[]>)
 
   // Group columns by table
   const byTable: Record<string, SysColumn[]> = {}
@@ -80,15 +64,14 @@ export async function introspectClickHouse(
       const fieldType = mapClickHouseType(baseType)
       if (!fieldType) continue
 
-      const comment = col.comment ?? ""
       const fieldSchema: FieldSchema = {
         name: col.name,
         type: fieldType,
+        nativeType: baseType,
         isNullable,
         isId: col.name === idColName,
+        isPrimaryKeyPart: Number(col.is_in_primary_key) === 1,
         hasDefaultValue: col.default_kind !== "",
-        description: parseDescription(comment) ?? undefined,
-        sensitive: parseSensitive(comment),
       }
 
       if (fieldType === "enum") {
@@ -98,13 +81,11 @@ export async function introspectClickHouse(
       fields[col.name] = fieldSchema
     }
 
-    const tableComment = tableComments[tableName] ?? ""
     resources[resourceName] = {
       name: resourceName,
       tableName,
       fields,
       relations: {},
-      description: parseDescription(tableComment) ?? undefined,
     }
   }
 
@@ -177,13 +158,4 @@ function parseEnumValues(enumType: string): string[] {
     if (match) values.push(match[1])
   }
   return values
-}
-
-function parseDescription(doc: string): string | null {
-  const match = doc.match(/@valv:description\s+"([^"]+)"/)
-  return match ? match[1] : null
-}
-
-function parseSensitive(doc: string): boolean {
-  return /@valv:sensitive/.test(doc)
 }

@@ -6,6 +6,7 @@ const tool: NeutralTool = {
   name: "query_orders",
   description: "Query orders",
   parameters: { type: "object", properties: { id: { type: "string" } } },
+  execute: async () => [],
 }
 
 describe("formatters", () => {

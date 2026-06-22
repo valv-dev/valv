@@ -1,13 +1,26 @@
-import { inferProvider, type Provider } from "@valv/prisma"
+import { inferProvider as inferPrismaProvider, type Provider } from "@valv/prisma"
+
+// Everything Prisma introspects, plus ClickHouse (served via @valv/clickhouse).
+export type McpProvider = Provider | "clickhouse"
 
 export type { Provider }
 export { inferProvider }
 
+// ClickHouse speaks over HTTP; SQL databases use their own URL schemes. So an
+// http(s):// or clickhouse:// URL is ClickHouse, and everything else falls to
+// Prisma's provider inference.
+function inferProvider(url: string): McpProvider {
+  if (/^(clickhouse(\+https?)?|https?):\/\//i.test(url)) return "clickhouse"
+  return inferPrismaProvider(url)
+}
+
 export interface ServerConfig {
   /** Database connection string. */
   databaseUrl: string
-  /** Prisma datasource provider. Inferred from the URL when omitted. */
-  provider?: Provider
+  /** Datasource provider. Inferred from the URL when omitted. */
+  provider?: McpProvider
+  /** Database/schema name. Used by ClickHouse (from VALV_DATABASE). */
+  database?: string
   /** Path to a policy module that takes full control of access (optional). */
   policyFile?: string
   /** Allow-list of resource (table) names. When set, only these are exposed. */
@@ -42,7 +55,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv, argv: string[]): ServerCon
     )
   }
 
-  const provider = env.VALV_PROVIDER ? (env.VALV_PROVIDER as Provider) : inferProvider(databaseUrl)
+  const provider = env.VALV_PROVIDER ? (env.VALV_PROVIDER as McpProvider) : inferProvider(databaseUrl)
 
   let context: unknown = {}
   if (env.VALV_CONTEXT) {
@@ -61,6 +74,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv, argv: string[]): ServerCon
   return {
     databaseUrl,
     provider,
+    database: env.VALV_DATABASE,
     policyFile: env.VALV_POLICY_FILE,
     tables: csv(env.VALV_TABLES),
     exclude: csv(env.VALV_EXCLUDE),
