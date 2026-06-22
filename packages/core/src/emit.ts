@@ -1,4 +1,4 @@
-import type { Query, Expr, SelectItem, FnSelect } from "./ast"
+import type { Query, Expr, SelectItem, FnSelect, Insert, Update, Delete } from "./ast"
 import type { SchemaMap } from "./catalog"
 import type { CompiledQuery, BoundParam } from "./adapter"
 import type { Dialect } from "./dialect"
@@ -46,6 +46,46 @@ export function emit(
   if (query.limit !== undefined) sql += ` LIMIT ${Math.trunc(query.limit)}`
 
   return { sql, params: ctx.params }
+}
+
+// ── Mutations ───────────────────────────────────────────────────────────────
+// Emit INSERT / UPDATE / DELETE for an already-validated, policy-injected
+// mutation. Values bind through the same `bind` as reads — never inlined — and
+// the WHERE goes through the shared `emitExpr`.
+
+export function emitInsert(insert: Insert, catalog: SchemaMap, dialect: Dialect): CompiledQuery {
+  const ctx = mutationContext(insert.from, catalog, dialect)
+  const q = (id: string) => dialect.quoteId(id)
+  const cols = Object.keys(insert.values)
+  const values = cols.map((c) => bind(ctx, insert.values[c], typeOf(ctx, c)))
+  const sql = `INSERT INTO ${q(ctx.tableName)} (${cols.map(q).join(", ")}) VALUES (${values.join(", ")})`
+  return { sql, params: ctx.params }
+}
+
+export function emitUpdate(update: Update, catalog: SchemaMap, dialect: Dialect): CompiledQuery {
+  const ctx = mutationContext(update.from, catalog, dialect)
+  const q = (id: string) => dialect.quoteId(id)
+  // SET params bind before WHERE params — matching their placeholder order.
+  const sets = Object.keys(update.set).map((c) => `${q(c)} = ${bind(ctx, update.set[c], typeOf(ctx, c))}`)
+  const sql = `UPDATE ${q(ctx.tableName)} SET ${sets.join(", ")} WHERE ${emitExpr(update.where, ctx)}`
+  return { sql, params: ctx.params }
+}
+
+export function emitDelete(del: Delete, catalog: SchemaMap, dialect: Dialect): CompiledQuery {
+  const ctx = mutationContext(del.from, catalog, dialect)
+  const q = (id: string) => dialect.quoteId(id)
+  const sql = `DELETE FROM ${q(ctx.tableName)} WHERE ${emitExpr(del.where, ctx)}`
+  return { sql, params: ctx.params }
+}
+
+function mutationContext(from: string, catalog: SchemaMap, dialect: Dialect): EmitContext & { tableName: string } {
+  const resource = catalog.resources[from]
+  if (!resource) throw new Error(`[valv] unknown resource "${from}"`)
+  return { fields: resource.fields, dialect, params: [], tableName: resource.tableName }
+}
+
+function typeOf(ctx: EmitContext, col: string): string {
+  return Object.prototype.hasOwnProperty.call(ctx.fields, col) ? ctx.fields[col].nativeType : "String"
 }
 
 // ── Select items & function calls ───────────────────────────────────────────

@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@valv/core": ["../packages/core/src/index.ts"],
+      "@valv/prisma": ["../packages/prisma/src/index.ts"],
+      "@valv/clickhouse": ["../packages/clickhouse/src/index.ts"]
+    }
+  },
+  "include": ["**/*.ts"]
+}

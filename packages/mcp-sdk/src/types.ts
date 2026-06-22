@@ -1,4 +1,4 @@
-import type { DiscoveryToggle } from "@valv/core"
+import type { ToolToggle } from "@valv/core"
 
 /**
  * A policy context resolver: either a fixed value or a function (sync or async)
@@ -17,7 +17,7 @@ export interface ValvMcpOptions<TContext> {
    * Which discovery tools to expose alongside `query`. All on by default; set a
    * tool false to drop it (e.g. `{ list: false }`).
    */
-  discovery?: DiscoveryToggle
+  discovery?: ToolToggle
   /** Advertised MCP server identity. Defaults to { name: "valv", version }. */
   serverInfo?: { name: string; version: string }
 }

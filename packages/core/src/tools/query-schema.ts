@@ -1,7 +1,19 @@
 import { z } from "zod"
-import { QuerySchema } from "../ast"
+import { QuerySchema, InsertSchema, UpdateSchema, DeleteSchema } from "../ast"
 
 let base: object | null = null
+let mutationSchemas: Record<"create" | "update" | "delete", object> | null = null
+
+// JSON Schema for a write tool's input. No catalog specialization — the columns
+// are free strings (validated downstream), the `where` reuses the shared Expr.
+export function mutationSchema(op: "create" | "update" | "delete"): object {
+  mutationSchemas ??= {
+    create: z.toJSONSchema(InsertSchema) as object,
+    update: z.toJSONSchema(UpdateSchema) as object,
+    delete: z.toJSONSchema(DeleteSchema) as object,
+  }
+  return mutationSchemas[op]
+}
 
 // JSON Schema for the query tool's input, derived from QuerySchema with `fn`
 // constrained to the available function names. Resources and columns stay

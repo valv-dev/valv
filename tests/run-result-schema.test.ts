@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { createValv, type ClickHouseClient } from "@valv/clickhouse"
+import { createValv } from "@valv/clickhouse"
 import type { SchemaMap, DefaultContext, FieldSchema, Query } from "@valv/core"
+import { fakeClient } from "./helpers"
 
 const f = (name: string, type: FieldSchema["type"], nativeType: string): FieldSchema => ({
   name,
@@ -30,16 +31,10 @@ const col = (name: string) => ({ kind: "col" as const, name })
 const val = (value: string | number) => ({ kind: "value" as const, value })
 
 async function setup() {
-  const calls: { query: string; query_params?: Record<string, unknown> }[] = []
-  const client: ClickHouseClient = {
-    async query(p) {
-      calls.push({ query: p.query, query_params: p.query_params })
-      return { json: async () => [{ plan: "pro" }] }
-    },
-  }
+  const client = fakeClient([{ plan: "pro" }])
   const valv = await createValv<DefaultContext>(client, { schema })
   valv.policy("events", (c) => ({ read: { tenant_id: c.tenant!.id } }))
-  return { valv, calls }
+  return { valv, calls: client.calls }
 }
 
 const ctxFor = (tenant: string): DefaultContext => ({

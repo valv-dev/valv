@@ -63,3 +63,31 @@ export const QuerySchema = z.object({
 })
 
 export type Query = z.infer<typeof QuerySchema>
+
+// ── Mutations (write grammar) ────────────────────────────────────────────────
+// Separate tools — create / update / delete — each its own shape. `from` is the
+// resource (uniform with the query grammar). `values`/`set` map column → scalar;
+// `where` reuses the Expr tree and is REQUIRED on update/delete (no implicit
+// "all rows"). The tenant/row scope is still injected on top server-side.
+
+export type Scalar = string | number | boolean | null
+
+const scalar = z.union([z.string(), z.number(), z.boolean(), z.null()])
+const columnValues = z
+  .record(z.string(), scalar)
+  .refine((o) => Object.keys(o).length > 0, "must set at least one column")
+
+export type Insert = { from: string; values: Record<string, Scalar> }
+export type Update = { from: string; set: Record<string, Scalar>; where: Expr }
+export type Delete = { from: string; where: Expr }
+
+export const InsertSchema = z.object({ from: z.string(), values: columnValues })
+export const UpdateSchema = z.object({ from: z.string(), set: columnValues, where: ExprSchema })
+export const DeleteSchema = z.object({ from: z.string(), where: ExprSchema })
+
+// What reaches the adapter after policy injection: forced values merged in, the
+// scope predicate AND-ed into WHERE. Tagged with `op` so the adapter can switch.
+export type InjectedMutation =
+  | { op: "insert"; from: string; values: Record<string, Scalar> }
+  | { op: "update"; from: string; set: Record<string, Scalar>; where: Expr }
+  | { op: "delete"; from: string; where: Expr }

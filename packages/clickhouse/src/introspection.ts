@@ -10,6 +10,8 @@ export interface ClickHouseClient {
     query_params?: Record<string, unknown>
     clickhouse_settings?: Record<string, unknown>
   }): Promise<{ json(): Promise<unknown> }>
+  // Inserts go through the client's structured insert, not a SQL statement.
+  insert(params: { table: string; values: unknown[]; format?: string }): Promise<unknown>
 }
 
 interface SysColumn {

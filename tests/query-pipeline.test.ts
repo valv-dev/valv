@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { createValv, type ClickHouseClient } from "@valv/clickhouse"
+import { createValv } from "@valv/clickhouse"
 import type { SchemaMap, DefaultContext, FieldSchema } from "@valv/core"
+import { fakeClient } from "./helpers"
 
 const f = (name: string, nativeType: string, extra: Partial<FieldSchema> = {}): FieldSchema => ({
   name,
@@ -30,30 +31,16 @@ const schema: SchemaMap = {
 const ctx: DefaultContext = { user: { id: "u1", role: "member" }, tenant: { id: "acme" } }
 
 async function setup() {
-  const calls: {
-    query: string
-    query_params?: Record<string, unknown>
-    clickhouse_settings?: Record<string, unknown>
-  }[] = []
-  const client: ClickHouseClient = {
-    async query(params) {
-      calls.push({
-        query: params.query,
-        query_params: params.query_params,
-        clickhouse_settings: params.clickhouse_settings,
-      })
-      return { json: async () => [{ plan: "pro", latency: 42 }] }
-    },
-  }
+  const client = fakeClient([{ plan: "pro", latency: 42 }])
   const valv = await createValv<DefaultContext>(client, { schema })
   valv.policy("events", (c) => ({ read: { tenant_id: c.tenant!.id } }))
-  return { valv, calls }
+  return { valv, calls: client.calls }
 }
 
 describe("query pipeline (slice 1)", () => {
   it("validates, injects the tenant filter, emits typed CH SQL, runs it, serializes", async () => {
     const { valv, calls } = await setup()
-    const rows = await valv.executeTool(
+    const rows = await valv.runTool(
       "query",
       {
         from: "events",
@@ -75,7 +62,7 @@ describe("query pipeline (slice 1)", () => {
 
   it("applies ClickHouse cost caps on every query", async () => {
     const { valv, calls } = await setup()
-    await valv.executeTool("query", { from: "events", select: [{ col: "plan" }] }, ctx)
+    await valv.runTool("query", { from: "events", select: [{ col: "plan" }] }, ctx)
     expect(calls[0].clickhouse_settings).toMatchObject({
       max_execution_time: 30,
       result_overflow_mode: "throw",
@@ -85,20 +72,20 @@ describe("query pipeline (slice 1)", () => {
   it("rejects a sensitive field", async () => {
     const { valv } = await setup()
     await expect(
-      valv.executeTool("query", { from: "events", select: [{ col: "secret" }] }, ctx),
+      valv.runTool("query", { from: "events", select: [{ col: "secret" }] }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
   it("rejects an unknown column (same message as a denied one)", async () => {
     const { valv } = await setup()
     await expect(
-      valv.executeTool("query", { from: "events", select: [{ col: "nope" }] }, ctx),
+      valv.runTool("query", { from: "events", select: [{ col: "nope" }] }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
   it("defaults the limit and always injects the tenant filter", async () => {
     const { valv, calls } = await setup()
-    await valv.executeTool("query", { from: "events", select: [{ col: "plan" }] }, ctx)
+    await valv.runTool("query", { from: "events", select: [{ col: "plan" }] }, ctx)
     expect(calls[0].query).toBe(
       "SELECT `plan` FROM `events_t` WHERE (`tenant_id` = {p0:String}) LIMIT 100",
     )

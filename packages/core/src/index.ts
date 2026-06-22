@@ -1,23 +1,34 @@
 export { Valv } from "./valv"
 export type {
-  LLMTool,
-  GetToolsOptions,
   QueryEvent,
   ResourceDescriptor,
   ResourceField,
   ResourceRelation,
   ValvConfig,
 } from "./valv"
-export type { ValvAdapter, CompiledQuery, BoundParam } from "./adapter"
-export { QuerySchema, ExprSchema } from "./ast"
-export type { Query, Expr, SelectItem, ColumnSelect, FnSelect, OrderBy, CmpOp } from "./ast"
-export { emit } from "./emit"
+export type { ValvAdapter, CompiledQuery, BoundParam, MutationResult } from "./adapter"
+export { QuerySchema, ExprSchema, InsertSchema, UpdateSchema, DeleteSchema } from "./ast"
+export type {
+  Query,
+  Expr,
+  SelectItem,
+  ColumnSelect,
+  FnSelect,
+  OrderBy,
+  CmpOp,
+  Scalar,
+  Insert,
+  Update,
+  Delete,
+  InjectedMutation,
+} from "./ast"
+export { emit, emitInsert, emitUpdate, emitDelete } from "./emit"
 export type { Dialect } from "./dialect"
 export { BASE_FUNCTIONS } from "./functions"
 export type { FnDef, ArgSpec, FnReturn } from "./functions"
 export { resultSchema } from "./result-schema"
 export type { ResultColumn } from "./result-schema"
-export type { DiscoveryToggle } from "./tools"
+export type { ToolToggle } from "./tools"
 
 export type {
   SchemaMap,

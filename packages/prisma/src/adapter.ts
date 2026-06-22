@@ -1,7 +1,15 @@
 import { readFileSync } from "node:fs"
 import type { PrismaClient } from "@prisma/client"
-import type { ValvAdapter, SchemaMap, Query, CompiledQuery, FnDef } from "@valv/core"
-import { emit, BASE_FUNCTIONS } from "@valv/core"
+import type {
+  ValvAdapter,
+  SchemaMap,
+  Query,
+  CompiledQuery,
+  FnDef,
+  InjectedMutation,
+  MutationResult,
+} from "@valv/core"
+import { emit, emitInsert, emitUpdate, emitDelete, BASE_FUNCTIONS } from "@valv/core"
 import { introspectPrisma } from "./introspection"
 import { dialectForProvider } from "./dialects"
 
@@ -36,6 +44,23 @@ export class PrismaAdapter implements ValvAdapter {
 
   functions(): Record<string, FnDef> {
     return { ...BASE_FUNCTIONS, ...dialectForProvider(this.resolveProvider()).functions }
+  }
+
+  // Run a validated, policy-injected write. The forced values / scope predicate
+  // are already baked into the mutation, so executing it can't be widened.
+  async mutate(mutation: InjectedMutation, catalog: SchemaMap): Promise<MutationResult> {
+    const dialect = dialectForProvider(this.resolveProvider())
+    const compiled =
+      mutation.op === "insert"
+        ? emitInsert(mutation, catalog, dialect)
+        : mutation.op === "update"
+          ? emitUpdate(mutation, catalog, dialect)
+          : emitDelete(mutation, catalog, dialect)
+    const affected = await this.prisma.$executeRawUnsafe(
+      compiled.sql,
+      ...compiled.params.map((p) => p.value),
+    )
+    return { affected: Number(affected) }
   }
 
   /**

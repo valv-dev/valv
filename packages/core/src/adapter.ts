@@ -1,5 +1,5 @@
 import type { SchemaMap } from "./catalog"
-import type { Query } from "./ast"
+import type { Query, InjectedMutation } from "./ast"
 import type { FnDef } from "./functions"
 
 export interface BoundParam {
@@ -10,6 +10,10 @@ export interface BoundParam {
 export interface CompiledQuery {
   sql: string
   params: BoundParam[]
+}
+
+export interface MutationResult {
+  affected: number
 }
 
 /**
@@ -26,4 +30,7 @@ export interface ValvAdapter {
   /** The functions callable in this dialect (base ∪ dialect), for output-shape
    *  prediction and tool discovery. */
   functions(): Record<string, FnDef>
+  /** Run a validated, policy-injected write. Optional — adapters without write
+   *  support (or for unsupported ops) throw. */
+  mutate?(mutation: InjectedMutation, catalog: SchemaMap): Promise<MutationResult>
 }

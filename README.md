@@ -4,9 +4,9 @@
 
 [![npm](https://img.shields.io/npm/v/@valv/core?label=%40valv%2Fcore)](https://www.npmjs.com/package/@valv/core) [![npm](https://img.shields.io/npm/v/@valv/clickhouse?label=%40valv%2Fclickhouse)](https://www.npmjs.com/package/@valv/clickhouse) [![npm](https://img.shields.io/npm/v/@valv/prisma?label=%40valv%2Fprisma)](https://www.npmjs.com/package/@valv/prisma) [![npm](https://img.shields.io/npm/v/@valv/mcp?label=%40valv%2Fmcp)](https://www.npmjs.com/package/@valv/mcp) [![license](https://img.shields.io/npm/l/@valv/core)](./LICENSE)
 
-valv gives an agent a single `query` tool. The model emits a **structured query** — never SQL — and valv validates it against your schema, scopes it to the current user with policies you write in code, compiles it to your database's SQL, and runs it.
+valv gives an agent structured tools to **read** your database — and, opt-in, to **write** to it. The model emits a **structured query** (or insert/update/delete) — never SQL — and valv validates it against your schema, scopes it to the current user with policies you write in code, compiles it to your database's SQL, and runs it.
 
-The model's query is treated as fully untrusted. It can't read a column you hid, a row the user isn't allowed to see, or call a function you didn't allow — not because the prompt asks nicely, but because the query is rebuilt and re-checked on the server before a single byte of SQL is generated.
+The model's query is treated as fully untrusted. It can't read a column you hid, a row the user isn't allowed to see, call a function you didn't allow, write a column you didn't permit, or escape its tenant on a write — not because the prompt asks nicely, but because the query is rebuilt and re-checked on the server before a single byte of SQL is generated.
 
 ```ts
 const valv = await createValv(client, { schema: "introspect", defaultPolicy: "deny-all" })
@@ -121,6 +121,8 @@ valv.policy("users", (ctx) => ({
 
 The row filter can't be widened or overridden by the model — it's injected *after* the model's query is parsed, into the `WHERE` clause, before SQL is emitted. Fields are denied two ways: `fields.deny` (a blacklist) or `fields.allow` (a whitelist). Denied and unknown columns fail with the same message, so the model can't probe for hidden columns. Use `"*"` as the resource name for a default policy.
 
+The same policy object carries the write axes — `create`, `update`, `delete` (and `write` as a shorthand for create+update) — which default to denied. See [Writes](#writes).
+
 ### Tools
 
 `valv.tools.<format>(ctx, options)` returns provider-ready tools, bound to that context. Discovery is **policy-filtered** — `list`/`search`/`describe` only surface what the caller may read.
@@ -140,6 +142,34 @@ The `aisdk` format returns self-executing tools (the SDK runs them). The provide
 ```ts
 const result = await valv.runTool(call.name, call.input, ctx)
 ```
+
+The discovery tools (`list`/`search`/`describe`) are on by default; the write tools (`create`/`update`/`delete`) are **off** by default — turn them on per call:
+
+```ts
+valv.tools.aisdk(ctx, { search: false, create: true, update: true })
+```
+
+### Writes
+
+Writes are off until you both allow them in policy and expose the tool. Each is its own tool and its own policy axis, with stronger guarantees than reads — the model can't set columns you didn't permit, can't aim a row at another tenant, and can't run an unscoped update/delete:
+
+```ts
+valv.policy("orders", (ctx) => ({
+  read:   { tenant_id: ctx.tenant.id },
+  create: { tenant_id: ctx.tenant.id },   // tenant_id is force-set on insert
+  update: { tenant_id: ctx.tenant.id },   // AND-injected into the WHERE
+  delete: false,                          // never deletable
+  fields: { readOnly: ["status"] },       // readable, not writable
+}))
+
+await valv.create({ from: "orders", values: { status: "pending", total: 1200 } }, ctx)
+await valv.update({ from: "orders", set: { status: "shipped" }, where: { /* …Expr */ } }, ctx)
+```
+
+- **`create`** force-injects the policy's owned fields (`tenant_id`) onto the row — the model can't choose, omit, or override them.
+- **`update`/`delete`** AND the policy predicate into your `where`, which is **required** (no implicit "all rows"). The model can only touch rows within its scope.
+- The columns a write sets are checked against a **writable** allowlist (separate from readable); scope columns, sensitive fields, and `readOnly` fields aren't writable. A `where` can only filter by columns the caller can read.
+- **Databases:** all three on Prisma (Postgres/MySQL/SQLite/Cockroach); ClickHouse supports `create` (insert) only.
 
 ### Saved queries & dashboards
 

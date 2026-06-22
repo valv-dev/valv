@@ -12,11 +12,12 @@ The database-agnostic core of [valv](../../README.md): the query grammar an LLM 
 |---|---|
 | Orchestration | `Valv` (instantiated by adapters via `createValv`) |
 | Query grammar | `QuerySchema`; types `Query`, `Expr`, `SelectItem` |
+| Write grammar | `InsertSchema`, `UpdateSchema`, `DeleteSchema`; types `Insert`, `Update`, `Delete`, `InjectedMutation` |
 | Policy | `PolicyFn`, `PolicyResult`, `FieldPolicy`, `DefaultContext` |
-| Emission | `emit`, the `Dialect` interface, `BASE_FUNCTIONS`, `FnDef`, `ArgSpec` |
+| Emission | `emit`, `emitInsert`/`emitUpdate`/`emitDelete`, the `Dialect` interface, `BASE_FUNCTIONS`, `FnDef`, `ArgSpec` |
 | Output shape | `resultSchema`, `ResultColumn` |
-| Tool formats | `anthropic`, `openai`, `gemini` formatters; `NeutralTool`, `DiscoveryToggle` |
-| Adapter contract | `ValvAdapter`, `SchemaMap`, `CompiledQuery`, `BoundParam` |
+| Tool formats | `anthropic`, `openai`, `gemini` formatters; `NeutralTool`, `ToolToggle` |
+| Adapter contract | `ValvAdapter`, `SchemaMap`, `CompiledQuery`, `BoundParam`, `MutationResult` |
 | Errors | `ValidationError`, `PolicyViolationError`; `serializeResult` |
 
 ## Building an adapter
@@ -46,10 +47,13 @@ class MyAdapter implements ValvAdapter {
   functions(): Record<string, FnDef> {
     return { ...BASE_FUNCTIONS, ...myDialect.functions }
   }
+  // Optional — implement to support writes. The mutation is already validated
+  // and policy-injected; emit it with emitInsert/emitUpdate/emitDelete and run it.
+  // mutate?(m: InjectedMutation, catalog: SchemaMap): Promise<MutationResult>
 }
 ```
 
-Validation and policy injection never reach the adapter — security stays in core. A `Dialect` can also declare extra functions (`FnDef`: argument signature, return type, render), which become callable in the query grammar and are surfaced to the model through the `query` tool's enum.
+Validation and policy injection never reach the adapter — security stays in core. A `Dialect` can also declare extra functions (`FnDef`: argument signature, return type, render), which become callable in the query grammar and are surfaced to the model through the `query` tool's enum. Writes are optional: implement `mutate` (the mutation arrives already validated and policy-injected) to opt in, or omit it for a read-only adapter.
 
 ## Type-safe resource names
 

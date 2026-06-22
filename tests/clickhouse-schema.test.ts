@@ -8,6 +8,9 @@ const throwingClient: ClickHouseClient = {
   query() {
     throw new Error("introspect() must not query the database when a schema is provided")
   },
+  insert() {
+    throw new Error("introspect() must not write to the database")
+  },
 }
 
 const schema: SchemaMap = {
@@ -18,7 +21,7 @@ const schema: SchemaMap = {
       relations: {},
       fields: {
         id: { name: "id", type: "uuid", nativeType: "UUID", isNullable: false, isId: true },
-        latency: { name: "latency", type: "number", nativeType: "UInt32", isNullable: false },
+        latency: { name: "latency", type: "number", nativeType: "UInt32", isNullable: false, isId: false },
       },
     },
   },
@@ -36,6 +39,9 @@ describe("clickhouse hand-defined schema", () => {
       async query() {
         queried = true
         return { json: async () => [] }
+      },
+      async insert() {
+        return {}
       },
     }
     const adapter = new ClickHouseAdapter(client, { database: "test" })

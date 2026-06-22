@@ -56,6 +56,19 @@ ClickHouse has no schema-level notion of "sensitive", so mark hidden columns in 
 
 Every query runs with conservative ClickHouse settings — `max_execution_time`, `max_result_rows`/`bytes`, `result_overflow_mode: throw` — so a structurally-valid query can't run away on the server. Raise them per deployment if your analytics needs more headroom.
 
+## Writes
+
+ClickHouse is **insert-only** here (`UPDATE`/`DELETE` are heavy async mutations, so they're not exposed). Allow inserts in policy and turn the tool on:
+
+```ts
+valv.policy("events", (ctx) => ({ create: { tenant_id: ctx.tenant.id } }))
+const tools = await valv.tools.aisdk(ctx, { create: true })
+
+await valv.create({ from: "events", values: { event: "click", latency: 12 } }, ctx)
+```
+
+Forced fields (`tenant_id`) are set server-side — the model can't choose, omit, or override them. See [Writes](../../README.md#writes) in the root README.
+
 ## Zero-config from a URL
 
 No client wired up? `createValvFromUrl(url, { database })` builds the client and introspects for you. This is also what the [`@valv/mcp`](../mcp) CLI uses for ClickHouse.

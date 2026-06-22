@@ -48,7 +48,7 @@ type CamelToSnake<S extends string> = S extends `${infer Head}${infer Tail}`
 
 /**
  * Resource names (snake_case) derived from a Prisma client type, giving
- * policy() and getTools() autocomplete.
+ * policy() and tools.* autocomplete.
  *
  * @example
  * const valv = new Valv<DefaultContext, InferResources<typeof prisma>>({ ... })

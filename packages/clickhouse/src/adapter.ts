@@ -1,5 +1,13 @@
-import type { ValvAdapter, SchemaMap, Query, CompiledQuery, FnDef } from "@valv/core"
-import { emit, BASE_FUNCTIONS } from "@valv/core"
+import type {
+  ValvAdapter,
+  SchemaMap,
+  Query,
+  CompiledQuery,
+  FnDef,
+  InjectedMutation,
+  MutationResult,
+} from "@valv/core"
+import { emit, BASE_FUNCTIONS, ValidationError } from "@valv/core"
 import { introspectClickHouse, type ClickHouseClient } from "./introspection"
 import { clickhouseDialect } from "./dialect"
 
@@ -40,6 +48,22 @@ export class ClickHouseAdapter implements ValvAdapter {
 
   functions(): Record<string, FnDef> {
     return { ...BASE_FUNCTIONS, ...clickhouseDialect.functions }
+  }
+
+  // ClickHouse is OLAP: INSERT is the natural write; UPDATE/DELETE are heavy async
+  // mutations, so they're not exposed here. Inserts use the client's structured
+  // insert (not a SQL statement); the row was already validated + policy-injected.
+  async mutate(mutation: InjectedMutation, catalog: SchemaMap): Promise<MutationResult> {
+    if (mutation.op !== "insert") {
+      throw new ValidationError(`ClickHouse supports inserts only, not ${mutation.op}.`)
+    }
+    const resource = catalog.resources[mutation.from]
+    if (!resource) throw new Error(`[valv/clickhouse] unknown resource "${mutation.from}"`)
+    const table = this.options.database
+      ? `${this.options.database}.${resource.tableName}`
+      : resource.tableName
+    await this.client.insert({ table, values: [mutation.values], format: "JSONEachRow" })
+    return { affected: 1 }
   }
 
   /**

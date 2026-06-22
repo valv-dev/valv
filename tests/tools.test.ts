@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
-import { createValv, type ClickHouseClient } from "@valv/clickhouse"
+import { createValv } from "@valv/clickhouse"
 import type { SchemaMap, DefaultContext, FieldSchema, RelationSchema } from "@valv/core"
+import { fakeClient } from "./helpers"
 
 const f = (name: string, type: FieldSchema["type"], extra: Partial<FieldSchema> = {}): FieldSchema => ({
   name,
@@ -51,18 +52,12 @@ const schema: SchemaMap = {
 const ctx: DefaultContext = { user: { id: "u1", role: "member" }, tenant: { id: "acme" } }
 
 async function setup() {
-  const calls: { query: string }[] = []
-  const client: ClickHouseClient = {
-    async query(p) {
-      calls.push({ query: p.query })
-      return { json: async () => [{ status: "paid" }] }
-    },
-  }
+  const client = fakeClient([{ status: "paid" }])
   // deny-all: orders + users get policies; audit has none → invisible.
   const valv = await createValv<DefaultContext>(client, { schema, defaultPolicy: "deny-all" })
   valv.policy("orders", (c) => ({ read: { tenant_id: c.tenant!.id } }))
   valv.policy("users", () => ({ read: true }))
-  return { valv, calls }
+  return { valv, calls: client.calls }
 }
 
 describe("tool layer", () => {
@@ -146,7 +141,7 @@ describe("tool layer", () => {
     const tools = await valv.tools.aisdk(ctx, { list: false, search: false })
     expect(Object.keys(tools).sort()).toEqual(["describe_resource", "query"])
 
-    const query = tools.query as { execute: (input: unknown) => Promise<unknown> }
+    const query = tools.query as unknown as { execute: (input: unknown) => Promise<unknown> }
     const rows = await query.execute({ from: "orders", select: [{ col: "status" }] })
     expect(rows).toEqual([{ status: "paid" }])
     expect(calls[0].query).toContain("WHERE (`tenant_id` = {p0:String})")

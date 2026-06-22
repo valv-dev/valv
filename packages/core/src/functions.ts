@@ -5,7 +5,7 @@ import { ValidationError } from "./errors"
 // controlled, so emission renders only names with an entry here (or in a
 // dialect's registry) — unknown names are rejected, never spliced. Each
 // signature declares its argument kinds, which is how the emitter keeps args
-// safe by construction (see emit.ts). Also the discovery surface getTools reads.
+// safe by construction (see emit.ts). Also the discovery surface tools.* reads.
 
 // One argument of a function call, mirroring how SQL functions take positional
 // args. The AST supplies each as an Expr; the spec says how to read it.

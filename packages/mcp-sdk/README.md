@@ -48,7 +48,7 @@ Register it with your client:
 | Option | Description |
 |---|---|
 | `context` | A value or per-request resolver (sync or async) for the policy context. |
-| `discovery` | `{ list?, search?, describe? }` — drop a discovery tool (`query` always stays). |
+| `discovery` | `{ list?, search?, describe?, create?, update?, delete? }` — discovery tools default on (`query` always stays); the write tools default off, enable them here (and allow the op in policy). |
 | `serverInfo` | Advertised `{ name, version }`. |
 
 The context resolver is the key piece for multi-tenant servers: over HTTP it can read identity from each request's headers, so one server safely serves many callers. Errors are sanitized before reaching the agent — valv's own validation/policy messages pass through, anything else becomes a generic message.

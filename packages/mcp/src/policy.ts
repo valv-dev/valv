@@ -59,7 +59,7 @@ export async function applyAccess(
   if (config.exclude) allowed = allowed.filter((t: string) => !config.exclude!.includes(t))
 
   // Authoritatively deny everything not allowed, so a model can't reach an
-  // excluded table even by passing its name to a consolidated verb.
+  // excluded table even by passing its name straight to the query tool.
   const allowedSet = new Set(allowed)
   for (const name of all) {
     if (!allowedSet.has(name)) {

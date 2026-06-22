@@ -1,6 +1,6 @@
 import type { NeutralTool } from "../formatters"
 import { ValidationError } from "../errors"
-import { buildQuerySchema } from "./query-schema"
+import { buildQuerySchema, mutationSchema } from "./query-schema"
 import {
   listResources,
   searchResources,
@@ -8,12 +8,16 @@ import {
   type VisibleResource,
 } from "./discovery"
 
-// Which discovery tools to expose. `query` is always present; each of the three
-// discovery tools is on by default and removed by setting it false.
-export interface DiscoveryToggle {
+// Which tools to expose. `query` is always present; the three discovery tools
+// default ON (set false to drop); the three write tools default OFF (set true to
+// add) since writes are opt-in.
+export interface ToolToggle {
   list?: boolean
   search?: boolean
   describe?: boolean
+  create?: boolean
+  update?: boolean
+  delete?: boolean
 }
 
 export interface BuildToolsArgs<TContext> {
@@ -21,7 +25,12 @@ export interface BuildToolsArgs<TContext> {
   visible: VisibleResource[]
   functionNames: string[]
   run: (query: unknown, ctx: TContext) => Promise<unknown>
-  toggle?: DiscoveryToggle
+  write?: {
+    create: (input: unknown) => Promise<unknown>
+    update: (input: unknown) => Promise<unknown>
+    delete: (input: unknown) => Promise<unknown>
+  }
+  toggle?: ToolToggle
 }
 
 const QUERY_DESCRIPTION =
@@ -40,10 +49,21 @@ const DESCRIBE_DESCRIPTION =
   "Describe a resource: its columns and types, and its relations to other resources. Call this " +
   "before querying to learn the exact column names."
 
+const CREATE_DESCRIPTION =
+  "Insert a row into a resource. Provide `from` and `values` (column → value). Server-owned " +
+  "fields are set automatically; you can't set columns you aren't allowed to write."
+
+const UPDATE_DESCRIPTION =
+  "Update rows. Provide `from`, `set` (column → value), and a `where` filter (required). Only " +
+  "rows within your access are affected, regardless of the filter."
+
+const DELETE_DESCRIPTION =
+  "Delete rows matching a required `where` filter. Only rows within your access are affected."
+
 const NO_INPUT = { type: "object", properties: {}, additionalProperties: false } as const
 
 export function buildTools<TContext>(args: BuildToolsArgs<TContext>): NeutralTool[] {
-  const { ctx, visible, functionNames, run, toggle } = args
+  const { ctx, visible, functionNames, run, write, toggle } = args
   const visibleNames = new Set(visible.map((v) => v.resource.name))
   const tools: NeutralTool[] = []
 
@@ -95,6 +115,17 @@ export function buildTools<TContext>(args: BuildToolsArgs<TContext>): NeutralToo
     parameters: buildQuerySchema(functionNames),
     execute: (input) => run(input, ctx),
   })
+
+  // Write tools — opt-in (default off).
+  if (toggle?.create && write) {
+    tools.push({ name: "create", description: CREATE_DESCRIPTION, parameters: mutationSchema("create"), execute: write.create })
+  }
+  if (toggle?.update && write) {
+    tools.push({ name: "update", description: UPDATE_DESCRIPTION, parameters: mutationSchema("update"), execute: write.update })
+  }
+  if (toggle?.delete && write) {
+    tools.push({ name: "delete", description: DELETE_DESCRIPTION, parameters: mutationSchema("delete"), execute: write.delete })
+  }
 
   return tools
 }

@@ -48,6 +48,24 @@ One adapter covers every provider Prisma can introspect — the right dialect (i
 
 Mark hidden columns in your **policy** (`fields.deny`); valv reads structure from Prisma's DMMF, which has no notion of "sensitive".
 
+## Writes
+
+All three operations, **off** until you allow them in policy and expose the tool:
+
+```ts
+valv.policy("order", (ctx) => ({
+  read:   { tenant_id: ctx.tenant.id },
+  create: { tenant_id: ctx.tenant.id },   // tenant_id force-set on insert
+  update: { tenant_id: ctx.tenant.id },   // AND-injected into the WHERE
+  delete: false,                          // never deletable
+}))
+const tools = await valv.tools.aisdk(ctx, { create: true, update: true })
+
+await valv.create({ from: "order", values: { status: "pending", total: 1200 } }, ctx)
+```
+
+`create` force-injects owned fields; `update`/`delete` AND the scope predicate into a **required** `where`, and the model can only set writable columns. See [Writes](../../README.md#writes) in the root README.
+
 ## Zero-config from a URL
 
 No client or generated schema? `createValvFromUrl(url, { provider? })` infers the provider, runs `prisma db pull` + `generate` into a throwaway client under a writable temp dir (`os.tmpdir()`, so it works on read-only/serverless filesystems), and introspects — all at startup. This is the path the [`@valv/mcp`](../mcp) CLI uses. Requires the `prisma` CLI available. Call `stop()` on shutdown.

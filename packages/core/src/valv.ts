@@ -1,14 +1,15 @@
 import type { SchemaMap } from "./catalog"
 import type { PolicyFn, PolicyResult, DefaultContext } from "./policy"
 import type { ValvAdapter } from "./adapter"
-import { QuerySchema } from "./ast"
+import { QuerySchema, InsertSchema, UpdateSchema, DeleteSchema } from "./ast"
 import { assertWithinLimits } from "./limits"
-import { evaluateRead } from "./evaluate"
-import { validateQuery } from "./validate"
-import { injectPolicy } from "./inject"
+import { evaluateRead, evaluateWrite, type WriteOp } from "./evaluate"
+import { validateQuery, validateMutation } from "./validate"
+import { injectPolicy, injectMutation } from "./inject"
+import type { MutationResult } from "./adapter"
 import { serializeResult } from "./serializer"
 import { resultSchema as deriveResultSchema, type ResultColumn } from "./result-schema"
-import { buildTools, type DiscoveryToggle } from "./tools"
+import { buildTools, type ToolToggle } from "./tools"
 import { visibleResources } from "./tools/discovery"
 import {
   anthropic,
@@ -44,18 +45,6 @@ export interface QueryEvent<TContext, TResources extends string = string> {
   ctx: TContext
   durationMs: number
   error?: Error
-}
-
-export interface GetToolsOptions<TResources extends string = string> {
-  resources?: TResources[]
-  maxTools?: number
-  mode?: "per-resource" | "consolidated"
-}
-
-export interface LLMTool {
-  name: string
-  description: string
-  input_schema: object
 }
 
 export interface ResourceField {
@@ -104,19 +93,6 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
   }
 
   /**
-   * Tool definitions exposed to the model.
-   *
-   * TODO(json-ast): emit the single AST query tool, its input schema derived
-   * from the Catalog + evaluated policy. Returns [] until the query path lands.
-   */
-  async getTools(_ctx: TContext, _options?: GetToolsOptions<TResources>): Promise<LLMTool[]> {
-    const schema = await this.loadSchema()
-    this.validatePolicyKeys(schema)
-    this.buildEffectivePolicies(schema) // resolves wildcard/fallback so it's validated too
-    return []
-  }
-
-  /**
    * Run a query and return its serialized rows. The query is structurally
    * validated, semantically checked against the catalog + policy, policy-
    * injected, emitted to SQL, and executed. This is the single read primitive:
@@ -140,6 +116,66 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
     }
   }
 
+  /** Insert a row. Forced fields (e.g. tenant_id) are server-injected. */
+  create(input: unknown, ctx: TContext): Promise<MutationResult> {
+    return this.runWrite("create", input, ctx)
+  }
+
+  /** Update rows. The policy's scope predicate is AND-ed into your WHERE. */
+  update(input: unknown, ctx: TContext): Promise<MutationResult> {
+    return this.runWrite("update", input, ctx)
+  }
+
+  /** Delete rows. The policy's scope predicate is AND-ed into your WHERE. */
+  delete(input: unknown, ctx: TContext): Promise<MutationResult> {
+    return this.runWrite("delete", input, ctx)
+  }
+
+  private async runWrite(op: WriteOp, input: unknown, ctx: TContext): Promise<MutationResult> {
+    const start = Date.now()
+    const resource = extractResource(input) as TResources
+    let error: Error | undefined
+    try {
+      return await this.executeWrite(op, input, ctx)
+    } catch (e) {
+      error = e as Error
+      throw toSafeError(error)
+    } finally {
+      this.onQueryFn?.({ toolName: op, resource, operation: op, ctx, durationMs: Date.now() - start, error })
+    }
+  }
+
+  private async executeWrite(op: WriteOp, input: unknown, ctx: TContext): Promise<MutationResult> {
+    assertWithinLimits(input)
+    const mutation =
+      op === "create"
+        ? InsertSchema.parse(input)
+        : op === "update"
+          ? UpdateSchema.parse(input)
+          : DeleteSchema.parse(input)
+
+    const catalog = await this.loadSchema()
+    if (!hasOwn(catalog.resources, mutation.from)) {
+      throw new ValidationError(`Unknown resource "${mutation.from}".`)
+    }
+    const mutateFn = this.adapter.mutate
+    if (!mutateFn) {
+      throw new ValidationError("This database does not support writes.")
+    }
+    const resource = catalog.resources[mutation.from]
+    const policies = this.buildEffectivePolicies(catalog)
+    const policy = hasOwn(policies, mutation.from) ? policies[mutation.from] : undefined
+
+    const write = evaluateWrite(policy, ctx, resource, op, this.defaultPolicy)
+    if (!write.allowed) throw new PolicyViolationError(`${op} access to "${mutation.from}" is denied.`)
+    // The read policy governs which columns a WHERE may filter on.
+    const read = evaluateRead(policy, ctx, resource, this.defaultPolicy)
+
+    validateMutation(op, mutation, resource, write, read)
+    const injected = injectMutation(op, mutation, write)
+    return mutateFn.call(this.adapter, injected, catalog)
+  }
+
   /**
    * The output columns + coarse types a query will return, derived from its
    * select list + catalog without executing it. Drives dashboard rendering and
@@ -160,16 +196,16 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
    */
   get tools() {
     return {
-      neutral: (ctx: TContext, toggle?: DiscoveryToggle): NeutralTool[] =>
+      neutral: (ctx: TContext, toggle?: ToolToggle): NeutralTool[] =>
         this.neutralTools(ctx, toggle),
-      anthropic: (ctx: TContext, toggle?: DiscoveryToggle): AnthropicTool[] =>
+      anthropic: (ctx: TContext, toggle?: ToolToggle): AnthropicTool[] =>
         this.neutralTools(ctx, toggle).map(anthropic),
-      openai: (ctx: TContext, toggle?: DiscoveryToggle): OpenAITool[] =>
+      openai: (ctx: TContext, toggle?: ToolToggle): OpenAITool[] =>
         this.neutralTools(ctx, toggle).map(openai),
-      gemini: (ctx: TContext, toggle?: DiscoveryToggle): GeminiTool[] =>
+      gemini: (ctx: TContext, toggle?: ToolToggle): GeminiTool[] =>
         this.neutralTools(ctx, toggle).map(gemini),
       // Vercel AI SDK tool set (async — imports the optional `ai` peer dep).
-      aisdk: (ctx: TContext, toggle?: DiscoveryToggle) =>
+      aisdk: (ctx: TContext, toggle?: ToolToggle) =>
         toAiSdk(this.neutralTools(ctx, toggle)),
     }
   }
@@ -185,12 +221,7 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
     return tool.execute(input)
   }
 
-  /** @deprecated Use {@link runTool}; kept until the MCP SDK migrates. */
-  async executeTool(name: string, input: unknown, ctx: TContext): Promise<unknown> {
-    return this.runTool(name, input, ctx)
-  }
-
-  private neutralTools(ctx: TContext, toggle?: DiscoveryToggle): NeutralTool[] {
+  private neutralTools(ctx: TContext, toggle?: ToolToggle): NeutralTool[] {
     const catalog = this.requireSchema()
     const policies = this.buildEffectivePolicies(catalog)
     const visible = visibleResources(catalog, policies, this.defaultPolicy, ctx)
@@ -199,6 +230,13 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
       visible,
       functionNames: Object.keys(this.adapter.functions()),
       run: (query, c) => this.run(query, c),
+      write: this.adapter.mutate
+        ? {
+            create: (input) => this.create(input, ctx),
+            update: (input) => this.update(input, ctx),
+            delete: (input) => this.delete(input, ctx),
+          }
+        : undefined,
       toggle,
     })
   }
