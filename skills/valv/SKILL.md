@@ -93,17 +93,67 @@ query result as a JSON literal so the file is portable and works offline-after-l
   <title>{{TITLE}}</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
   <style>
-    body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 900px; color: #1a1a1a; }
-    h1 { font-size: 1.25rem; margin: 0 0 1.5rem; }
-    .chart-wrap { position: relative; height: 60vh; }
+    :root {
+      --bg: #0f1016;           /* deep charcoal, never pure black */
+      --surface: #161822;      /* the chart card, one step lighter */
+      --fg: #e8eaf0;           /* headings */
+      --muted: #8b909c;        /* subtitle, axis labels */
+      --faint: #5b606b;        /* footnote */
+      --line: rgba(255, 255, 255, 0.05);  /* hairline borders + gridlines */
+      --accent: #6d6af5;       /* single accent (indigo-violet) — swap the hue to retheme */
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; justify-content: center;
+      background:
+        radial-gradient(900px 420px at 18% -8%, rgba(109, 106, 245, 0.10), transparent 60%),
+        var(--bg);
+      color: var(--fg);
+      font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    main { width: 100%; max-width: 940px; padding: clamp(2rem, 6vw, 5rem) clamp(1.25rem, 4vw, 2.5rem); }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: .5rem; margin-bottom: 1rem;
+      font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+    }
+    h1 { margin: 0 0 .5rem; max-width: 30ch; font-size: clamp(1.3rem, 3vw, 1.7rem);
+         font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
+    p.sub { margin: 0 0 2.5rem; color: var(--muted); font-size: .9rem; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+            padding: 1.5rem 1.5rem .75rem; }
+    .chart-wrap { position: relative; height: 52vh; min-height: 320px; }
+    footer { margin-top: 1.5rem; color: var(--faint); font-size: .78rem; }
   </style>
 </head>
 <body>
-  <h1>{{TITLE}}</h1>
-  <div class="chart-wrap"><canvas id="chart"></canvas></div>
+  <main>
+    <div class="eyebrow">{{EYEBROW}}</div>
+    <h1>{{TITLE}}</h1>
+    <p class="sub">{{SUBTITLE}}</p>
+    <div class="card"><div class="chart-wrap"><canvas id="chart"></canvas></div></div>
+    <footer>{{FOOTER}}</footer>
+  </main>
   <script>
     // Rows returned by the valv `query` tool, inlined verbatim.
     const rows = {{ROWS_JSON}};
+
+    // Minimal dark theme — set once, applies to every chart type.
+    const ACCENT = "#6d6af5";
+    Chart.defaults.color = "#8b909c";
+    Chart.defaults.font.family = "system-ui, -apple-system, 'Segoe UI', sans-serif";
+    Chart.defaults.font.size = 12;
+
+    // Lazy accent gradient (needs the chart area to exist). For vertical bars/lines
+    // make it vertical: createLinearGradient(0, chartArea.top, 0, chartArea.bottom).
+    const accentFill = ctx => {
+      const { ctx: c, chartArea } = ctx.chart;
+      if (!chartArea) return "rgba(109, 106, 245, 0.6)";
+      const g = c.createLinearGradient(chartArea.left, 0, chartArea.right, 0);
+      g.addColorStop(0, "rgba(109, 106, 245, 0.9)");
+      g.addColorStop(1, "rgba(109, 106, 245, 0.35)");
+      return g;
+    };
 
     new Chart(document.getElementById("chart"), {
       type: "{{CHART_TYPE}}",
@@ -112,13 +162,31 @@ query result as a JSON literal so the file is portable and works offline-after-l
         datasets: [{
           label: "{{SERIES_LABEL}}",
           data: rows.map(r => r["{{Y_KEY}}"]),
+          backgroundColor: accentFill,
+          borderColor: ACCENT,
+          borderWidth: 0,
+          borderRadius: 2,
+          borderSkipped: false,
+          tension: 0.3,            // smooths line charts; harmless elsewhere
         }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: true } },
-        scales: { y: { beginAtZero: true } },
+        plugins: {
+          legend: { display: false },   // turn on only for multi-series
+          tooltip: {
+            backgroundColor: "#1d2027", borderColor: "rgba(255,255,255,0.08)", borderWidth: 1,
+            titleColor: "#e8eaf0", bodyColor: "#b6bcc6", padding: 12, cornerRadius: 5,
+            displayColors: false,
+          },
+        },
+        scales: {
+          x: { grid: { color: "rgba(255,255,255,0.055)" }, border: { display: false },
+               ticks: { color: "#7b818c", maxRotation: 0 } },
+          y: { beginAtZero: true, grid: { color: "rgba(255,255,255,0.055)" },
+               border: { display: false }, ticks: { color: "#9aa0ab" } },
+        },
       },
     });
   </script>
@@ -128,10 +196,13 @@ query result as a JSON literal so the file is portable and works offline-after-l
 
 **Use the `chart.umd.min.js` build, not `chart.min.js`** — the latter is an ES module
 and throws "Cannot use import statement" / "Chart is not defined" when loaded as a plain
-`<script>`. Replace every `{{…}}`: `TITLE` (the question in plain words), `CHART_TYPE`, `ROWS_JSON`
-(the actual rows from `query`), `X_KEY` / `Y_KEY` / `SERIES_LABEL` (real column
-names/aliases from the query). For multiple series, add more `datasets`. Keep colors to
-Chart.js defaults unless the user asks for styling.
+`<script>`. Fill every `{{…}}`: `EYEBROW` (a 1–3 word kicker, e.g. "Revenue"), `TITLE`
+(the question in plain words), `SUBTITLE` (the scope — rows, range, filters), `FOOTER`
+(source: which resource via valv), `CHART_TYPE`, `ROWS_JSON` (the actual rows from
+`query`), `X_KEY` / `Y_KEY` / `SERIES_LABEL` (real column names/aliases). For multiple
+series, add more `datasets` and turn the legend on. Keep the **dark, minimal, single-accent**
+look — retheme by changing one hue (`--accent` + the `accentFill` rgba + glow), don't add a
+second bright color unless a series genuinely needs distinguishing.
 
 ## Conventions
 
