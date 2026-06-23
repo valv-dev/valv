@@ -12,6 +12,9 @@ export interface EvaluatedPolicy {
   allowed: boolean
   predicate?: Expr
   allowedFields: string[]
+  // Per-relation join gate from the policy — `{ rel: false }` blocks traversing
+  // that relation even when the target is independently readable.
+  relations?: Record<string, boolean>
 }
 
 export function evaluateRead<TContext>(
@@ -33,6 +36,8 @@ export function evaluateRead<TContext>(
   }
   if (!allowed) return { allowed: false, allowedFields: [] }
 
+  const relations = result.relations
+
   const all = Object.keys(resource.fields)
   const sensitive = Object.values(resource.fields)
     .filter((f) => f.sensitive)
@@ -49,7 +54,7 @@ export function evaluateRead<TContext>(
     allowedFields = all.filter((f) => !sensitive.includes(f))
   }
 
-  return { allowed, predicate, allowedFields }
+  return { allowed, predicate, allowedFields, relations }
 }
 
 // v1 supports scalar-equality predicates ({ tenant_id: "acme" }) — the common

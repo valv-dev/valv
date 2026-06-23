@@ -29,10 +29,14 @@ export interface BuildToolsArgs<TContext> {
 }
 
 const QUERY_DESCRIPTION =
-  "Run a structured analytics query against one resource. Provide `from` (a resource name), " +
-  "`select` (columns and/or aggregate functions), and optionally `where`, `groupBy`, `orderBy`, " +
-  "and `limit`. Group or order by a select alias to bucket over time or rank by an aggregate. " +
-  "Use describe_resource to learn a resource's exact columns before querying."
+  "Run a structured analytics query rooted at one resource (`from`). Provide `select` (columns " +
+  "and/or aggregate functions) and optionally `where`, `groupBy`, `orderBy`, and `limit`. Group " +
+  "or order by a select alias to bucket over time or rank by an aggregate. To read columns from a " +
+  "related resource, set `rel` to the relation path from the root, e.g. " +
+  '`{ "col": "name", "rel": ["customer"] }` or, multiple hops, `{ "col": "name", "rel": ' +
+  '["order", "customer"] }`. The join is built automatically from the schema\'s relations — only ' +
+  "declared relations are joinable. Use describe_resource to learn a resource's exact columns and " +
+  "relations before querying."
 
 const LIST_DESCRIPTION = "List the resources you can query, each with a short description."
 

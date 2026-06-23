@@ -2,22 +2,31 @@ import type { Query, Expr, Insert, Update, Delete } from "./ast"
 import type { ResourceSchema } from "./catalog"
 import type { EvaluatedPolicy, EvaluatedWrite, WriteOp } from "./evaluate"
 import { ValidationError } from "./errors"
+import { ROOT_ALIAS, aliasForPath } from "./joins"
+
+// One table in scope for a query: the resource and the fields this caller may
+// read on it. Keyed by alias (the root, or a joined table's relation-path alias)
+// so a column's `rel` path resolves to the right allowlist.
+export interface ScopedTable {
+  resource: ResourceSchema
+  allowedFields: Set<string>
+}
 
 // The semantic gate. Structural validity is already guaranteed by the AST
 // schema; this rejects anything illegal against the catalog + policy. Every
-// column reference, anywhere in the query, must exist and be on the allowlist —
-// fail-closed.
+// column reference, anywhere in the query, must exist and be on the allowlist of
+// the table it targets — fail-closed. With joins, each `rel`-qualified column is
+// checked against ITS table, so a join can't reach a denied column on either side.
 export function validateQuery(
   query: Query,
-  resource: ResourceSchema,
-  evaluated: EvaluatedPolicy,
+  tables: Map<string, ScopedTable>,
   maxLimit: number,
 ): void {
-  const allowed = new Set(evaluated.allowedFields)
-  // One message whether the column is unknown or merely denied — never reveal
-  // which, so an attacker can't enumerate hidden (incl. sensitive) column names.
-  const check = (name: string) => {
-    if (!hasOwn(resource.fields, name) || !allowed.has(name)) {
+  // One message whether the column is unknown, denied, or on an unresolved table
+  // — never reveal which, so an attacker can't enumerate hidden columns/tables.
+  const check = (rel: string[] | undefined, name: string) => {
+    const table = tables.get(rel?.length ? aliasForPath(rel) : ROOT_ALIAS)
+    if (!table || !hasOwn(table.resource.fields, name) || !table.allowedFields.has(name)) {
       throw new ValidationError(`Column "${name}" is not accessible.`)
     }
   }
@@ -30,7 +39,7 @@ export function validateQuery(
     if ("fn" in item) {
       item.args.forEach((a) => walkColumns(a, check))
     } else {
-      check(item.col)
+      check(item.rel, item.col)
     }
   }
   if (query.where) walkColumns(query.where, check)
@@ -38,14 +47,17 @@ export function validateQuery(
   // GROUP BY / ORDER BY may reference a SELECT output alias (a time bucket, an
   // aggregate) as well as a catalog column — every dialect resolves output names
   // there. The aliased expression was already validated as a select item, so an
-  // alias reference adds no column exposure.
+  // alias reference adds no column exposure. A `rel`-qualified key is always a
+  // real column on that joined table, never an alias.
   const aliases = new Set<string>()
   for (const item of query.select) if (item.as) aliases.add(item.as)
-  const checkRef = (name: string) => {
-    if (!aliases.has(name)) check(name)
+  const checkRef = (rel: string[] | undefined, name: string) => {
+    if (rel?.length || !aliases.has(name)) check(rel, name)
   }
-  query.groupBy?.forEach(checkRef)
-  query.orderBy?.forEach((o) => checkRef(o.col))
+  query.groupBy?.forEach((g) =>
+    typeof g === "string" ? checkRef(undefined, g) : checkRef(g.rel, g.col),
+  )
+  query.orderBy?.forEach((o) => checkRef(o.rel, o.col))
   if (query.limit !== undefined && query.limit > maxLimit) {
     throw new ValidationError(`limit ${query.limit} exceeds the maximum of ${maxLimit}.`)
   }
@@ -69,7 +81,9 @@ export function validateMutation(
       throw new ValidationError(`Column "${name}" is not writable.`)
     }
   }
-  const checkReadable = (name: string) => {
+  // Writes are single-table — a `rel`-qualified column in a WHERE is rejected.
+  const checkReadable = (rel: string[] | undefined, name: string) => {
+    if (rel?.length) throw new ValidationError(`Joins are not supported in writes.`)
     if (!hasOwn(resource.fields, name) || !readable.has(name)) {
       throw new ValidationError(`Column "${name}" is not accessible.`)
     }
@@ -107,10 +121,10 @@ function hasOwn(obj: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(obj, key)
 }
 
-function walkColumns(expr: Expr, visit: (name: string) => void): void {
+function walkColumns(expr: Expr, visit: (rel: string[] | undefined, name: string) => void): void {
   switch (expr.kind) {
     case "col":
-      visit(expr.name)
+      visit(expr.rel, expr.name)
       break
     case "value":
       break

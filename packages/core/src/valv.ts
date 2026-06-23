@@ -3,9 +3,10 @@ import type { PolicyFn, PolicyResult, DefaultContext } from "./policy"
 import type { ValvAdapter } from "./adapter"
 import { QuerySchema, InsertSchema, UpdateSchema, DeleteSchema } from "./ast"
 import { assertWithinLimits } from "./limits"
-import { evaluateRead, evaluateWrite, type WriteOp } from "./evaluate"
-import { validateQuery, validateMutation } from "./validate"
-import { injectPolicy, injectMutation } from "./inject"
+import { evaluateRead, evaluateWrite, type WriteOp, type EvaluatedPolicy } from "./evaluate"
+import { validateQuery, validateMutation, type ScopedTable } from "./validate"
+import { injectPolicy, injectMutation, type PolicyScope } from "./inject"
+import { resolveJoins, assertJoinLimits, ROOT_ALIAS } from "./joins"
 import type { MutationResult } from "./adapter"
 import { serializeResult } from "./serializer"
 import { resultSchema as deriveResultSchema, type ResultColumn } from "./result-schema"
@@ -262,16 +263,43 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
     if (!hasOwn(catalog.resources, query.from)) {
       throw new ValidationError(`Unknown resource "${query.from}".`)
     }
-    const resource = catalog.resources[query.from]
+    const rootResource = catalog.resources[query.from]
 
     const policies = this.buildEffectivePolicies(catalog)
-    const policy = hasOwn(policies, query.from) ? policies[query.from] : undefined
-    const evaluated = evaluateRead(policy, ctx, resource, this.defaultPolicy)
-    if (!evaluated.allowed)
+    const policyFor = (name: string) => (hasOwn(policies, name) ? policies[name] : undefined)
+
+    // Resolve the joins the query's columns imply, and cap their cost.
+    const joins = resolveJoins(query, catalog)
+    assertJoinLimits(joins)
+
+    // Policy composition: evaluate the root AND every joined resource. A denied
+    // resource — or a relation the parent's policy blocks — refuses the whole
+    // query. Each table's row predicate is collected to be injected on its alias.
+    const rootEval = evaluateRead(policyFor(query.from), ctx, rootResource, this.defaultPolicy)
+    if (!rootEval.allowed)
       throw new PolicyViolationError(`Read access to "${query.from}" is denied.`)
 
-    validateQuery(query, resource, evaluated, MAX_LIMIT)
-    const injected = injectPolicy(query, evaluated, DEFAULT_LIMIT, MAX_LIMIT)
+    const tables = new Map<string, ScopedTable>([
+      [ROOT_ALIAS, { resource: rootResource, allowedFields: new Set(rootEval.allowedFields) }],
+    ])
+    const evalByAlias = new Map<string, EvaluatedPolicy>([[ROOT_ALIAS, rootEval]])
+    const scopes: PolicyScope[] = [{ rel: [], predicate: rootEval.predicate }]
+
+    for (const node of joins) {
+      const parent = evalByAlias.get(node.parentAlias)
+      if (parent?.relations?.[node.relation.name] === false) {
+        throw new PolicyViolationError(`Relation "${node.relation.name}" is not accessible.`)
+      }
+      const ev = evaluateRead(policyFor(node.resource.name), ctx, node.resource, this.defaultPolicy)
+      if (!ev.allowed)
+        throw new PolicyViolationError(`Read access to "${node.resource.name}" is denied.`)
+      evalByAlias.set(node.alias, ev)
+      tables.set(node.alias, { resource: node.resource, allowedFields: new Set(ev.allowedFields) })
+      scopes.push({ rel: node.path, predicate: ev.predicate })
+    }
+
+    validateQuery(query, tables, MAX_LIMIT)
+    const injected = injectPolicy(query, scopes, DEFAULT_LIMIT, MAX_LIMIT)
     const compiled = this.adapter.compile(injected, catalog)
     const rows = await this.adapter.execute(
       compiled.sql,

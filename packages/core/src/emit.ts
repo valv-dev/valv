@@ -1,9 +1,10 @@
 import type { Query, Expr, SelectItem, FnSelect, Insert, Update, Delete } from "./ast"
-import type { SchemaMap } from "./catalog"
+import type { SchemaMap, ResourceSchema } from "./catalog"
 import type { CompiledQuery, BoundParam } from "./adapter"
 import type { Dialect } from "./dialect"
 import { ValidationError } from "./errors"
 import { BASE_FUNCTIONS, lookupFunction, requiredArgs, type ArgSpec, type FnDef } from "./functions"
+import { resolveJoins, aliasForPath, ROOT_ALIAS, type JoinNode } from "./joins"
 
 // Turns a validated Query into dialect SQL + bound params. Two kinds of check
 // live here, both needing the dialect's function registry (which validate.ts,
@@ -12,10 +13,20 @@ import { BASE_FUNCTIONS, lookupFunction, requiredArgs, type ArgSpec, type FnDef 
 // in validate.ts. Anything that reaches SQL as a literal does so only after one
 // of those checks, never by string interpolation of attacker input.
 
+// One table in scope at emit time: its columns (for param typing) and the
+// quoted, db-qualified name to put in FROM/JOIN.
+interface TableScope {
+  fields: Record<string, { nativeType: string }>
+  ref: string
+}
+
 interface EmitContext {
   fields: Record<string, { nativeType: string }>
   dialect: Dialect
   params: BoundParam[]
+  // Present only when the query joins. When set, columns emit alias-qualified
+  // (`"alias"."col"`); when absent, single-table bare columns (`"col"`).
+  tables?: Map<string, TableScope>
 }
 
 export function emit(
@@ -27,8 +38,9 @@ export function emit(
   const resource = catalog.resources[query.from]
   if (!resource) throw new Error(`[valv] unknown resource "${query.from}"`)
 
-  const ctx: EmitContext = { fields: resource.fields, dialect, params: [] }
   const q = (id: string) => dialect.quoteId(id)
+  const refOf = (r: ResourceSchema) =>
+    options.database ? `${q(options.database)}.${q(r.tableName)}` : q(r.tableName)
   // Null-prototype merge so an attacker-supplied fn name like "constructor" or
   // "toString" resolves to nothing rather than an inherited Object.prototype
   // member — only own entries exist, keeping the allowlist intact.
@@ -38,20 +50,105 @@ export function emit(
     dialect.functions,
   )
 
-  const table = options.database
-    ? `${q(options.database)}.${q(resource.tableName)}`
-    : q(resource.tableName)
+  const joins = resolveJoins(query, catalog)
+  const ctx: EmitContext = { fields: resource.fields, dialect, params: [] }
+
+  // FROM clause. Single-table queries stay bare (FROM "t") for unchanged SQL;
+  // joined queries alias every table and qualify every column.
+  let from: string
+  if (joins.length === 0) {
+    from = refOf(resource)
+  } else {
+    const tables = new Map<string, TableScope>([
+      [ROOT_ALIAS, { fields: resource.fields, ref: refOf(resource) }],
+    ])
+    const resourceByAlias = new Map<string, ResourceSchema>([[ROOT_ALIAS, resource]])
+    for (const node of joins) {
+      tables.set(node.alias, { fields: node.resource.fields, ref: refOf(node.resource) })
+      resourceByAlias.set(node.alias, node.resource)
+    }
+    ctx.tables = tables
+    from =
+      `${refOf(resource)} AS ${q(ROOT_ALIAS)} ` +
+      joins
+        .map((n) => {
+          const parent = resourceByAlias.get(n.parentAlias)!
+          return `INNER JOIN ${refOf(n.resource)} AS ${q(n.alias)} ON ${joinCondition(n, parent, q)}`
+        })
+        .join(" ")
+  }
+
+  const aliases = new Set<string>()
+  for (const item of query.select) if (item.as) aliases.add(item.as)
+
   const select = query.select.map((item) => emitSelectItem(item, ctx, functions)).join(", ")
 
-  let sql = `SELECT ${select} FROM ${table}`
+  let sql = `SELECT ${select} FROM ${from}`
   if (query.where) sql += ` WHERE ${emitExpr(query.where, ctx)}`
-  if (query.groupBy?.length) sql += ` GROUP BY ${query.groupBy.map(q).join(", ")}`
+  if (query.groupBy?.length) {
+    sql += ` GROUP BY ${query.groupBy.map((g) => emitGroupKey(g, ctx, aliases)).join(", ")}`
+  }
   if (query.orderBy?.length) {
-    sql += ` ORDER BY ${query.orderBy.map((o) => `${q(o.col)} ${o.dir.toUpperCase()}`).join(", ")}`
+    sql += ` ORDER BY ${query.orderBy
+      .map(
+        (o) =>
+          `${emitGroupKey(o.rel ? { col: o.col, rel: o.rel } : o.col, ctx, aliases)} ${o.dir.toUpperCase()}`,
+      )
+      .join(", ")}`
   }
   if (query.limit !== undefined) sql += ` LIMIT ${Math.trunc(query.limit)}`
 
   return { sql, params: ctx.params }
+}
+
+// The ON predicate for a join, oriented by which side owns the FK column. The FK
+// is schema-derived (never model-supplied), so the condition can't be widened.
+function joinCondition(node: JoinNode, parent: ResourceSchema, q: (id: string) => string): string {
+  const child = node.resource
+  const fk = node.relation.foreignKey
+  const fkOnParent = Object.prototype.hasOwnProperty.call(parent.fields, fk)
+  if (fkOnParent) {
+    // belongsTo (FK local): parent.fk = child.<referenced key>
+    const key = node.relation.targetKey ?? primaryKey(child)
+    return `${q(node.parentAlias)}.${q(fk)} = ${q(node.alias)}.${q(key)}`
+  }
+  // hasMany / 1:1-inverse (FK on the child): parent.<referenced key> = child.fk
+  const key = node.relation.targetKey ?? primaryKey(parent)
+  return `${q(node.parentAlias)}.${q(key)} = ${q(node.alias)}.${q(fk)}`
+}
+
+function primaryKey(resource: ResourceSchema): string {
+  const id = Object.values(resource.fields).find((f) => f.isId)
+  return id?.name ?? "id"
+}
+
+// A GROUP BY / ORDER BY key: a bare SELECT alias stays unqualified; a column —
+// root or joined — is emitted qualified in join mode.
+function emitGroupKey(
+  key: string | { col: string; rel?: string[] },
+  ctx: EmitContext,
+  aliases: Set<string>,
+): string {
+  if (typeof key === "string") {
+    return aliases.has(key) ? ctx.dialect.quoteId(key) : colRef(ctx, undefined, key)
+  }
+  return colRef(ctx, key.rel, key.col)
+}
+
+// Qualify a column to its table's alias when joining; bare otherwise.
+function colRef(ctx: EmitContext, rel: string[] | undefined, name: string): string {
+  const q = (id: string) => ctx.dialect.quoteId(id)
+  if (!ctx.tables) return q(name)
+  return `${q(rel?.length ? aliasForPath(rel) : ROOT_ALIAS)}.${q(name)}`
+}
+
+// The fields of the table a column belongs to — for typing bound params.
+function fieldsFor(
+  ctx: EmitContext,
+  rel: string[] | undefined,
+): Record<string, { nativeType: string }> {
+  if (!ctx.tables) return ctx.fields
+  return ctx.tables.get(rel?.length ? aliasForPath(rel) : ROOT_ALIAS)?.fields ?? ctx.fields
 }
 
 // ── Mutations ───────────────────────────────────────────────────────────────
@@ -110,8 +207,15 @@ function emitSelectItem(
   functions: Record<string, FnDef>,
 ): string {
   const q = (id: string) => ctx.dialect.quoteId(id)
-  const expr = "fn" in item ? emitFunction(item, ctx, functions) : q(item.col)
-  return item.as ? `${expr} AS ${q(item.as)}` : expr
+  if ("fn" in item) {
+    const expr = emitFunction(item, ctx, functions)
+    return item.as ? `${expr} AS ${q(item.as)}` : expr
+  }
+  const expr = colRef(ctx, item.rel, item.col)
+  // A joined column with no explicit alias gets a deterministic one
+  // ("customer_name") so result keys stay unique across tables and stable.
+  const alias = item.as ?? (item.rel?.length ? `${item.rel.join("_")}_${item.col}` : undefined)
+  return alias ? `${expr} AS ${q(alias)}` : expr
 }
 
 function emitFunction(item: FnSelect, ctx: EmitContext, functions: Record<string, FnDef>): string {
@@ -139,7 +243,7 @@ function emitArg(fn: string, spec: ArgSpec, arg: Expr, ctx: EmitContext): string
     case "column":
       if (arg.kind !== "col")
         throw new ValidationError(`Function "${fn}" expects a column argument.`)
-      return ctx.dialect.quoteId(arg.name)
+      return colRef(ctx, arg.rel, arg.name)
     case "number":
       // Finite numbers stringify to digits/sign/dot/exponent only, so inlining
       // can't carry SQL; the range rejects nonsense (e.g. a quantile > 1).
@@ -172,7 +276,7 @@ function emitArg(fn: string, spec: ArgSpec, arg: Expr, ctx: EmitContext): string
 function emitExpr(expr: Expr, ctx: EmitContext): string {
   switch (expr.kind) {
     case "col":
-      return ctx.dialect.quoteId(expr.name)
+      return colRef(ctx, expr.rel, expr.name)
     case "value":
       return bind(ctx, expr.value, "String")
     case "cmp": {
@@ -189,17 +293,19 @@ function emitExpr(expr: Expr, ctx: EmitContext): string {
 }
 
 function emitOperand(expr: Expr, ctx: EmitContext, type: string): string {
-  if (expr.kind === "col") return ctx.dialect.quoteId(expr.name)
+  if (expr.kind === "col") return colRef(ctx, expr.rel, expr.name)
   if (expr.kind === "value") return bind(ctx, expr.value, type)
   return emitExpr(expr, ctx)
 }
 
 // A bound value is typed by the column it's compared against, so typed-placeholder
-// dialects (ClickHouse) get the right cast; defaults to String otherwise.
+// dialects (ClickHouse) get the right cast; defaults to String otherwise. The
+// column's type is read from ITS table (root or joined).
 function inferType(cmp: Extract<Expr, { kind: "cmp" }>, ctx: EmitContext): string {
   const col = cmp.left.kind === "col" ? cmp.left : cmp.right.kind === "col" ? cmp.right : undefined
-  if (col && Object.prototype.hasOwnProperty.call(ctx.fields, col.name)) {
-    return ctx.fields[col.name].nativeType
+  if (col) {
+    const fields = fieldsFor(ctx, col.rel)
+    if (Object.prototype.hasOwnProperty.call(fields, col.name)) return fields[col.name].nativeType
   }
   return "String"
 }

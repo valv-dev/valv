@@ -7,19 +7,31 @@ import { z } from "zod"
 
 export type CmpOp = "=" | "!=" | ">" | "<" | ">=" | "<="
 
+// A relation path from the query's root resource to a joined table — e.g.
+// ["order", "customer"] reaches `customer` via `order`. Each segment is a
+// declared relation name; the path doubles as the joined table's alias. A column
+// reference carries this to say which table it belongs to (absent = the root).
+// Joins are *derived* from the set of paths referenced across the query, never
+// declared separately, so they can't drift from the columns that use them.
+export type RelPath = string[]
+
 // A select entry is either a bare column or a function call. `as` names the
 // output column. A function's args are Exprs interpreted positionally against
 // its registry signature: a column (sum), a literal (quantileTiming(0.95)), an
 // enum unit (toStartOfInterval(ts, INTERVAL 1 hour)), or a boolean predicate
 // (countIf(status >= 500)).
-export type ColumnSelect = { col: string; as?: string }
+export type ColumnSelect = { col: string; rel?: RelPath; as?: string }
 export type FnSelect = { fn: string; args: Expr[]; as?: string }
 export type SelectItem = ColumnSelect | FnSelect
 
-export type OrderBy = { col: string; dir: "asc" | "desc" }
+export type OrderBy = { col: string; rel?: RelPath; dir: "asc" | "desc" }
+
+// A group key is either a SELECT output alias (bare string) or a column —
+// optionally on a joined table via `rel`.
+export type GroupByItem = string | { col: string; rel?: RelPath }
 
 export type Expr =
-  | { kind: "col"; name: string }
+  | { kind: "col"; name: string; rel?: RelPath }
   | { kind: "value"; value: unknown } // a caller value → bound param at emit
   | { kind: "cmp"; op: CmpOp; left: Expr; right: Expr }
   | { kind: "and"; args: Expr[] }
@@ -28,11 +40,19 @@ export type Expr =
 
 const cmpOp = z.enum(["=", "!=", ">", "<", ">=", "<="])
 
+// Structural bound on a relation path — a sane ceiling so a pathological array
+// can't reach the resolver. The real, friendly join-depth limit is enforced in
+// joins.ts against MAX_JOIN_DEPTH.
+const relPath = z
+  .array(z.string().regex(/^[A-Za-z0-9_]+$/))
+  .min(1)
+  .max(8)
+
 // Recursive schema: annotate via cast, the idiomatic Zod pattern (the inferred
 // output differs only in that z.unknown() makes `value` optional).
 export const ExprSchema = z.lazy(() =>
   z.union([
-    z.object({ kind: z.literal("col"), name: z.string() }),
+    z.object({ kind: z.literal("col"), name: z.string(), rel: relPath.optional() }),
     z.object({
       kind: z.literal("value"),
       value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
@@ -49,24 +69,31 @@ export const ExprSchema = z.lazy(() =>
 // allowlist-checked against the catalog downstream, in validate.ts.
 const identifier = z.string().regex(/^[A-Za-z0-9_]+$/)
 
-const columnSelect = z.object({ col: z.string(), as: identifier.optional() })
+const columnSelect = z.object({
+  col: z.string(),
+  rel: relPath.optional(),
+  as: identifier.optional(),
+})
 const fnSelect = z.object({
   fn: identifier,
   args: z.array(ExprSchema).max(8),
   as: identifier.optional(),
 })
 
+// A group key: a bare SELECT alias, or a (possibly joined) column.
+const groupByItem = z.union([z.string(), z.object({ col: z.string(), rel: relPath.optional() })])
+
 export const QuerySchema = z.object({
   from: z.string(),
   select: z
     .array(z.union([fnSelect, columnSelect]))
     .min(1)
-    .max(100),
+    .max(32),
   where: ExprSchema.optional(),
-  groupBy: z.array(z.string()).max(100).optional(),
+  groupBy: z.array(groupByItem).max(32).optional(),
   orderBy: z
-    .array(z.object({ col: z.string(), dir: z.enum(["asc", "desc"]) }))
-    .max(100)
+    .array(z.object({ col: z.string(), rel: relPath.optional(), dir: z.enum(["asc", "desc"]) }))
+    .max(32)
     .optional(),
   limit: z.number().int().positive().optional(),
 })

@@ -32,7 +32,15 @@ export interface RelationSchema {
   name: string
   targetResource: string
   type: "belongsTo" | "hasMany" | "manyToMany"
+  // The join keys, oriented by `type`:
+  //   belongsTo — `foreignKey` is the local FK on this resource; `targetKey` is
+  //               the referenced column on the target (≈ the target's id).
+  //   hasMany   — `foreignKey` is the FK on the *target* pointing back here;
+  //               `targetKey` is this resource's referenced column (≈ its id).
+  // Auto-introspected for Prisma; for hand-defined schemas (e.g. ClickHouse,
+  // which has no FKs) the developer sets both so joins can resolve.
   foreignKey: string
+  targetKey?: string
   junctionTable?: string // for manyToMany
 }
 

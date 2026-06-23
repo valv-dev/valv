@@ -21,6 +21,14 @@ export interface PrismaAdapterOptions {
 
 const DEFAULT_SCHEMA = "./prisma/schema.prisma"
 
+// Per-query wall-clock cap so a structurally-valid query (e.g. a join that scans
+// far more than expected) can't run away on the server. Hardcoded for now;
+// surfaced as config only if a deployment needs more headroom. Applied on
+// Postgres/Cockroach via `SET LOCAL statement_timeout` inside a transaction;
+// MySQL/SQLite have no per-statement equivalent here (the static join caps still
+// bound query shape).
+const STATEMENT_TIMEOUT_MS = 10_000
+
 export class PrismaAdapter implements ValvAdapter {
   private prisma: PrismaClient
   private schemaPath: string
@@ -69,6 +77,16 @@ export class PrismaAdapter implements ValvAdapter {
    * query interface.
    */
   async execute(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
+    const provider = this.resolveProvider()
+    if (provider === "postgresql" || provider === "cockroachdb") {
+      // SET LOCAL scopes the timeout to this transaction. The value is our own
+      // hardcoded integer (never user input), so inlining it is safe.
+      return this.prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`)
+        const rows = await tx.$queryRawUnsafe(sql, ...parameters)
+        return rows as unknown[]
+      })
+    }
     const rows = await this.prisma.$queryRawUnsafe(sql, ...parameters)
     return rows as unknown[]
   }

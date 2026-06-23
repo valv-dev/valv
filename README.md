@@ -1,6 +1,6 @@
 # valv
 
-**Let an LLM query your database — safely, by construction.**
+**Let agents query your database. Just not all of it.**
 
 [![npm](https://img.shields.io/npm/v/@valv/core?label=%40valv%2Fcore)](https://www.npmjs.com/package/@valv/core) [![npm](https://img.shields.io/npm/v/@valv/clickhouse?label=%40valv%2Fclickhouse)](https://www.npmjs.com/package/@valv/clickhouse) [![npm](https://img.shields.io/npm/v/@valv/prisma?label=%40valv%2Fprisma)](https://www.npmjs.com/package/@valv/prisma) [![npm](https://img.shields.io/npm/v/@valv/mcp?label=%40valv%2Fmcp)](https://www.npmjs.com/package/@valv/mcp) [![license](https://img.shields.io/npm/l/@valv/core)](./LICENSE)
 
@@ -18,6 +18,13 @@ valv.policy("orders", (ctx) => ({
 
 const tools = await valv.tools.aisdk(ctx)  // hand to your agent — it queries safely
 ```
+
+---
+
+## Two ways to use it
+
+- **In your app.** Configure valv in code, write policies against your request context, and hand the tools to your agent — Vercel AI SDK, Anthropic, OpenAI, or Gemini. Or expose those same tools over MCP with [`@valv/mcp-sdk`](packages/mcp-sdk), scoped per request.
+- **With a coding agent.** Point [`@valv/mcp`](packages/mcp) at a database and a tool like Claude Code queries it safely — no code required.
 
 ---
 
@@ -78,6 +85,24 @@ One `query` tool covers the whole read surface. The model composes a query from 
 ```
 
 That's enough for real analytics — **filters** (arbitrary `and`/`or`/`not` trees), **aggregates**, **time-series** (bucket with a function and group by the alias), **top-N** (order by an aggregate), and **conditional aggregation** (`countIf`, `sumIf`). ClickHouse adds dialect functions like `quantileTiming` and `toStartOfInterval`; every function is type-checked and its literals parameterized.
+
+### Joins
+
+To read a related resource, qualify a column with `rel` — a relation path from the root. The model can only follow relations declared in your schema; valv derives the joins, picks the keys, and **composes the policy of every table it touches** — each joined table is scoped by its own policy and field allowlist, so a join can never reach a hidden column or another tenant's rows.
+
+```jsonc
+{
+  "from": "orders",
+  "select": [
+    { "col": "name", "rel": ["customer"] },              // one hop: orders → customer
+    { "col": "name", "rel": ["customer", "region"] },    // multi-hop: → customer → region
+    { "fn": "sum", "args": [{ "kind": "col", "name": "total" }], "as": "revenue" }
+  ],
+  "groupBy": [{ "col": "name", "rel": ["customer"] }]
+}
+```
+
+`belongsTo` and `hasMany` relations are supported; join depth, table count, and fan-out are capped, and every query runs under a statement timeout. Relations are auto-introspected on Prisma and declared in the schema on ClickHouse.
 
 ---
 
