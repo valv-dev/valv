@@ -243,7 +243,7 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
     return buildTools({
       ctx,
       visible,
-      functionNames: Object.keys(this.adapter.functions()),
+      functions: this.adapter.functions(),
       run: (query, c) => this.run(query, c),
       write: this.adapter.mutate
         ? {

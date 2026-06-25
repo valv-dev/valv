@@ -1,4 +1,5 @@
 import type { NeutralTool } from "../formatters"
+import type { FnDef } from "../functions"
 import { ValidationError } from "../errors"
 import { buildQuerySchema, mutationSchema } from "./query-schema"
 import { listResources, searchResources, describeResource, type VisibleResource } from "./discovery"
@@ -18,7 +19,7 @@ export interface ToolToggle {
 export interface BuildToolsArgs<TContext> {
   ctx: TContext
   visible: VisibleResource[]
-  functionNames: string[]
+  functions: Record<string, FnDef>
   run: (query: unknown, ctx: TContext) => Promise<unknown>
   write?: {
     create: (input: unknown) => Promise<unknown>
@@ -62,7 +63,7 @@ const DELETE_DESCRIPTION =
 const NO_INPUT = { type: "object", properties: {}, additionalProperties: false } as const
 
 export function buildTools<TContext>(args: BuildToolsArgs<TContext>): NeutralTool[] {
-  const { ctx, visible, functionNames, run, write, toggle } = args
+  const { ctx, visible, functions, run, write, toggle } = args
   const visibleNames = new Set(visible.map((v) => v.resource.name))
   const tools: NeutralTool[] = []
 
@@ -111,7 +112,7 @@ export function buildTools<TContext>(args: BuildToolsArgs<TContext>): NeutralToo
   tools.push({
     name: "query",
     description: QUERY_DESCRIPTION,
-    parameters: buildQuerySchema(functionNames),
+    parameters: buildQuerySchema(functions),
     execute: (input) => run(input, ctx),
   })
 

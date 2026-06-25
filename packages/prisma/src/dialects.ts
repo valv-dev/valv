@@ -30,9 +30,7 @@ const DATE_FORMAT: Record<(typeof TRUNC_UNITS)[number], string> = {
 // dateTrunc(col, unit) — the time-series bucketing primitive. The model groups
 // by its alias to get completions-per-month etc. instead of one row per raw
 // timestamp. unit is enum-checked (safe inlined); col is quoted by the emitter.
-const dateTrunc = (
-  render: (col: string, unit: (typeof TRUNC_UNITS)[number]) => string,
-): FnDef => ({
+const dateTrunc = (render: (col: string, unit: (typeof TRUNC_UNITS)[number]) => string): FnDef => ({
   args: [{ kind: "column" }, { kind: "enum", values: TRUNC_UNITS }],
   returns: "date",
   render: ([c, unit]) => render(c!, unit as (typeof TRUNC_UNITS)[number]),

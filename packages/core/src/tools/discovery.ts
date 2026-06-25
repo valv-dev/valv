@@ -68,7 +68,7 @@ function score(q: string, v: VisibleResource): number {
 export interface ResourceDetail {
   name: string
   description?: string
-  fields: { name: string; type: string; nullable: boolean }[]
+  fields: { name: string; type: string; nullable: boolean; enumValues?: string[] }[]
   relations: { name: string; target: string; type: string }[]
 }
 
@@ -81,7 +81,14 @@ export function describeResource(v: VisibleResource, visibleNames: Set<string>):
     description: resource.description,
     fields: Object.values(resource.fields)
       .filter((f) => allowedFields.has(f.name))
-      .map((f) => ({ name: f.name, type: f.type, nullable: f.isNullable })),
+      .map((f) => ({
+        name: f.name,
+        type: f.type,
+        nullable: f.isNullable,
+        // Enum columns advertise their valid values so the model filters/writes
+        // with a real one instead of guessing.
+        ...(f.type === "enum" && f.enumValues ? { enumValues: f.enumValues } : {}),
+      })),
     relations: Object.values(resource.relations)
       .filter((r) => visibleNames.has(r.targetResource))
       .map((r) => ({ name: r.name, target: r.targetResource, type: r.type })),

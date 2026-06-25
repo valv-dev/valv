@@ -42,7 +42,10 @@ export function validateQuery(
       check(item.rel, item.col)
     }
   }
-  if (query.where) walkColumns(query.where, check)
+  if (query.where) {
+    walkColumns(query.where, check)
+    checkEnumExpr(query.where, tables)
+  }
 
   // GROUP BY / ORDER BY may reference a SELECT output alias (a time bucket, an
   // aggregate) as well as a catalog column — every dialect resolves output names
@@ -89,16 +92,72 @@ export function validateMutation(
     }
   }
 
+  // Writes are single-table, so every column resolves against the root resource.
+  const table = new Map<string, ScopedTable>([[ROOT_ALIAS, { resource, allowedFields: readable }]])
+
   if (op === "create") {
     const insert = mutation as Insert
     for (const col of Object.keys(insert.values)) checkWritable(col)
     requireFields(resource, insert.values, write.forced)
+    checkEnumRecord(resource, insert.values)
   } else if (op === "update") {
     const update = mutation as Update
     for (const col of Object.keys(update.set)) checkWritable(col)
     walkColumns(update.where, checkReadable)
+    checkEnumRecord(resource, update.set)
+    checkEnumExpr(update.where, table)
   } else {
     walkColumns((mutation as Delete).where, checkReadable)
+    checkEnumExpr((mutation as Delete).where, table)
+  }
+}
+
+// Enum columns have a fixed value set. A filter or write that compares one
+// against a value outside that set silently matches (or writes) nothing — a
+// common LLM mistake (a typo'd or hallucinated enum). We reject it and name the
+// valid values, so a retrying model has what it needs to fix the call.
+function checkEnumExpr(expr: Expr, tables: Map<string, ScopedTable>): void {
+  switch (expr.kind) {
+    case "cmp":
+      checkEnumCmp(expr.left, expr.right, tables)
+      checkEnumCmp(expr.right, expr.left, tables)
+      break
+    case "and":
+    case "or":
+      expr.args.forEach((a) => checkEnumExpr(a, tables))
+      break
+    case "not":
+      checkEnumExpr(expr.arg, tables)
+      break
+  }
+}
+
+// One side of a comparison is a column, the other a literal: if the column is an
+// enum, the literal must be one of its values.
+function checkEnumCmp(col: Expr, val: Expr, tables: Map<string, ScopedTable>): void {
+  if (col.kind !== "col" || val.kind !== "value") return
+  const table = tables.get(col.rel?.length ? aliasForPath(col.rel) : ROOT_ALIAS)
+  const field = table?.resource.fields[col.name]
+  if (field?.type === "enum" && field.enumValues)
+    assertEnumMember(field.name, val.value, field.enumValues)
+}
+
+// Enum check for write payloads (insert values / update set).
+function checkEnumRecord(resource: ResourceSchema, values: Record<string, unknown>): void {
+  for (const [col, value] of Object.entries(values)) {
+    const field = resource.fields[col]
+    if (field?.type === "enum" && field.enumValues) assertEnumMember(col, value, field.enumValues)
+  }
+}
+
+// null passes (it's "unset"/IS NULL, not a bad enum); anything else must be a
+// listed member. The error names every valid value.
+function assertEnumMember(column: string, value: unknown, allowed: string[]): void {
+  if (value === null) return
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    throw new ValidationError(
+      `Invalid value for "${column}". Allowed values: ${allowed.join(", ")}.`,
+    )
   }
 }
 

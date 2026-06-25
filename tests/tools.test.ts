@@ -92,6 +92,16 @@ describe("tool layer", () => {
     expect(fnVariant.properties.fn.enum).toContain("quantileTiming")
   })
 
+  it("spells out functions' fixed-value (enum) arguments in the `fn` description", async () => {
+    const { valv } = await setup()
+    const query = valv.tools.neutral(ctx).find((t) => t.name === "query")!
+    const params = query.parameters as any
+    const fnVariant = params.properties.select.items.anyOf.find((v: any) => v.properties?.fn)
+    // ClickHouse's toStartOfInterval takes an enum unit — it must be advertised so
+    // the model picks a valid one without first triggering an error.
+    expect(fnVariant.properties.fn.description).toMatch(/toStartOfInterval\([^)]*hour[^)]*\)/)
+  })
+
   it("formats per provider (anthropic shape)", async () => {
     const { valv } = await setup()
     const [first] = valv.tools.anthropic(ctx)

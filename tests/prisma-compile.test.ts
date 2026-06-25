@@ -57,7 +57,14 @@ describe("prisma adapter compile (shared emitter, per-provider dialect)", () => 
   const monthly: Query = {
     from: "users",
     select: [
-      { fn: "dateTrunc", args: [{ kind: "col", name: "id" }, { kind: "value", value: "month" }], as: "bucket" },
+      {
+        fn: "dateTrunc",
+        args: [
+          { kind: "col", name: "id" },
+          { kind: "value", value: "month" },
+        ],
+        as: "bucket",
+      },
       { fn: "count", args: [], as: "completions" },
     ],
     groupBy: ["bucket"],
@@ -91,7 +98,15 @@ describe("prisma adapter compile (shared emitter, per-provider dialect)", () => 
     const adapter = new PrismaAdapter(stub, { provider: "postgresql" })
     const bad: Query = {
       from: "users",
-      select: [{ fn: "dateTrunc", args: [{ kind: "col", name: "id" }, { kind: "value", value: "decade" }] }],
+      select: [
+        {
+          fn: "dateTrunc",
+          args: [
+            { kind: "col", name: "id" },
+            { kind: "value", value: "decade" },
+          ],
+        },
+      ],
     }
     expect(() => adapter.compile(bad, schema)).toThrow(/one of/)
   })
