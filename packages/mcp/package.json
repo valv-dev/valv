@@ -45,9 +45,9 @@
     "@clickhouse/client": "^1.0.0",
     "@prisma/client": "^5.0.0",
     "@valv/clickhouse": "^0.5.0",
-    "@valv/core": "^0.6.0",
+    "@valv/core": "^0.6.1",
     "@valv/mcp-sdk": "^0.4.0",
-    "@valv/prisma": "^0.6.0",
+    "@valv/prisma": "^0.6.1",
     "prisma": "^5.0.0"
   },
   "publishConfig": {
