@@ -294,6 +294,12 @@ await startStdioServer(valv, {
 })
 ```
 
+### Charting skill
+
+[`skills/valv`](skills/valv) is a [Claude Code skill](https://docs.claude.com/en/docs/claude-code/skills) that turns a data question into a chart: it queries through the valv MCP and renders the result as a self-contained Chart.js HTML file. Ask it to "visualize revenue by month" and it discovers the schema, runs one structured query, and opens the chart.
+
+It also **learns your database as you use it**. The first time it describes a table, figures out the dialect's time-bucket function, or maps "revenue" to `sum(total)` on `orders`, it records that in `.valv/notes.md` in your working directory — so later sessions skip the rediscovery and start warm. The notes hold schema and semantics only, never result rows, and the file is plain markdown you can read, edit, or pre-seed yourself.
+
 ---
 
 ## Adapters

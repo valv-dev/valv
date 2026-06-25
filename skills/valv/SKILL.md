@@ -5,7 +5,8 @@ description: >-
   single self-contained HTML file (Chart.js). Use whenever the user asks to
   chart, graph, plot, visualize, or "show me" data from their database — e.g.
   "visualize revenue by month", "chart signups per week", "graph orders by
-  status". Requires the valv MCP server to be configured.
+  status". Remembers your schema and query conventions in `.valv/notes.md` so it
+  gets faster across sessions. Requires the valv MCP server to be configured.
 ---
 
 # valv — visualize your database with charts
@@ -53,12 +54,41 @@ For time series, bucket with a function and group by the alias (e.g.
 `toStartOfInterval` / `date_trunc`, depending on the dialect surfaced by
 `describe_resource`).
 
+## The notes file — learn the DB as you go
+
+Keep a markdown file at `.valv/notes.md` (relative to the working directory) that
+caches what you learn about *this* database so later sessions start warm instead of
+cold. Create the `.valv/` dir on first write. It's plain markdown — the user can open
+and edit it, and pre-seed it with semantics you should honor.
+
+What goes in it:
+
+- **Resources and columns** you've described — real names and types — so you can skip
+  `describe_resource` round-trips next time.
+- **The dialect's time-bucket function** (e.g. `toStartOfInterval` vs `date_trunc`),
+  learned once.
+- **Business semantics**: "revenue" = `sum(total)` on `orders`, "active user" = …
+- **Quirks**: queries valv rejected and the fix, denied fields.
+
+Rules:
+
+- **Notes are hints, not truth.** Schemas drift. Trust a live valv response over the
+  file: if a `query` fails because a cached column is wrong or gone, re-run
+  `describe_resource`, fix the query, and **correct the note**. When unsure before a big
+  query, a cheap `describe_resource` to confirm is fine.
+- **Structure and semantics only — never result rows.** Charts contain real data; the
+  notes never do. Don't cache a customer's numbers into a file that may get committed.
+- **One DB per working directory.** If multiple valv servers/DBs are in play, that's out
+  of scope — note it as a known limit rather than mixing schemas in one file.
+
 ## Workflow
 
-1. **Understand the ask.** What's the measure (y), the dimension (x / series), and any
-   filter or time range? Pick the chart type up front (see below).
+1. **Understand the ask, read the notes.** What's the measure (y), the dimension
+   (x / series), and any filter or time range? Pick the chart type up front (see below).
+   Read `.valv/notes.md` if it exists and use it to skip discovery you've already done.
 2. **Discover.** `list_resources` (or `search_resources`) to find the table, then
-   `describe_resource` to get exact column names and types. Don't skip this.
+   `describe_resource` to get exact column names and types. Skip what the notes already
+   cover; only describe what's unknown or looks stale. Don't skip this for new tables.
 3. **Query.** Emit one `query` that returns exactly the rows the chart needs — already
    aggregated and grouped server-side, not raw rows you reshape client-side. Add a
    sane `limit`. If valv rejects the query (unknown column, denied field, bad
@@ -67,6 +97,9 @@ For time series, bucket with a function and group by the alias (e.g.
    as JSON and a Chart.js config. One question → one file.
 5. **Open it** for the user (`open <file>.html` on macOS) and tell them the path and what
    the chart shows. Mention the query you ran in one line.
+6. **Save what you learned.** If anything durable came up — a resource's columns, the
+   bucket function, a semantic mapping, a valv quirk and its fix — append or update
+   `.valv/notes.md`. Schema and semantics only, never result rows.
 
 ## Picking a chart type
 
