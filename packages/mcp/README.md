@@ -16,7 +16,7 @@ The fastest way in — it probes your database, lets you choose access, and writ
 npx @valv/mcp init
 ```
 
-It prompts for a connection string, confirms the dialect, connects and shows your tables, then offers read-only / pick-tables / a policy-file stub — and writes the `.mcp.json` entry for you.
+It takes either a connection string or individual fields (host, port, user, password, database), confirms the dialect, connects and shows your tables, then offers read-only / pick-tables / a policy-file stub. It then merges the server entry into the client of your choice — Claude Code, Claude Desktop, Cursor, or Codex — at project or global scope, leaving any existing config in place. Lastly it offers to install the **valv skill**, which teaches the agent how to query valv and turn results into interactive chart-report HTML files — as a skill for Claude Code (`.claude/skills`), Codex (`.agents/skills`), or Cursor (`.cursor/skills`), at project or global scope. Finally it can copy a kickstart prompt to your clipboard — paste it into your agent to explore the schema (seeding `.valv/notes.md` for future queries) and generate a single interactive `valv-map.html` overview of the database.
 
 ## Manual setup
 
