@@ -1,8 +1,10 @@
 {
-  "name": "@valv/core",
-  "version": "0.6.2",
-  "description": "ORM + Access Control Layer for AI Agents",
+  "name": "@valv/postgres",
+  "version": "0.1.0",
+  "description": "Postgres adapter for valv — row-level security and access control for AI agents, over a runtime connection",
   "keywords": [
+    "postgres",
+    "postgresql",
     "ai agent",
     "llm",
     "access control",
@@ -11,17 +13,13 @@
     "multi-tenant",
     "tool use",
     "function calling",
-    "vercel ai sdk",
-    "anthropic",
-    "openai",
     "typescript"
   ],
-  "author": "Nicolò D'Addabbo <nicolodaddabbo@gmail.com> (https://nicolod.com)",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/vistal-dev/vistal.git",
-    "directory": "packages/core"
+    "directory": "packages/postgres"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -38,18 +36,11 @@
   "scripts": {
     "build": "tsc"
   },
+  "peerDependencies": {
+    "@valv/core": "^0.6.2",
+    "postgres": "^3.0.0"
+  },
   "publishConfig": {
     "access": "public"
-  },
-  "dependencies": {
-    "zod": "^4.4.3"
-  },
-  "peerDependencies": {
-    "ai": "^5.0.0 || ^6.0.0"
-  },
-  "peerDependenciesMeta": {
-    "ai": {
-      "optional": true
-    }
   }
 }

@@ -1,4 +1,5 @@
 import type { Dialect, FnDef } from "@valv/core"
+import { postgresDialect } from "@valv/core"
 
 const doubleQuote = (id: string): string => '"' + id.replace(/"/g, '""') + '"'
 const backtick = (id: string): string => "`" + id.replace(/`/g, "``") + "`"
@@ -36,14 +37,9 @@ const dateTrunc = (render: (col: string, unit: (typeof TRUNC_UNITS)[number]) => 
   render: ([c, unit]) => render(c!, unit as (typeof TRUNC_UNITS)[number]),
 })
 
-// Postgres/CockroachDB: "id" quoting, $1 placeholders.
-export const postgresDialect: Dialect = {
-  quoteId: doubleQuote,
-  placeholder: (index) => `$${index + 1}`,
-  functions: {
-    dateTrunc: dateTrunc((c, unit) => `date_trunc('${unit}', ${c})`),
-  },
-}
+// Postgres/CockroachDB use core's shared `postgresDialect` (imported above), so
+// the definition lives in one place. MySQL and SQLite stay here — they're only
+// used by this adapter.
 
 // MySQL: `id` quoting, ? placeholders.
 export const mysqlDialect: Dialect = {

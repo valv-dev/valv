@@ -1,0 +1,208 @@
+import type { SchemaMap, ResourceSchema, FieldSchema, FieldType, RelationSchema } from "@valv/core"
+
+// The structural slice of a postgres.js `Sql` client this adapter needs. Kept to
+// `unsafe` + `begin` so the package never imports the driver — the consumer
+// passes their own client (and owns its connection lifecycle and credentials).
+export interface PostgresSql {
+  unsafe(query: string, parameters?: unknown[]): PromiseLike<unknown[]>
+  begin<T>(callback: (sql: PostgresSql) => Promise<T>): Promise<T>
+}
+
+// Only the `public` schema is introspected. Resource names are the bare table
+// name, and the emitter quotes `tableName` as a single identifier — a
+// schema-qualified table would need `schema.table` handling it doesn't do. This
+// covers the common case; widen when a real multi-schema need appears.
+const SCHEMA = "public"
+
+interface ColumnRow {
+  table_name: string
+  column_name: string
+  data_type: string
+  is_nullable: string
+  has_default: boolean
+}
+
+interface PkRow {
+  table_name: string
+  column_name: string
+}
+
+interface FkRow {
+  table_name: string
+  column_name: string
+  constraint_name: string
+  foreign_table_name: string
+  foreign_column_name: string
+}
+
+export async function introspectPostgres(sql: PostgresSql): Promise<SchemaMap> {
+  const [columns, pks, fks] = await Promise.all([
+    sql.unsafe(`
+      select c.table_name, c.column_name, c.data_type, c.is_nullable,
+             (c.column_default is not null) as has_default
+      from information_schema.columns c
+      join information_schema.tables t
+        on t.table_schema = c.table_schema and t.table_name = c.table_name
+      where t.table_type = 'BASE TABLE' and c.table_schema = '${SCHEMA}'
+      order by c.table_name, c.ordinal_position
+    `) as Promise<ColumnRow[]>,
+    sql.unsafe(`
+      select kcu.table_name, kcu.column_name
+      from information_schema.table_constraints tc
+      join information_schema.key_column_usage kcu
+        on kcu.constraint_name = tc.constraint_name and kcu.table_schema = tc.table_schema
+      where tc.constraint_type = 'PRIMARY KEY' and tc.table_schema = '${SCHEMA}'
+      order by kcu.table_name, kcu.ordinal_position
+    `) as Promise<PkRow[]>,
+    sql.unsafe(`
+      select kcu.table_name, kcu.column_name, kcu.constraint_name,
+             ccu.table_name as foreign_table_name, ccu.column_name as foreign_column_name
+      from information_schema.table_constraints tc
+      join information_schema.key_column_usage kcu
+        on kcu.constraint_name = tc.constraint_name and kcu.table_schema = tc.table_schema
+      join information_schema.constraint_column_usage ccu
+        on ccu.constraint_name = tc.constraint_name and ccu.table_schema = tc.table_schema
+      where tc.constraint_type = 'FOREIGN KEY' and tc.table_schema = '${SCHEMA}'
+      order by kcu.table_name, kcu.constraint_name, kcu.ordinal_position
+    `) as Promise<FkRow[]>,
+  ])
+
+  const pkByTable = new Map<string, string[]>()
+  for (const r of pks) {
+    const list = pkByTable.get(r.table_name) ?? []
+    list.push(r.column_name)
+    pkByTable.set(r.table_name, list)
+  }
+
+  // Group FK columns by constraint so composite FKs (>1 column) can be detected
+  // and skipped — valv relations carry a single join key, so a composite FK
+  // can't be represented and is dropped rather than emitted wrong.
+  const fkByConstraint = new Map<
+    string,
+    { table: string; localColumns: string[]; foreignTable: string; foreignColumns: string[] }
+  >()
+  for (const r of fks) {
+    const entry = fkByConstraint.get(r.constraint_name) ?? {
+      table: r.table_name,
+      localColumns: [],
+      foreignTable: r.foreign_table_name,
+      foreignColumns: [],
+    }
+    entry.localColumns.push(r.column_name)
+    entry.foreignColumns.push(r.foreign_column_name)
+    fkByConstraint.set(r.constraint_name, entry)
+  }
+
+  const columnsByTable = new Map<string, ColumnRow[]>()
+  for (const r of columns) {
+    const list = columnsByTable.get(r.table_name) ?? []
+    list.push(r)
+    columnsByTable.set(r.table_name, list)
+  }
+
+  const resources: Record<string, ResourceSchema> = {}
+  for (const [tableName, cols] of columnsByTable) {
+    const pkCols = pkByTable.get(tableName) ?? []
+    // Prefer a column literally named "id", else the sole primary key column.
+    const idCol = cols.find((c) => c.column_name === "id")?.column_name ?? pkCols[0]
+
+    const fields: Record<string, FieldSchema> = {}
+    for (const col of cols) {
+      const type = mapPgType(col.data_type)
+      if (!type) continue
+      fields[col.column_name] = {
+        name: col.column_name,
+        type,
+        nativeType: col.data_type,
+        isNullable: col.is_nullable === "YES",
+        isId: col.column_name === idCol,
+        isPrimaryKeyPart: pkCols.includes(col.column_name),
+        hasDefaultValue: col.has_default,
+      }
+    }
+
+    resources[tableName] = { name: tableName, tableName, fields, relations: {} }
+  }
+
+  addRelations(resources, fkByConstraint)
+  return { resources }
+}
+
+// Turn single-column FK constraints into relations on both ends: a `belongsTo`
+// on the table that owns the FK, and the inverse `hasMany` on the referenced
+// table — so the model can traverse orders → customer and customer → orders.
+function addRelations(
+  resources: Record<string, ResourceSchema>,
+  fkByConstraint: Map<
+    string,
+    { table: string; localColumns: string[]; foreignTable: string; foreignColumns: string[] }
+  >,
+): void {
+  for (const fk of fkByConstraint.values()) {
+    if (fk.localColumns.length !== 1) continue // composite FK — not representable
+    const localColumn = fk.localColumns[0]
+    const foreignColumn = fk.foreignColumns[0]
+    const owner = resources[fk.table]
+    const target = resources[fk.foreignTable]
+    if (!owner || !target) continue
+
+    const belongsToName = uniqueName(
+      owner.relations,
+      localColumn.endsWith("_id") ? localColumn.slice(0, -3) : fk.foreignTable,
+    )
+    owner.relations[belongsToName] = {
+      name: belongsToName,
+      targetResource: fk.foreignTable,
+      type: "belongsTo",
+      foreignKey: localColumn,
+      targetKey: foreignColumn,
+    }
+
+    const hasManyName = uniqueName(target.relations, pluralize(fk.table))
+    target.relations[hasManyName] = {
+      name: hasManyName,
+      targetResource: fk.table,
+      type: "hasMany",
+      // For hasMany the FK lives on the owning (child) table; targetKey is the
+      // referenced column back on this (parent) table.
+      foreignKey: localColumn,
+      targetKey: foreignColumn,
+    }
+  }
+}
+
+function uniqueName(existing: Record<string, RelationSchema>, base: string): string {
+  if (!(base in existing)) return base
+  let n = 2
+  while (`${base}_${n}` in existing) n++
+  return `${base}_${n}`
+}
+
+function pluralize(name: string): string {
+  return name.endsWith("s") ? name : `${name}s`
+}
+
+// Coarse cross-dialect type from Postgres's information_schema data_type. Unknown
+// types (composite, geometry, and — for now — enums, which surface as
+// USER-DEFINED without their values here) fall through to "string".
+function mapPgType(dataType: string): FieldType | null {
+  const t = dataType.toLowerCase()
+  if (
+    [
+      "smallint",
+      "integer",
+      "bigint",
+      "decimal",
+      "numeric",
+      "real",
+      "double precision",
+      "money",
+    ].includes(t)
+  )
+    return "number"
+  if (t === "boolean") return "boolean"
+  if (t === "uuid") return "uuid"
+  if (t === "date" || t.startsWith("timestamp") || t.startsWith("time")) return "date"
+  if (t === "json" || t === "jsonb") return "json"
+  return "string"
+}

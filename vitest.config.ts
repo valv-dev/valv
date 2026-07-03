@@ -7,6 +7,7 @@ export default defineConfig({
       "@valv/core": path.resolve(__dirname, "packages/core/src/index.ts"),
       "@valv/prisma": path.resolve(__dirname, "packages/prisma/src/index.ts"),
       "@valv/clickhouse": path.resolve(__dirname, "packages/clickhouse/src/index.ts"),
+      "@valv/postgres": path.resolve(__dirname, "packages/postgres/src/index.ts"),
     },
   },
 })
