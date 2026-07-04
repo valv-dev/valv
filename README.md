@@ -74,7 +74,7 @@ One `query` tool covers the whole read surface. The model composes a query from 
   "select": [
     { "col": "status" },
     { "fn": "count", "args": [], "as": "orders" },
-    { "fn": "sum", "args": [{ "kind": "col", "name": "total" }], "as": "revenue" }
+    { "fn": "sum", "args": [{ "col": "total" }], "as": "revenue" }
   ],
   "where": { "kind": "cmp", "op": ">=", "left": { "kind": "col", "name": "created_at" },
              "right": { "kind": "value", "value": "2026-06-01" } },
@@ -96,7 +96,7 @@ To read a related resource, qualify a column with `rel` — a relation path from
   "select": [
     { "col": "name", "rel": ["customer"] },              // one hop: orders → customer
     { "col": "name", "rel": ["customer", "region"] },    // multi-hop: → customer → region
-    { "fn": "sum", "args": [{ "kind": "col", "name": "total" }], "as": "revenue" }
+    { "fn": "sum", "args": [{ "col": "total" }], "as": "revenue" }
   ],
   "groupBy": [{ "col": "name", "rel": ["customer"] }]
 }
@@ -233,7 +233,7 @@ A worked example. The agent asks for revenue per status and emits:
 
 ```jsonc
 { "from": "orders",
-  "select": [{ "col": "status" }, { "fn": "sum", "args": [{ "kind": "col", "name": "total" }], "as": "revenue" }],
+  "select": [{ "col": "status" }, { "fn": "sum", "args": [{ "col": "total" }], "as": "revenue" }],
   "groupBy": ["status"] }
 ```
 
