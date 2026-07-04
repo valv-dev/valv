@@ -31,13 +31,15 @@ export interface BuildToolsArgs<TContext> {
 
 const QUERY_DESCRIPTION =
   "Run a structured analytics query rooted at one resource (`from`). Provide `select` (columns " +
-  "and/or aggregate functions) and optionally `where`, `groupBy`, `orderBy`, and `limit`. Group " +
-  "or order by a select alias to bucket over time or rank by an aggregate. To read columns from a " +
-  "related resource, set `rel` to the relation path from the root, e.g. " +
-  '`{ "col": "name", "rel": ["customer"] }` or, multiple hops, `{ "col": "name", "rel": ' +
-  '["order", "customer"] }`. The join is built automatically from the schema\'s relations — only ' +
-  "declared relations are joinable. Use describe_resource to learn a resource's exact columns and " +
-  "relations before querying."
+  "and/or aggregate functions) and optionally `where`, `groupBy`, `orderBy`, and `limit`. A column " +
+  'is written `{ "col": "name" }`, both as a select item and inside a function\'s `args` — e.g. ' +
+  '`{ "fn": "sum", "args": [{ "col": "amount" }], "as": "total" }`. `count` over all rows takes no ' +
+  'args: `{ "fn": "count", "args": [], "as": "n" }`. Group or order by a select alias to bucket ' +
+  "over time or rank by an aggregate. To read columns from a related resource, set `rel` to the " +
+  'relation path from the root, e.g. `{ "col": "name", "rel": ["customer"] }` or, multiple hops, ' +
+  '`{ "col": "name", "rel": ["order", "customer"] }`. The join is built automatically from the ' +
+  "schema's relations — only declared relations are joinable. Use describe_resource to learn a " +
+  "resource's exact columns and relations before querying."
 
 const LIST_DESCRIPTION = "List the resources you can query, each with a short description."
 

@@ -74,9 +74,21 @@ const columnSelect = z.object({
   rel: relPath.optional(),
   as: identifier.optional(),
 })
+
+// A function argument: any Expr, or the bare `{ col, rel? }` column shorthand —
+// the same shape used in `select` — normalized to a col Expr so downstream stages
+// (validate, inject, emit) only ever see the tagged form. This lets a column be
+// written one way everywhere: `sum({ col: "amount" })` instead of the verbose
+// `sum({ kind: "col", name: "amount" })`. The full Expr forms (value/cmp/boolean)
+// still parse for functions that take literals or predicates.
+const colShorthand = z
+  .object({ col: z.string(), rel: relPath.optional() })
+  .transform((c): Expr => (c.rel ? { kind: "col", name: c.col, rel: c.rel } : { kind: "col", name: c.col }))
+const fnArg = z.union([ExprSchema, colShorthand]) as unknown as z.ZodType<Expr>
+
 const fnSelect = z.object({
   fn: identifier,
-  args: z.array(ExprSchema).max(8),
+  args: z.array(fnArg).max(8),
   as: identifier.optional(),
 })
 

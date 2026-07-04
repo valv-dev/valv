@@ -295,4 +295,47 @@ describe("aggregates (slice 2)", () => {
       ).rejects.toThrow(/within \[0, 1\]/)
     }
   })
+
+  // A column inside a function's args may be written with the bare `{ col }`
+  // shorthand (the same shape used in `select`), not only the verbose col Expr.
+  it("accepts the bare { col } shorthand inside a function arg", async () => {
+    const { valv, calls } = await setup()
+    await valv.runTool(
+      "query",
+      { from: "events", select: [{ fn: "avg", args: [{ col: "latency" }], as: "avg_latency" }] },
+      ctx,
+    )
+    expect(calls[0].query).toBe(
+      "SELECT avg(`latency`) AS `avg_latency` FROM `events_t` WHERE (`tenant_id` = {p0:String}) LIMIT 100",
+    )
+  })
+
+  it("compiles the { col } shorthand identically to the verbose col Expr", async () => {
+    const shorthand = await setup()
+    await shorthand.valv.runTool(
+      "query",
+      { from: "events", select: [{ fn: "avg", args: [{ col: "latency" }] }] },
+      ctx,
+    )
+    const verbose = await setup()
+    await verbose.valv.runTool(
+      "query",
+      { from: "events", select: [{ fn: "avg", args: [col("latency")] }] },
+      ctx,
+    )
+    expect(shorthand.calls[0].query).toBe(verbose.calls[0].query)
+  })
+
+  // The shorthand is normalized before policy runs, so a denied column can't
+  // sneak through it either.
+  it("still policy-checks a denied column written with the shorthand", async () => {
+    const { valv } = await setup()
+    await expect(
+      valv.runTool(
+        "query",
+        { from: "events", select: [{ fn: "avg", args: [{ col: "secret" }] }] },
+        ctx,
+      ),
+    ).rejects.toThrow(/not accessible/)
+  })
 })

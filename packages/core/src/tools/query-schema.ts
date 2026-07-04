@@ -24,7 +24,10 @@ export function mutationSchema(op: "create" | "update" | "delete"): object {
 // function takes are spelled out in its description — otherwise a model would
 // only discover valid units by trying one and reading the error.
 export function buildQuerySchema(functions: Record<string, FnDef>): object {
-  base ??= z.toJSONSchema(QuerySchema) as object
+  // Describe the input the model produces (io: "input"): function args accept a
+  // bare column shorthand that normalizes to a col Expr, so the schema must show
+  // the pre-transform shape.
+  base ??= z.toJSONSchema(QuerySchema, { io: "input" }) as object
   const schema = structuredClone(base) as JsonSchemaNode
   const variants = schema.properties?.select?.items?.anyOf
   const fnVariant = Array.isArray(variants) ? variants.find((v) => v?.properties?.fn) : undefined
