@@ -15,6 +15,7 @@
     "format:check": "prettier --check \"packages/*/src/**/*.ts\" \"tests/**/*.ts\""
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
     "@types/node": "^20.0.0",
     "ai": "^6.0.0",
     "prettier": "^3.8.3",

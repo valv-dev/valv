@@ -1,17 +1,19 @@
 import { z } from "zod"
 import { QuerySchema, InsertSchema, UpdateSchema, DeleteSchema } from "../ast"
-import type { FnDef } from "../functions"
+import type { ArgSpec, FnDef } from "../functions"
 
 let base: object | null = null
 let mutationSchemas: Record<"create" | "update" | "delete", object> | null = null
 
 // JSON Schema for a write tool's input. No catalog specialization — the columns
 // are free strings (validated downstream), the `where` reuses the shared Expr.
+// io: "input" like the query schema — the Expr `where` accepts the bare column
+// shorthand, so the model-facing schema must show the pre-transform shape.
 export function mutationSchema(op: "create" | "update" | "delete"): object {
   mutationSchemas ??= {
-    create: z.toJSONSchema(InsertSchema) as object,
-    update: z.toJSONSchema(UpdateSchema) as object,
-    delete: z.toJSONSchema(DeleteSchema) as object,
+    create: z.toJSONSchema(InsertSchema, { io: "input" }) as object,
+    update: z.toJSONSchema(UpdateSchema, { io: "input" }) as object,
+    delete: z.toJSONSchema(DeleteSchema, { io: "input" }) as object,
   }
   return mutationSchemas[op]
 }
@@ -41,20 +43,34 @@ export function buildQuerySchema(functions: Record<string, FnDef>): object {
 }
 
 // Document every function that takes a fixed-value argument, e.g.
-// "Functions with fixed-value arguments: dateTrunc(minute|hour|day|month|year)."
-// Returns undefined when no function has an enum arg.
+// "Functions with fixed-value arguments: dateTrunc(column, minute|hour|day|month|year)."
+// The full positional signature is spelled out — not just the enum values — so the
+// argument *order* is unambiguous (the model can't otherwise tell the unit comes
+// after the column, only by trying one and reading the error). Returns undefined
+// when no function has an enum arg.
 function enumArgHint(functions: Record<string, FnDef>): string | undefined {
   const parts: string[] = []
   for (const [name, def] of Object.entries(functions)) {
-    const enums = def.args.filter((a) => a.kind === "enum")
-    if (enums.length) {
-      const args = enums
-        .map((a) => (a as { values: readonly string[] }).values.join("|"))
-        .join(", ")
-      parts.push(`${name}(${args})`)
-    }
+    if (!def.args.some((a) => a.kind === "enum")) continue
+    const args = def.args.map(renderArg).join(", ")
+    parts.push(`${name}(${args})`)
   }
   return parts.length ? `Functions with fixed-value arguments: ${parts.join("; ")}.` : undefined
+}
+
+// One positional argument, spelled the way it appears in a call so order reads off
+// the signature: the enum's allowed values, or the arg's kind as a placeholder.
+function renderArg(a: ArgSpec): string {
+  switch (a.kind) {
+    case "enum":
+      return a.values.join("|")
+    case "column":
+      return a.optional ? "column?" : "column"
+    case "number":
+      return "number"
+    case "predicate":
+      return "predicate"
+  }
 }
 
 // A loose shape for walking the generated JSON Schema to the `fn` field. JSON

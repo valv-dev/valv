@@ -1,6 +1,6 @@
 {
   "name": "@valv/clickhouse",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "ClickHouse adapter for valv — row-level security and access control for AI agents",
   "keywords": [
     "clickhouse",
@@ -40,7 +40,7 @@
   },
   "peerDependencies": {
     "@clickhouse/client": "^1.0.0",
-    "@valv/core": "^0.6.1"
+    "@valv/core": "^0.7.0"
   },
   "publishConfig": {
     "access": "public"

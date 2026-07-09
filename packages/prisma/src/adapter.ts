@@ -79,10 +79,15 @@ export class PrismaAdapter implements ValvAdapter {
   async execute(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
     const provider = this.resolveProvider()
     if (provider === "postgresql" || provider === "cockroachdb") {
-      // SET LOCAL scopes the timeout to this transaction. The value is our own
-      // hardcoded integer (never user input), so inlining it is safe.
+      // SET LOCAL scopes both settings to this transaction. Values are our own
+      // hardcoded literals (never user input), so inlining them is safe.
       return this.prisma.$transaction(async (tx) => {
         await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`)
+        // Pin the session to UTC so date_trunc on a `timestamptz` buckets to UTC
+        // boundaries instead of the server's local zone — otherwise dateTrunc
+        // buckets shift by the server's offset and depend on where the query
+        // runs. Keeps the serialized output stable across environments.
+        await tx.$executeRawUnsafe(`SET LOCAL TIME ZONE 'UTC'`)
         const rows = await tx.$queryRawUnsafe(sql, ...parameters)
         return rows as unknown[]
       })

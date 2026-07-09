@@ -16,12 +16,48 @@ const throwingClient: PostgresSql = {
 // Canned information_schema rows for a two-table schema with one FK
 // (orders.customer_id → customers.id). The fake dispatches on the query text.
 const columnRows = [
-  { table_name: "orders", column_name: "id", data_type: "integer", is_nullable: "NO", has_default: true },
-  { table_name: "orders", column_name: "total", data_type: "numeric", is_nullable: "NO", has_default: false },
-  { table_name: "orders", column_name: "customer_id", data_type: "integer", is_nullable: "NO", has_default: false },
-  { table_name: "orders", column_name: "created_at", data_type: "timestamp with time zone", is_nullable: "NO", has_default: true },
-  { table_name: "customers", column_name: "id", data_type: "integer", is_nullable: "NO", has_default: true },
-  { table_name: "customers", column_name: "name", data_type: "text", is_nullable: "YES", has_default: false },
+  {
+    table_name: "orders",
+    column_name: "id",
+    data_type: "integer",
+    is_nullable: "NO",
+    has_default: true,
+  },
+  {
+    table_name: "orders",
+    column_name: "total",
+    data_type: "numeric",
+    is_nullable: "NO",
+    has_default: false,
+  },
+  {
+    table_name: "orders",
+    column_name: "customer_id",
+    data_type: "integer",
+    is_nullable: "NO",
+    has_default: false,
+  },
+  {
+    table_name: "orders",
+    column_name: "created_at",
+    data_type: "timestamp with time zone",
+    is_nullable: "NO",
+    has_default: true,
+  },
+  {
+    table_name: "customers",
+    column_name: "id",
+    data_type: "integer",
+    is_nullable: "NO",
+    has_default: true,
+  },
+  {
+    table_name: "customers",
+    column_name: "name",
+    data_type: "text",
+    is_nullable: "YES",
+    has_default: false,
+  },
 ]
 const pkRows = [
   { table_name: "orders", column_name: "id" },
@@ -121,6 +157,12 @@ describe("postgres execute", () => {
     await adapter.execute('SELECT "email" FROM "users" WHERE ("id" = $1)', [1])
 
     expect(statements[0].sql).toMatch(/SET LOCAL statement_timeout/)
-    expect(statements[1]).toEqual({ sql: 'SELECT "email" FROM "users" WHERE ("id" = $1)', params: [1] })
+    // The session is pinned to UTC so date_trunc buckets to UTC boundaries
+    // regardless of the server's timezone.
+    expect(statements[1].sql).toMatch(/SET LOCAL TIME ZONE 'UTC'/)
+    expect(statements[2]).toEqual({
+      sql: 'SELECT "email" FROM "users" WHERE ("id" = $1)',
+      params: [1],
+    })
   })
 })

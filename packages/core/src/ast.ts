@@ -48,11 +48,25 @@ const relPath = z
   .min(1)
   .max(8)
 
+// The bare `{ col, rel? }` column shorthand — the same shape used in `select` —
+// normalized to a tagged col Expr so downstream stages (validate, inject, emit)
+// only ever see the tagged form. It's a member of ExprSchema below, so a column
+// can be written ONE way *everywhere* it appears: `select`, function args, and
+// comparison operands in a `where`. Without this a column is `{ col: "x" }` in a
+// select but `{ kind: "col", name: "x" }` in a filter, and models — smaller ones
+// especially — trip on switching forms mid-query.
+const colShorthand = z
+  .object({ col: z.string(), rel: relPath.optional() })
+  .transform((c): Expr => (c.rel ? { kind: "col", name: c.col, rel: c.rel } : { kind: "col", name: c.col }))
+
 // Recursive schema: annotate via cast, the idiomatic Zod pattern (the inferred
-// output differs only in that z.unknown() makes `value` optional).
+// output differs only in that z.unknown() makes `value` optional). `col` and the
+// `{ col }` shorthand are distinct union members, so both forms parse to the same
+// tagged node.
 export const ExprSchema = z.lazy(() =>
   z.union([
     z.object({ kind: z.literal("col"), name: z.string(), rel: relPath.optional() }),
+    colShorthand,
     z.object({
       kind: z.literal("value"),
       value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
@@ -75,20 +89,10 @@ const columnSelect = z.object({
   as: identifier.optional(),
 })
 
-// A function argument: any Expr, or the bare `{ col, rel? }` column shorthand —
-// the same shape used in `select` — normalized to a col Expr so downstream stages
-// (validate, inject, emit) only ever see the tagged form. This lets a column be
-// written one way everywhere: `sum({ col: "amount" })` instead of the verbose
-// `sum({ kind: "col", name: "amount" })`. The full Expr forms (value/cmp/boolean)
-// still parse for functions that take literals or predicates.
-const colShorthand = z
-  .object({ col: z.string(), rel: relPath.optional() })
-  .transform((c): Expr => (c.rel ? { kind: "col", name: c.col, rel: c.rel } : { kind: "col", name: c.col }))
-const fnArg = z.union([ExprSchema, colShorthand]) as unknown as z.ZodType<Expr>
-
+// Function args are just Exprs now — the `{ col }` shorthand is part of ExprSchema.
 const fnSelect = z.object({
   fn: identifier,
-  args: z.array(fnArg).max(8),
+  args: z.array(ExprSchema).max(8),
   as: identifier.optional(),
 })
 

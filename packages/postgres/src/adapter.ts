@@ -37,9 +37,16 @@ export class PostgresAdapter implements ValvAdapter {
 
   async execute(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
     return this.sql.begin(async (tx) => {
-      // SET LOCAL scopes the timeout to this transaction. The value is our own
-      // hardcoded integer (never user input), so inlining it is safe.
+      // SET LOCAL scopes both settings to this transaction. Values are our own
+      // hardcoded literals (never user input), so inlining them is safe.
       await tx.unsafe(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`)
+      // Pin the session to UTC so date_trunc (and any other tz-sensitive
+      // operator) on a `timestamptz` truncates to UTC boundaries instead of the
+      // server's local zone. Without this, dateTrunc buckets shift by the
+      // server's offset and, worse, depend on where the query runs —
+      // monthly/daily grouping would land on the wrong day. UTC also makes the
+      // serialized ISO output stable across environments.
+      await tx.unsafe(`SET LOCAL TIME ZONE 'UTC'`)
       const rows = await tx.unsafe(sql, parameters)
       return rows as unknown[]
     })
