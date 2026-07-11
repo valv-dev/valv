@@ -131,3 +131,49 @@ describe("postgres live: dateTrunc + group by date", () => {
     ])
   })
 })
+
+// valv's whole point is running as a read-only role, and Postgres's
+// information_schema.table_constraints view is empty for a SELECT-only role that
+// doesn't own the table — so keys are read from pg_catalog instead. This locks
+// that: introspecting *as* such a role must still resolve PKs and FKs.
+describe("postgres live: introspection under a read-only role", () => {
+  let rodb: PGlite
+
+  beforeAll(async () => {
+    rodb = new PGlite()
+    await rodb.exec(`
+      CREATE TABLE customers ( id serial PRIMARY KEY, name text );
+      CREATE TABLE orders (
+        id serial PRIMARY KEY,
+        customer_id integer NOT NULL REFERENCES customers(id),
+        total numeric NOT NULL
+      );
+      CREATE ROLE app_ro NOLOGIN;
+      GRANT USAGE ON SCHEMA public TO app_ro;
+      GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_ro;
+    `)
+    // Drop to a SELECT-only, non-owning role for the rest of the session, so
+    // table_constraints is empty for these tables and keys must come from
+    // pg_catalog — reverting the pg_catalog queries makes this test fail.
+    await rodb.exec(`SET ROLE app_ro`)
+  })
+
+  afterAll(async () => {
+    await rodb.close()
+  })
+
+  it("still resolves primary keys and foreign keys via pg_catalog", async () => {
+    const { resources } = await new PostgresAdapter(pgliteClient(rodb)).introspect()
+
+    expect(resources.orders.fields.id).toMatchObject({ isId: true, isPrimaryKeyPart: true })
+    expect(resources.customers.fields.id).toMatchObject({ isPrimaryKeyPart: true })
+
+    // The belongsTo relation only exists if the FK was visible.
+    expect(resources.orders.relations.customer).toMatchObject({
+      targetResource: "customers",
+      type: "belongsTo",
+      foreignKey: "customer_id",
+      targetKey: "id",
+    })
+  })
+})

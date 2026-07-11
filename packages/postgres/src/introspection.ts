@@ -46,24 +46,36 @@ export async function introspectPostgres(sql: PostgresSql): Promise<SchemaMap> {
       where t.table_type = 'BASE TABLE' and c.table_schema = '${SCHEMA}'
       order by c.table_name, c.ordinal_position
     `) as Promise<ColumnRow[]>,
+    // Primary keys from pg_catalog, not information_schema.table_constraints:
+    // that view is empty for a SELECT-only role that doesn't own the table (it
+    // requires ownership or a non-SELECT privilege), and valv connections are
+    // read-only by design — so PKs would silently vanish. pg_catalog is readable
+    // by any role, so keys resolve regardless of grants.
     sql.unsafe(`
-      select kcu.table_name, kcu.column_name
-      from information_schema.table_constraints tc
-      join information_schema.key_column_usage kcu
-        on kcu.constraint_name = tc.constraint_name and kcu.table_schema = tc.table_schema
-      where tc.constraint_type = 'PRIMARY KEY' and tc.table_schema = '${SCHEMA}'
-      order by kcu.table_name, kcu.ordinal_position
+      select c.relname as table_name, a.attname as column_name
+      from pg_constraint con
+      join pg_class c on c.oid = con.conrelid
+      join pg_namespace n on n.oid = c.relnamespace
+      join lateral unnest(con.conkey) with ordinality as k(attnum, ord) on true
+      join pg_attribute a on a.attrelid = c.oid and a.attnum = k.attnum
+      where con.contype = 'p' and n.nspname = '${SCHEMA}'
+      order by c.relname, k.ord
     `) as Promise<PkRow[]>,
+    // Foreign keys from pg_catalog for the same reason. unnest with ordinality
+    // over both key arrays at once keeps local and referenced columns paired in
+    // order, so composite FKs group correctly.
     sql.unsafe(`
-      select kcu.table_name, kcu.column_name, kcu.constraint_name,
-             ccu.table_name as foreign_table_name, ccu.column_name as foreign_column_name
-      from information_schema.table_constraints tc
-      join information_schema.key_column_usage kcu
-        on kcu.constraint_name = tc.constraint_name and kcu.table_schema = tc.table_schema
-      join information_schema.constraint_column_usage ccu
-        on ccu.constraint_name = tc.constraint_name and ccu.table_schema = tc.table_schema
-      where tc.constraint_type = 'FOREIGN KEY' and tc.table_schema = '${SCHEMA}'
-      order by kcu.table_name, kcu.constraint_name, kcu.ordinal_position
+      select c.relname as table_name, a.attname as column_name, con.conname as constraint_name,
+             fc.relname as foreign_table_name, fa.attname as foreign_column_name
+      from pg_constraint con
+      join pg_class c on c.oid = con.conrelid
+      join pg_namespace n on n.oid = c.relnamespace
+      join pg_class fc on fc.oid = con.confrelid
+      join lateral unnest(con.conkey, con.confkey) with ordinality as k(conkey, confkey, ord) on true
+      join pg_attribute a on a.attrelid = c.oid and a.attnum = k.conkey
+      join pg_attribute fa on fa.attrelid = fc.oid and fa.attnum = k.confkey
+      where con.contype = 'f' and n.nspname = '${SCHEMA}'
+      order by c.relname, con.conname, k.ord
     `) as Promise<FkRow[]>,
   ])
 

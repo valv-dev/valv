@@ -77,8 +77,10 @@ function introspectingClient(): PostgresSql {
   return {
     async unsafe(query: string) {
       if (query.includes("information_schema.columns")) return columnRows
-      if (query.includes("PRIMARY KEY")) return pkRows
-      if (query.includes("FOREIGN KEY")) return fkRows
+      // Keys come from pg_catalog (contype 'p'/'f'), not table_constraints, so a
+      // read-only role that doesn't own the tables can still see them.
+      if (query.includes("con.contype = 'p'")) return pkRows
+      if (query.includes("con.contype = 'f'")) return fkRows
       throw new Error(`unexpected query: ${query}`)
     },
     async begin() {
