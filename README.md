@@ -54,6 +54,7 @@ valv.policy("orders", (ctx) => ({ read: { tenant_id: ctx.tenant.id } }))
 const ctx = { user: { id: "u1", role: "analyst" }, tenant: { id: "acme" } }
 const { text } = await generateText({
   model,
+  system: await valv.instructions(ctx),  // how to drive the tools + the caller's resources
   tools: await valv.tools.aisdk(ctx),
   stopWhen: stepCountIs(6),
   prompt: "What's our revenue per order status this month?",
@@ -172,6 +173,40 @@ The discovery tools (`list`/`search`/`describe`) are on by default; the write to
 
 ```ts
 valv.tools.aisdk(ctx, { search: false, create: true, update: true })
+```
+
+### System prompt
+
+`await valv.instructions(ctx)` returns a drop-in system-prompt block: how to drive the tools (discover → describe → query, filters are scoped server-side) plus the resources **this caller** may read — so the model can skip the opening `list_resources` round-trip. Put it in your `system` prompt alongside the tools. The static text is also exported as `AGENT_INSTRUCTIONS` if you'd rather compose the resource list yourself.
+
+```ts
+const system = await valv.instructions(ctx)
+```
+
+```
+You answer questions by querying a set of resources through the provided tools. Access is
+enforced server-side: every query is scoped to what the current caller may read, so you never
+need to add tenant/owner/permission filters yourself — a query returns only permitted rows.
+
+Workflow:
+1. Find the resource: use list_resources / search_resources; you often already have the list below.
+2. Before querying an unfamiliar resource, call describe_resource to get its exact column names,
+   types, and relations. Don't guess column names.
+3. Query with the `query` tool. Do the work in the query — filter with `where`, aggregate with
+   functions, `groupBy`, `orderBy`, `limit` — rather than pulling raw rows and reducing yourself.
+4. Read a joined resource's columns by setting `rel` to its relation path from the root; only
+   declared relations join.
+
+Grammar reminders (the tool schemas have the full shapes): a column is never a bare string — in
+`select` it is { "col": "name" }, and inside a function's `args` or in `where` it is the Expr
+node { "kind": "col", "name": "name" }. `where` is an Expr tree of cmp/and/or/not nodes over
+`col` and `value` leaves, not a raw string.
+
+If a call is rejected, read the error and fix the query — don't retry the same shape.
+
+Resources you can query:
+- orders — customer orders
+- customers — people who place orders
 ```
 
 ### Writes

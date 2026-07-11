@@ -10,8 +10,8 @@ import { resolveJoins, assertJoinLimits, ROOT_ALIAS } from "./joins"
 import type { MutationResult } from "./adapter"
 import { serializeResult } from "./serializer"
 import { resultSchema as deriveResultSchema, type ResultColumn } from "./result-schema"
-import { buildTools, type ToolToggle } from "./tools"
-import { visibleResources } from "./tools/discovery"
+import { buildTools, AGENT_INSTRUCTIONS, type ToolToggle } from "./tools"
+import { visibleResources, listResources } from "./tools/discovery"
 import {
   anthropic,
   openai,
@@ -223,6 +223,22 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
       // Vercel AI SDK tool set (async — imports the optional `ai` peer dep).
       aisdk: (ctx: TContext, toggle?: ToolToggle) => toAiSdk(this.neutralTools(ctx, toggle)),
     }
+  }
+
+  /**
+   * A ready-to-use system-prompt block for an agent driving these tools:
+   * {@link AGENT_INSTRUCTIONS} plus the resources this caller may read (so the
+   * model can skip the initial list_resources round-trip). Drop it into your
+   * system prompt alongside `tools`.
+   */
+  async instructions(ctx: TContext): Promise<string> {
+    const catalog = await this.loadSchema()
+    const policies = this.buildEffectivePolicies(catalog)
+    const visible = visibleResources(catalog, policies, this.defaultPolicy, ctx)
+    const lines = listResources(visible).map(
+      (r) => `- ${r.name}${r.description ? ` — ${r.description}` : ""}`,
+    )
+    return `${AGENT_INSTRUCTIONS}\n\nResources you can query:\n${lines.join("\n")}`
   }
 
   /**
