@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { PostgresAdapter, type PostgresSql } from "@valv/postgres"
-import type { SchemaMap, Query } from "@valv/core"
+import { QuerySchema, type SchemaMap, type Query } from "@valv/core"
 
 const schema: SchemaMap = {
   resources: {
@@ -71,6 +71,21 @@ describe("postgres adapter compile", () => {
     const { sql } = adapter.compile(monthly, schema)
     expect(sql).toBe(
       `SELECT date_trunc('month', "created_at") AS "bucket", count(*) AS "signups" FROM "users" GROUP BY "bucket"`,
+    )
+  })
+
+  // The reported rough edge: the query tool advertises `dateTrunc(column, ...)`
+  // so a model writes the unit as a bare `"month"`. That must parse (scalar
+  // shorthand) and compile to the same SQL as the verbose value node above.
+  it("accepts a bare-string trunc unit from the query tool", () => {
+    const parsed = QuerySchema.parse({
+      from: "users",
+      select: [{ fn: "dateTrunc", args: [{ col: "created_at" }, "month"], as: "bucket" }],
+      groupBy: ["bucket"],
+    })
+    const { sql } = adapter.compile(parsed, schema)
+    expect(sql).toBe(
+      `SELECT date_trunc('month', "created_at") AS "bucket" FROM "users" GROUP BY "bucket"`,
     )
   })
 

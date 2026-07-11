@@ -8,6 +8,7 @@ export default defineConfig({
       "@valv/prisma": path.resolve(__dirname, "packages/prisma/src/index.ts"),
       "@valv/clickhouse": path.resolve(__dirname, "packages/clickhouse/src/index.ts"),
       "@valv/postgres": path.resolve(__dirname, "packages/postgres/src/index.ts"),
+      "@valv/mysql": path.resolve(__dirname, "packages/mysql/src/index.ts"),
     },
   },
 })

@@ -57,12 +57,27 @@ const relPath = z
 // especially — trip on switching forms mid-query.
 const colShorthand = z
   .object({ col: z.string(), rel: relPath.optional() })
-  .transform((c): Expr => (c.rel ? { kind: "col", name: c.col, rel: c.rel } : { kind: "col", name: c.col }))
+  .transform(
+    (c): Expr => (c.rel ? { kind: "col", name: c.col, rel: c.rel } : { kind: "col", name: c.col }),
+  )
+
+// The bare scalar shorthand — a literal written directly as `"month"` / `42` /
+// `true` / `null` instead of the tagged `{ kind: "value", value }`. Mirrors
+// `colShorthand`: it lets a literal be written ONE way *everywhere* an Expr
+// appears — a comparison operand (`status = "active"`), a numeric function arg
+// (`quantileTiming(col, 0.95)`), and — the case that motivated this — a
+// function's fixed-value argument (`dateTrunc(col, "month")`). Columns are always
+// objects (`{ col }` / `{ kind: "col" }`), so a bare scalar is unambiguously a
+// value. Without this the query tool advertises `dateTrunc(column, ...|month|...)`
+// yet only the verbose `{ kind: "value", value: "month" }` actually parses.
+const scalarShorthand = z
+  .union([z.string(), z.number(), z.boolean(), z.null()])
+  .transform((value): Expr => ({ kind: "value", value }))
 
 // Recursive schema: annotate via cast, the idiomatic Zod pattern (the inferred
-// output differs only in that z.unknown() makes `value` optional). `col` and the
-// `{ col }` shorthand are distinct union members, so both forms parse to the same
-// tagged node.
+// output differs only in that z.unknown() makes `value` optional). `col`/`value`
+// and their shorthands are distinct union members (objects vs bare scalars), so
+// every form parses to the same tagged node.
 export const ExprSchema = z.lazy(() =>
   z.union([
     z.object({ kind: z.literal("col"), name: z.string(), rel: relPath.optional() }),
@@ -75,6 +90,7 @@ export const ExprSchema = z.lazy(() =>
     z.object({ kind: z.literal("and"), args: z.array(ExprSchema).min(1).max(100) }),
     z.object({ kind: z.literal("or"), args: z.array(ExprSchema).min(1).max(100) }),
     z.object({ kind: z.literal("not"), arg: ExprSchema }),
+    scalarShorthand,
   ]),
 ) as unknown as z.ZodType<Expr>
 
