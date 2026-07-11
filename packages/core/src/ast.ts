@@ -47,6 +47,9 @@ const relPath = z
   .array(z.string().regex(/^[A-Za-z0-9_]+$/))
   .min(1)
   .max(8)
+  .describe(
+    'Relation path from the root resource to a joined table, e.g. ["order","customer"]. Only declared relations are joinable.',
+  )
 
 // The bare `{ col, rel? }` column shorthand — the same shape used in `select` —
 // normalized to a tagged col Expr so downstream stages (validate, inject, emit)
@@ -79,19 +82,37 @@ const scalarShorthand = z
 // and their shorthands are distinct union members (objects vs bare scalars), so
 // every form parses to the same tagged node.
 export const ExprSchema = z.lazy(() =>
-  z.union([
-    z.object({ kind: z.literal("col"), name: z.string(), rel: relPath.optional() }),
-    colShorthand,
-    z.object({
-      kind: z.literal("value"),
-      value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
-    }),
-    z.object({ kind: z.literal("cmp"), op: cmpOp, left: ExprSchema, right: ExprSchema }),
-    z.object({ kind: z.literal("and"), args: z.array(ExprSchema).min(1).max(100) }),
-    z.object({ kind: z.literal("or"), args: z.array(ExprSchema).min(1).max(100) }),
-    z.object({ kind: z.literal("not"), arg: ExprSchema }),
-    scalarShorthand,
-  ]),
+  z
+    .union([
+      z
+        .object({ kind: z.literal("col"), name: z.string(), rel: relPath.optional() })
+        .describe('A column reference: { "kind": "col", "name": "amount" } — or the shorthand { "col": "amount" }.'),
+      colShorthand,
+      z
+        .object({
+          kind: z.literal("value"),
+          value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+        })
+        .describe('A literal value: { "kind": "value", "value": 100 } — or written bare as 100 / "active".'),
+      z
+        .object({ kind: z.literal("cmp"), op: cmpOp, left: ExprSchema, right: ExprSchema })
+        .describe(
+          'Comparison: { "kind": "cmp", "op": ">=", "left": <Expr>, "right": <Expr> }. Both sides are Exprs, typically a col and a value.',
+        ),
+      z
+        .object({ kind: z.literal("and"), args: z.array(ExprSchema).min(1).max(100) })
+        .describe('All sub-expressions must hold: { "kind": "and", "args": [<Expr>, ...] }.'),
+      z
+        .object({ kind: z.literal("or"), args: z.array(ExprSchema).min(1).max(100) })
+        .describe('Any sub-expression holds: { "kind": "or", "args": [<Expr>, ...] }.'),
+      z
+        .object({ kind: z.literal("not"), arg: ExprSchema })
+        .describe('Negates one sub-expression: { "kind": "not", "arg": <Expr> }.'),
+      scalarShorthand,
+    ])
+    .describe(
+      "A boolean filter expression tree of cmp/and/or/not nodes over col and value leaves, not a raw string.",
+    ),
 ) as unknown as z.ZodType<Expr>
 
 // `as`/`fn` are output/function names, constrained to safe characters here.
@@ -99,21 +120,36 @@ export const ExprSchema = z.lazy(() =>
 // allowlist-checked against the catalog downstream, in validate.ts.
 const identifier = z.string().regex(/^[A-Za-z0-9_]+$/)
 
-const columnSelect = z.object({
-  col: z.string(),
-  rel: relPath.optional(),
-  as: identifier.optional(),
-})
+const columnSelect = z
+  .object({
+    col: z.string().describe("Column name. In `select` a column is always this wrapper, never a bare string."),
+    rel: relPath.optional(),
+    as: identifier.optional(),
+  })
+  .describe('Select a column: { "col": "amount" }. `as` renames the output; `rel` reads a joined table.')
 
 // Function args are just Exprs now — the `{ col }` shorthand is part of ExprSchema.
-const fnSelect = z.object({
-  fn: identifier,
-  args: z.array(ExprSchema).max(8),
-  as: identifier.optional(),
-})
+const fnSelect = z
+  .object({
+    fn: identifier,
+    args: z
+      .array(ExprSchema)
+      .max(8)
+      .describe(
+        'Positional arguments, each an Expr — a column as { "col": "name" }, a literal as a bare scalar (e.g. "day", 0.95) or { "kind": "value", "value": ... }.',
+      ),
+    as: identifier.optional(),
+  })
+  .describe(
+    'A function call over columns: { "fn": "sum", "args": [{ "col": "amount" }], "as": "total" }.',
+  )
 
 // A group key: a bare SELECT alias, or a (possibly joined) column.
-const groupByItem = z.union([z.string(), z.object({ col: z.string(), rel: relPath.optional() })])
+const groupByItem = z
+  .union([z.string(), z.object({ col: z.string(), rel: relPath.optional() })])
+  .describe(
+    'Group key: a bare SELECT alias string (e.g. "day") to bucket by a computed column, or { "col": "name" } for a raw column.',
+  )
 
 export const QuerySchema = z.object({
   from: z.string(),
@@ -124,7 +160,13 @@ export const QuerySchema = z.object({
   where: ExprSchema.optional(),
   groupBy: z.array(groupByItem).max(32).optional(),
   orderBy: z
-    .array(z.object({ col: z.string(), rel: relPath.optional(), dir: z.enum(["asc", "desc"]) }))
+    .array(
+      z
+        .object({ col: z.string(), rel: relPath.optional(), dir: z.enum(["asc", "desc"]) })
+        .describe(
+          'Sort key: `col` is a SELECT alias (e.g. an aggregate like "revenue") or a raw column name; `dir` is "asc" or "desc".',
+        ),
+    )
     .max(32)
     .optional(),
   limit: z.number().int().positive().optional(),

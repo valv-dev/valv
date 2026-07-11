@@ -39,7 +39,17 @@ const QUERY_DESCRIPTION =
   'relation path from the root, e.g. `{ "col": "name", "rel": ["customer"] }` or, multiple hops, ' +
   '`{ "col": "name", "rel": ["order", "customer"] }`. The join is built automatically from the ' +
   "schema's relations — only declared relations are joinable. Use describe_resource to learn a " +
-  "resource's exact columns and relations before querying."
+  "resource's exact columns and relations before querying.\n\n" +
+  '`where` is an Expr tree, not a raw string: a comparison is `{ "kind": "cmp", "op": ">=", ' +
+  '"left": { "col": "amount" }, "right": 100 }` — operands are Exprs, a column as `{ "col": ' +
+  '"name" }` and a literal as a bare scalar — composable with `{ "kind": "and"/"or", "args": ' +
+  '[...] }` and `{ "kind": "not", "arg": ... }`.\n' +
+  "Example — total revenue per paid day, busiest first:\n" +
+  '`{ "from": "order", "select": [' +
+  '{ "fn": "dateTrunc", "args": [{ "col": "created_at" }, "day"], "as": "day" }, ' +
+  '{ "fn": "sum", "args": [{ "col": "amount" }], "as": "revenue" }], ' +
+  '"where": { "kind": "cmp", "op": "=", "left": { "col": "status" }, "right": "paid" }, ' +
+  '"groupBy": ["day"], "orderBy": [{ "col": "revenue", "dir": "desc" }] }`'
 
 const LIST_DESCRIPTION = "List the resources you can query, each with a short description."
 
@@ -49,18 +59,43 @@ const SEARCH_DESCRIPTION =
 
 const DESCRIBE_DESCRIPTION =
   "Describe a resource: its columns and types, and its relations to other resources. Call this " +
-  "before querying to learn the exact column names."
+  'before querying to learn the exact column names — each is referenced as `{ "col": "name" }`.'
 
 const CREATE_DESCRIPTION =
   "Insert a row into a resource. Provide `from` and `values` (column → value). Server-owned " +
   "fields are set automatically; you can't set columns you aren't allowed to write."
 
 const UPDATE_DESCRIPTION =
-  "Update rows. Provide `from`, `set` (column → value), and a `where` filter (required). Only " +
-  "rows within your access are affected, regardless of the filter."
+  "Update rows. Provide `from`, `set` (column → value), and a `where` filter (required). `where` " +
+  "is the same Expr tree the query tool uses, e.g. " +
+  '`{ "kind": "cmp", "op": "=", "left": { "col": "id" }, "right": 42 }`. Only rows within your ' +
+  "access are affected, regardless of the filter."
 
 const DELETE_DESCRIPTION =
-  "Delete rows matching a required `where` filter. Only rows within your access are affected."
+  "Delete rows matching a required `where` filter (the same Expr tree the query tool uses). Only " +
+  "rows within your access are affected."
+
+// A drop-in system-prompt block explaining how to drive the valv tools. The
+// tool schemas already carry the query grammar; this is the workflow around
+// them. `Valv.instructions(ctx)` appends the caller's visible resources.
+export const AGENT_INSTRUCTIONS =
+  "You answer questions by querying a set of resources through the provided tools. Access is " +
+  "enforced server-side: every query is scoped to what the current caller may read, so you never " +
+  "need to add tenant/owner/permission filters yourself — a query returns only permitted rows.\n\n" +
+  "Workflow:\n" +
+  "1. Find the resource: use list_resources / search_resources; you often already have the list " +
+  "below.\n" +
+  "2. Before querying an unfamiliar resource, call describe_resource to get its exact column names, " +
+  "types, and relations. Don't guess column names.\n" +
+  "3. Query with the `query` tool. Do the work in the query — filter with `where`, aggregate with " +
+  "functions, `groupBy`, `orderBy`, `limit` — rather than pulling raw rows and reducing yourself.\n" +
+  "4. Read a joined resource's columns by setting `rel` to its relation path from the root; only " +
+  "declared relations join.\n\n" +
+  "Grammar reminders (the tool schemas have the full shapes): a column is always `{ \"col\": " +
+  '"name" }` — never a bare string — everywhere it appears (select, function `args`, `where`). ' +
+  "`where` is an Expr tree of `cmp`/`and`/`or`/`not` nodes over columns and literal values, not a " +
+  "raw string.\n\n" +
+  "If a call is rejected, read the error and fix the query — don't retry the same shape."
 
 const NO_INPUT = { type: "object", properties: {}, additionalProperties: false } as const
 

@@ -29,6 +29,7 @@ export { BASE_FUNCTIONS } from "./functions"
 export type { FnDef, ArgSpec, FnReturn } from "./functions"
 export { resultSchema } from "./result-schema"
 export type { ResultColumn } from "./result-schema"
+export { AGENT_INSTRUCTIONS } from "./tools"
 export type { ToolToggle } from "./tools"
 
 export type {
