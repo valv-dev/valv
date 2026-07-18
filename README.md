@@ -85,7 +85,7 @@ One `query` tool covers the whole read surface. The model composes a query from 
 }
 ```
 
-That's enough for real analytics — **filters** (arbitrary `and`/`or`/`not` trees), **aggregates**, **time-series** (bucket with a function and group by the alias), **top-N** (order by an aggregate), and **conditional aggregation** (`countIf`, `sumIf`). ClickHouse adds dialect functions like `quantileTiming` and `toStartOfInterval`; every function is type-checked and its literals parameterized.
+That's enough for real analytics — **filters** (arbitrary `and`/`or`/`not` trees, with `like`/`ilike` for pattern matching), **aggregates**, **time-series** (bucket with a function and group by the alias), **top-N** (order by an aggregate), and **conditional aggregation** (`countIf`, `sumIf`). ClickHouse adds dialect functions like `quantileTiming` and `toStartOfInterval`; every function is type-checked and its literals parameterized.
 
 ### Joins
 

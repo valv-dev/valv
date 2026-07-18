@@ -132,6 +132,72 @@ describe("postgres live: dateTrunc + group by date", () => {
   })
 })
 
+// LIKE / ILIKE against a live engine — proving the pattern actually filters rows
+// (the compile tests only assert SQL shape) and that % / _ wildcards and case
+// sensitivity behave as the SQL standard says. Its own db so the seed can carry
+// mixed-case rows without perturbing the month-bucket fixture above.
+describe("postgres live: LIKE / ILIKE pattern matching", () => {
+  let ldb: PGlite
+  let lvalv: Valv<Record<string, never>>
+
+  beforeAll(async () => {
+    ldb = new PGlite()
+    await ldb.exec(`
+      CREATE TABLE people ( id serial PRIMARY KEY, name text NOT NULL );
+      INSERT INTO people (name) VALUES
+        ('Alice'), ('alice'), ('Alison'), ('Bob'), ('Bobby'), ('Carol'), ('100% cotton');
+    `)
+    const adapter = new PostgresAdapter(pgliteClient(ldb))
+    lvalv = new Valv({ adapter, defaultPolicy: "allow-all" })
+    await lvalv.loadSchema()
+  })
+
+  afterAll(async () => {
+    await ldb.close()
+  })
+
+  const names = async (op: "like" | "ilike", pattern: string): Promise<string[]> => {
+    const rows = (await lvalv.run(
+      {
+        from: "people",
+        select: [{ col: "name" }],
+        where: {
+          kind: "cmp",
+          op,
+          left: { kind: "col", name: "name" },
+          right: { kind: "value", value: pattern },
+        },
+        orderBy: [{ col: "name", dir: "asc" }],
+      },
+      {},
+    )) as Array<{ name: string }>
+    return rows.map((r) => r.name)
+  }
+
+  it("LIKE is a prefix/wildcard match and case-sensitive", async () => {
+    // % matches any run, so "Al%" catches the capitalized names but not "alice".
+    expect(await names("like", "Al%")).toEqual(["Alice", "Alison"])
+    // Exact string, no wildcard → only the exact-case row.
+    expect(await names("like", "Bob")).toEqual(["Bob"])
+    // _ matches exactly one character: "Bob__" needs two trailing chars.
+    expect(await names("like", "Bob__")).toEqual(["Bobby"])
+  })
+
+  it("ILIKE matches case-insensitively", async () => {
+    expect(await names("ilike", "al%")).toEqual(["Alice", "Alison", "alice"])
+    expect(await names("ilike", "BOB%")).toEqual(["Bob", "Bobby"])
+  })
+
+  it("treats a literal % in the pattern as the wildcard (bound, not injected)", async () => {
+    // The bound pattern's % is a wildcard: "100%" matches the row starting "100".
+    expect(await names("like", "100%")).toEqual(["100% cotton"])
+  })
+
+  it("a non-matching pattern returns nothing", async () => {
+    expect(await names("like", "Zed%")).toEqual([])
+  })
+})
+
 // valv's whole point is running as a read-only role, and Postgres's
 // information_schema.table_constraints view is empty for a SELECT-only role that
 // doesn't own the table — so keys are read from pg_catalog instead. This locks

@@ -18,4 +18,9 @@ export interface Dialect {
   // Functions this dialect adds on top of the standard aggregates in
   // BASE_FUNCTIONS (e.g. ClickHouse `quantileTiming`). Merged at emit time.
   functions?: Record<string, FnDef>
+
+  // SQL keyword for the case-insensitive `ilike` operator. Defaults to "ILIKE"
+  // (Postgres, Cockroach, ClickHouse). Dialects with no ILIKE keyword — MySQL and
+  // SQLite, where plain LIKE is already case-insensitive — set this to "LIKE".
+  ilike?: string
 }

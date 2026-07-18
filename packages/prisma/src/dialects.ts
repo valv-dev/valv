@@ -40,6 +40,7 @@ export const sqliteDialect: Dialect = {
   functions: {
     dateTrunc: dateTrunc((c, unit) => `strftime('${STRFTIME[unit]}', ${c})`),
   },
+  ilike: "LIKE", // SQLite has no ILIKE; its LIKE is case-insensitive for ASCII.
 }
 
 export function dialectForProvider(provider: string): Dialect {

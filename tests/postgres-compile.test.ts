@@ -52,6 +52,27 @@ describe("postgres adapter compile", () => {
     expect(compiled.params.map((p) => p.value)).toEqual([1])
   })
 
+  it("emits LIKE / ILIKE with the pattern as a bound param", () => {
+    const like: Query = {
+      from: "users",
+      select: [{ col: "email" }],
+      where: {
+        kind: "cmp",
+        op: "like",
+        left: { kind: "col", name: "email" },
+        right: { kind: "value", value: "%@acme.com" },
+      },
+    }
+    const likeCompiled = adapter.compile(like, schema)
+    expect(likeCompiled.sql).toBe('SELECT "email" FROM "users" WHERE ("email" LIKE $1)')
+    expect(likeCompiled.params.map((p) => p.value)).toEqual(["%@acme.com"])
+
+    const ilike: Query = { ...like, where: { ...like.where!, op: "ilike" } as Query["where"] }
+    const ilikeCompiled = adapter.compile(ilike, schema)
+    expect(ilikeCompiled.sql).toBe('SELECT "email" FROM "users" WHERE ("email" ILIKE $1)')
+    expect(ilikeCompiled.params.map((p) => p.value)).toEqual(["%@acme.com"])
+  })
+
   it("buckets by month with date_trunc", () => {
     const monthly: Query = {
       from: "users",

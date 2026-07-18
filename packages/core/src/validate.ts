@@ -119,8 +119,12 @@ export function validateMutation(
 function checkEnumExpr(expr: Expr, tables: Map<string, ScopedTable>): void {
   switch (expr.kind) {
     case "cmp":
-      checkEnumCmp(expr.left, expr.right, tables)
-      checkEnumCmp(expr.right, expr.left, tables)
+      // A like/ilike pattern (e.g. "ship%") is deliberately not an exact enum
+      // member — skip the membership check so a valid pattern isn't rejected.
+      if (expr.op !== "like" && expr.op !== "ilike") {
+        checkEnumCmp(expr.left, expr.right, tables)
+        checkEnumCmp(expr.right, expr.left, tables)
+      }
       break
     case "and":
     case "or":

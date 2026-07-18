@@ -5,7 +5,7 @@ import { z } from "zod"
 // aggregates (group/order/limit); joins and subqueries are added as new node
 // variants later.
 
-export type CmpOp = "=" | "!=" | ">" | "<" | ">=" | "<="
+export type CmpOp = "=" | "!=" | ">" | "<" | ">=" | "<=" | "like" | "ilike"
 
 // A relation path from the query's root resource to a joined table — e.g.
 // ["order", "customer"] reaches `customer` via `order`. Each segment is a
@@ -38,7 +38,7 @@ export type Expr =
   | { kind: "or"; args: Expr[] }
   | { kind: "not"; arg: Expr }
 
-const cmpOp = z.enum(["=", "!=", ">", "<", ">=", "<="])
+const cmpOp = z.enum(["=", "!=", ">", "<", ">=", "<=", "like", "ilike"])
 
 // Structural bound on a relation path — a sane ceiling so a pathological array
 // can't reach the resolver. The real, friendly join-depth limit is enforced in
@@ -97,7 +97,7 @@ export const ExprSchema = z.lazy(() =>
       z
         .object({ kind: z.literal("cmp"), op: cmpOp, left: ExprSchema, right: ExprSchema })
         .describe(
-          'Comparison: { "kind": "cmp", "op": ">=", "left": <Expr>, "right": <Expr> }. Both sides are Exprs, typically a col and a value.',
+          'Comparison: { "kind": "cmp", "op": ">=", "left": <Expr>, "right": <Expr> }. Both sides are Exprs, typically a col and a value. `op` "like"/"ilike" do string pattern matching against a literal pattern on the right, where % matches any run of characters and _ matches one ("ilike" is case-insensitive); negate with a "not" node.',
         ),
       z
         .object({ kind: z.literal("and"), args: z.array(ExprSchema).min(1).max(100) })

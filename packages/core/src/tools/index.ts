@@ -43,7 +43,10 @@ const QUERY_DESCRIPTION =
   '`where` is an Expr tree, not a raw string: a comparison is `{ "kind": "cmp", "op": ">=", ' +
   '"left": { "col": "amount" }, "right": 100 }` — operands are Exprs, a column as `{ "col": ' +
   '"name" }` and a literal as a bare scalar — composable with `{ "kind": "and"/"or", "args": ' +
-  '[...] }` and `{ "kind": "not", "arg": ... }`.\n' +
+  '[...] }` and `{ "kind": "not", "arg": ... }`. For pattern matching use `op` "like" ' +
+  '(case-sensitive) or "ilike" (case-insensitive) with a string pattern, where % matches any ' +
+  'run of characters and _ matches one — e.g. `{ "kind": "cmp", "op": "ilike", "left": { "col": ' +
+  '"name" }, "right": "%acme%" }`; wrap in a "not" node to exclude.\n' +
   "Example — total revenue per paid day, busiest first:\n" +
   '`{ "from": "order", "select": [' +
   '{ "fn": "dateTrunc", "args": [{ "col": "created_at" }, "day"], "as": "day" }, ' +
@@ -94,7 +97,8 @@ export const AGENT_INSTRUCTIONS =
   "Grammar reminders (the tool schemas have the full shapes): a column is always `{ \"col\": " +
   '"name" }` — never a bare string — everywhere it appears (select, function `args`, `where`). ' +
   "`where` is an Expr tree of `cmp`/`and`/`or`/`not` nodes over columns and literal values, not a " +
-  "raw string.\n\n" +
+  "raw string. A `cmp` op is one of =, !=, >, <, >=, <=, or \"like\"/\"ilike\" for pattern matching " +
+  "(% = any run, _ = one char; \"ilike\" is case-insensitive).\n\n" +
   "If a call is rejected, read the error and fix the query — don't retry the same shape."
 
 const NO_INPUT = { type: "object", properties: {}, additionalProperties: false } as const

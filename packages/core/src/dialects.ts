@@ -58,4 +58,5 @@ export const mysqlDialect: Dialect = {
   quoteId: backtick,
   placeholder: () => "?",
   functions: { dateTrunc: dateTruncMysql },
+  ilike: "LIKE", // MySQL has no ILIKE; its LIKE is case-insensitive by collation.
 }

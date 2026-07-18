@@ -75,6 +75,22 @@ describe("mysql adapter compile", () => {
     expect(compiled.params.map((p) => p.value)).toEqual([1])
   })
 
+  it("renders ilike as LIKE (MySQL has no ILIKE keyword)", () => {
+    const query: Query = {
+      from: "orders",
+      select: [{ col: "region" }],
+      where: {
+        kind: "cmp",
+        op: "ilike",
+        left: { kind: "col", name: "region" },
+        right: { kind: "value", value: "e%" },
+      },
+    }
+    const compiled = adapter.compile(query, schema)
+    expect(compiled.sql).toBe("SELECT `region` FROM `orders` WHERE (`region` LIKE ?)")
+    expect(compiled.params.map((p) => p.value)).toEqual(["e%"])
+  })
+
   it("buckets by month with DATE_FORMAT (dateTrunc)", () => {
     const monthly: Query = {
       from: "orders",

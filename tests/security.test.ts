@@ -233,4 +233,51 @@ describe("security hardening", () => {
     expect(calls[0].query).toContain(" OR ")
     expect(calls[0].query).toContain(") AND (`tenant_id` = {p")
   })
+
+  it("binds a LIKE pattern as a String param, never inlined, with the tenant filter still AND-ed", async () => {
+    const { valv, calls } = await setup()
+    await valv.runTool(
+      "query",
+      {
+        from: "events",
+        select: [{ col: "plan" }],
+        where: {
+          kind: "cmp",
+          op: "ilike",
+          left: { kind: "col", name: "plan" },
+          right: { kind: "value", value: "%pro%" },
+        },
+      },
+      ctx("acme"),
+    )
+    // ILIKE keyword, the pattern as a typed String placeholder (not inlined), and
+    // the tenant scope still AND-injected on top.
+    expect(calls[0].query).toMatch(/`plan` ILIKE \{p\d+:String\}/)
+    expect(calls[0].query).not.toContain("%pro%") // never string-interpolated
+    expect(calls[0].query).toContain("AND (`tenant_id` = {p")
+    expect(Object.values(calls[0].query_params ?? {})).toContain("%pro%")
+  })
+
+  it("rejects a LIKE against a denied column, like any other operator", async () => {
+    const client = fakeClient([])
+    const valv = await createValv<DefaultContext>(client, { schema })
+    valv.policy("events", (c) => ({ read: { tenant_id: c.tenant?.id }, fields: { deny: ["plan"] } }))
+    await expect(
+      valv.runTool(
+        "query",
+        {
+          from: "events",
+          select: [{ col: "tenant_id" }],
+          where: {
+            kind: "cmp",
+            op: "like",
+            left: { kind: "col", name: "plan" },
+            right: { kind: "value", value: "%x%" },
+          },
+        },
+        ctx("acme"),
+      ),
+    ).rejects.toThrow(/not accessible/)
+    expect(client.calls).toHaveLength(0)
+  })
 })

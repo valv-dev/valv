@@ -90,7 +90,7 @@ describe("policy predicates — read (Expr passthrough)", () => {
   })
 
   it("rejects a structurally invalid expression", async () => {
-    const { valv } = await readWith({ kind: "cmp", op: "LIKE", left: col("total"), right: val(1) })
+    const { valv } = await readWith({ kind: "cmp", op: "XYZ", left: col("total"), right: val(1) })
     await expect(
       valv.runTool("query", { from: "orders", select: [{ col: "total" }] }, ctx),
     ).rejects.toThrow(/not a valid expression/)

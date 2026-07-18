@@ -280,8 +280,12 @@ function emitExpr(expr: Expr, ctx: EmitContext): string {
     case "value":
       return bind(ctx, expr.value, "String")
     case "cmp": {
-      const type = inferType(expr, ctx)
-      return `(${emitOperand(expr.left, ctx, type)} ${expr.op} ${emitOperand(expr.right, ctx, type)})`
+      const like = expr.op === "like" || expr.op === "ilike"
+      // A LIKE pattern is always a string, so bind it as String regardless of the
+      // column's native type (typed-placeholder dialects need `{pN:String}`).
+      const type = like ? "String" : inferType(expr, ctx)
+      const op = like ? (expr.op === "ilike" ? (ctx.dialect.ilike ?? "ILIKE") : "LIKE") : expr.op
+      return `(${emitOperand(expr.left, ctx, type)} ${op} ${emitOperand(expr.right, ctx, type)})`
     }
     case "and":
       return `(${expr.args.map((a) => emitExpr(a, ctx)).join(" AND ")})`
