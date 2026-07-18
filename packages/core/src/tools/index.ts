@@ -35,11 +35,15 @@ const QUERY_DESCRIPTION =
   'is written `{ "col": "name" }`, both as a select item and inside a function\'s `args` — e.g. ' +
   '`{ "fn": "sum", "args": [{ "col": "amount" }], "as": "total" }`. `count` over all rows takes no ' +
   'args: `{ "fn": "count", "args": [], "as": "n" }`. Group or order by a select alias to bucket ' +
-  "over time or rank by an aggregate. To read columns from a related resource, set `rel` to the " +
-  'relation path from the root, e.g. `{ "col": "name", "rel": ["customer"] }` or, multiple hops, ' +
-  '`{ "col": "name", "rel": ["order", "customer"] }`. The join is built automatically from the ' +
-  "schema's relations — only declared relations are joinable. Use describe_resource to learn a " +
-  "resource's exact columns and relations before querying.\n\n" +
+  "over time or rank by an aggregate. A column that lives on the `from` (root) resource takes NO " +
+  '`rel` — write it plainly as `{ "col": "name" }`. Set `rel` only to read a *different* ' +
+  'resource\'s columns, passing the relation path from the root, e.g. `{ "col": "name", "rel": ' +
+  '["customer"] }` or, multiple hops, `{ "col": "name", "rel": ["order", "customer"] }`; the path ' +
+  "segments are relation names, never the root resource itself. The join is built automatically " +
+  "from the schema's relations — only declared relations are joinable. If a column is reported " +
+  '"not accessible", first try it with no `rel` (it is likely a root column) rather than resending ' +
+  "the same shape or guessing `rel` paths. Use describe_resource to learn a resource's exact " +
+  "columns and relations before querying.\n\n" +
   '`where` is an Expr tree, not a raw string: a comparison is `{ "kind": "cmp", "op": ">=", ' +
   '"left": { "col": "amount" }, "right": 100 }` — operands are Exprs, a column as `{ "col": ' +
   '"name" }` and a literal as a bare scalar — composable with `{ "kind": "and"/"or", "args": ' +
@@ -92,8 +96,13 @@ export const AGENT_INSTRUCTIONS =
   "types, and relations. Don't guess column names.\n" +
   "3. Query with the `query` tool. Do the work in the query — filter with `where`, aggregate with " +
   "functions, `groupBy`, `orderBy`, `limit` — rather than pulling raw rows and reducing yourself.\n" +
-  "4. Read a joined resource's columns by setting `rel` to its relation path from the root; only " +
-  "declared relations join.\n\n" +
+  "4. A column on the `from` (root) resource takes NO `rel` — write it as just `{ \"col\": " +
+  '"name" }`. `rel` is only the join path to reach a *different* resource\'s columns (e.g. ' +
+  '`{ "col": "name", "rel": ["customer"] }`), and its segments are relation names, never the ' +
+  "root resource itself. Only declared relations join.\n" +
+  '5. If a column comes back "not accessible", first retry it with no `rel` (it is probably a ' +
+  "root column) — do NOT resubmit the same shape or guess other `rel` paths; if it still fails, " +
+  "call describe_resource to confirm the column exists and where it lives.\n\n" +
   "Grammar reminders (the tool schemas have the full shapes): a column is always `{ \"col\": " +
   '"name" }` — never a bare string — everywhere it appears (select, function `args`, `where`). ' +
   "`where` is an Expr tree of `cmp`/`and`/`or`/`not` nodes over columns and literal values, not a " +
