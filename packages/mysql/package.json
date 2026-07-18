@@ -37,7 +37,7 @@
     "build": "tsc"
   },
   "peerDependencies": {
-    "@valv/core": "^0.7.2",
+    "@valv/core": "^0.7.3",
     "mysql2": "^3.0.0"
   },
   "publishConfig": {

@@ -43,7 +43,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "peerDependencies": {
-    "@valv/core": "^0.7.2",
+    "@valv/core": "^0.7.3",
     "express": "^4.0.0 || ^5.0.0"
   },
   "peerDependenciesMeta": {

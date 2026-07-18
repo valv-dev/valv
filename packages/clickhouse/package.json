@@ -40,7 +40,7 @@
   },
   "peerDependencies": {
     "@clickhouse/client": "^1.0.0",
-    "@valv/core": "^0.7.2"
+    "@valv/core": "^0.7.3"
   },
   "publishConfig": {
     "access": "public"
