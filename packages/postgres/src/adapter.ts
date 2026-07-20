@@ -5,6 +5,8 @@ import { introspectPostgres, type PostgresSql } from "./introspection"
 export interface PostgresAdapterOptions {
   /** Declare the schema by hand instead of querying information_schema. */
   schema?: SchemaMap
+  /** Postgres schema to introspect and qualify tables with. Defaults to `public`. */
+  namespace?: string
 }
 
 // Per-query wall-clock cap so a structurally-valid query (e.g. a join that scans
@@ -23,12 +25,13 @@ export class PostgresAdapter implements ValvAdapter {
   ) {}
 
   async introspect(): Promise<SchemaMap> {
-    this.schemaCache ??= this.options.schema ?? (await introspectPostgres(this.sql))
+    this.schemaCache ??=
+      this.options.schema ?? (await introspectPostgres(this.sql, this.options.namespace))
     return this.schemaCache
   }
 
   compile(query: Query, catalog: SchemaMap): CompiledQuery {
-    return emit(query, catalog, postgresDialect)
+    return emit(query, catalog, postgresDialect, { database: this.options.namespace })
   }
 
   functions(): Record<string, FnDef> {

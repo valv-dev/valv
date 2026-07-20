@@ -220,6 +220,28 @@ describe("mysql introspection", () => {
   })
 })
 
+describe("mysql introspection database option", () => {
+  it("scopes to the current database() by default", async () => {
+    const client = fakeMysql(introspectHandler)
+    await introspectMysql(client)
+    expect(client.calls.every((c) => c.sql.includes("table_schema = database()"))).toBe(true)
+  })
+
+  it("scopes to a named database and qualifies emitted tables", async () => {
+    const client = fakeMysql(introspectHandler)
+    const adapter = new MySqlAdapter(client, { database: "otherdb" })
+    const catalog = await adapter.introspect()
+
+    // Both introspection queries target the named database, not database().
+    expect(client.calls.every((c) => c.sql.includes("table_schema = 'otherdb'"))).toBe(true)
+    expect(client.calls.some((c) => c.sql.includes("database()"))).toBe(false)
+
+    // Compiled SQL qualifies the table as `otherdb`.`orders`.
+    const compiled = adapter.compile({ from: "orders", select: [{ col: "id" }] }, catalog)
+    expect(compiled.sql).toContain("`otherdb`.`orders`")
+  })
+})
+
 // ── execute (session settings) ───────────────────────────────────────────────
 
 describe("mysql adapter execute", () => {

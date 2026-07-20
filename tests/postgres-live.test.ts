@@ -243,3 +243,73 @@ describe("postgres live: introspection under a read-only role", () => {
     })
   })
 })
+
+// A non-`public` schema (e.g. RNAcentral's single-schema layout): introspection
+// must scope to it and every emitted query must qualify tables as "ns"."table".
+// End-to-end against real Postgres so introspect + compile + execute all agree.
+describe("postgres live: non-public schema (namespace option)", () => {
+  let sdb: PGlite
+  let svalv: Valv<Record<string, never>>
+
+  beforeAll(async () => {
+    sdb = new PGlite()
+    await sdb.exec(`
+      CREATE SCHEMA rnacen;
+      CREATE TABLE rnacen.customers ( id serial PRIMARY KEY, name text );
+      CREATE TABLE rnacen.orders (
+        id serial PRIMARY KEY,
+        customer_id integer NOT NULL REFERENCES rnacen.customers(id),
+        total numeric NOT NULL
+      );
+      INSERT INTO rnacen.customers (name) VALUES ('Acme'), ('Globex');
+      INSERT INTO rnacen.orders (customer_id, total) VALUES (1, 10), (1, 20), (2, 5);
+    `)
+    const adapter = new PostgresAdapter(pgliteClient(sdb), { namespace: "rnacen" })
+    svalv = new Valv({ adapter, defaultPolicy: "allow-all" })
+    await svalv.loadSchema()
+  })
+
+  afterAll(async () => {
+    await sdb.close()
+  })
+
+  it("introspects only the named schema and its relations", async () => {
+    const adapter = new PostgresAdapter(pgliteClient(sdb), { namespace: "rnacen" })
+    const { resources } = await adapter.introspect()
+
+    expect(Object.keys(resources).sort()).toEqual(["customers", "orders"])
+    expect(resources.orders.relations.customer).toMatchObject({
+      targetResource: "customers",
+      type: "belongsTo",
+      foreignKey: "customer_id",
+    })
+  })
+
+  it("qualifies emitted SQL and runs end-to-end against the schema", async () => {
+    const rows = (await svalv.run(
+      {
+        from: "orders",
+        select: [
+          { col: "customer_id" },
+          { fn: "sum", args: [{ kind: "col", name: "total" }], as: "total" },
+        ],
+        groupBy: [{ col: "customer_id" }],
+        orderBy: [{ col: "customer_id", dir: "asc" }],
+      },
+      {},
+    )) as Array<{ customer_id: number; total: unknown }>
+
+    expect(rows.map((r) => [r.customer_id, Number(r.total)])).toEqual([
+      [1, 30],
+      [2, 5],
+    ])
+
+    // The compiled SQL qualifies the table with the schema.
+    const adapter = new PostgresAdapter(pgliteClient(sdb), { namespace: "rnacen" })
+    const compiled = adapter.compile(
+      { from: "orders", select: [{ col: "id" }] },
+      await adapter.introspect(),
+    )
+    expect(compiled.sql).toContain('"rnacen"."orders"')
+  })
+})

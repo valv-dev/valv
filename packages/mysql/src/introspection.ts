@@ -15,10 +15,13 @@ async function rows<T>(client: MySqlClient, sql: string): Promise<T[]> {
   return (result ?? []) as T[]
 }
 
-// MySQL's "schema" is the database, so every table lives in the connection's
-// current database — introspection scopes to database() and the emitter leaves
-// table names bare (they resolve against that default database). Cross-database
-// querying would need db-qualified names; widen when a real need appears.
+// MySQL's "schema" is the database, so every table lives in a database —
+// introspection scopes to `database` (the passed name, else the connection's
+// current database() default). When a non-default database is given the adapter
+// qualifies emitted tables as `db`.`table` (via emit's `database` option); with
+// the default, names stay bare and resolve against the current database.
+// `database` is a trusted config value (never user input), so inlining it into
+// the SQL adds no injection surface.
 
 interface ColumnRow {
   table_name: string
@@ -38,7 +41,10 @@ interface FkRow {
   foreign_column_name: string
 }
 
-export async function introspectMysql(client: MySqlClient): Promise<SchemaMap> {
+export async function introspectMysql(client: MySqlClient, database?: string): Promise<SchemaMap> {
+  // SQL expression the WHERE clauses compare table_schema against: a quoted
+  // literal when a database is named, else the current database().
+  const db = database ? `'${database}'` : "database()"
   const [columns, fks] = await Promise.all([
     rows<ColumnRow>(
       client,
@@ -49,7 +55,7 @@ export async function introspectMysql(client: MySqlClient): Promise<SchemaMap> {
        from information_schema.columns c
        join information_schema.tables t
          on t.table_schema = c.table_schema and t.table_name = c.table_name
-       where t.table_type = 'BASE TABLE' and c.table_schema = database()
+       where t.table_type = 'BASE TABLE' and c.table_schema = ${db}
        order by c.table_name, c.ordinal_position`,
     ),
     rows<FkRow>(
@@ -59,7 +65,7 @@ export async function introspectMysql(client: MySqlClient): Promise<SchemaMap> {
               k.referenced_table_name as foreign_table_name,
               k.referenced_column_name as foreign_column_name
        from information_schema.key_column_usage k
-       where k.table_schema = database() and k.referenced_table_name is not null
+       where k.table_schema = ${db} and k.referenced_table_name is not null
        order by k.table_name, k.constraint_name, k.ordinal_position`,
     ),
   ])

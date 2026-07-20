@@ -134,6 +134,36 @@ describe("postgres introspection", () => {
   })
 })
 
+describe("postgres introspection namespace", () => {
+  it("scopes the queries to the given schema and qualifies emitted tables", async () => {
+    const queries: string[] = []
+    const client: PostgresSql = {
+      async unsafe(query: string) {
+        queries.push(query)
+        if (query.includes("information_schema.columns")) return columnRows
+        if (query.includes("con.contype = 'p'")) return pkRows
+        if (query.includes("con.contype = 'f'")) return fkRows
+        throw new Error(`unexpected query: ${query}`)
+      },
+      async begin() {
+        throw new Error("introspection does not open a transaction")
+      },
+    }
+
+    const adapter = new PostgresAdapter(client, { namespace: "rnacen" })
+    const catalog = await adapter.introspect()
+
+    // Every introspection query is scoped to the requested schema.
+    expect(queries.some((q) => q.includes("c.table_schema = 'rnacen'"))).toBe(true)
+    expect(queries.filter((q) => q.includes("n.nspname = 'rnacen'")).length).toBe(2)
+    expect(queries.some((q) => q.includes("'public'"))).toBe(false)
+
+    // Compiled SQL qualifies the table as "rnacen"."orders".
+    const compiled = adapter.compile({ from: "orders", select: [{ col: "id" }] }, catalog)
+    expect(compiled.sql).toContain('"rnacen"."orders"')
+  })
+})
+
 describe("postgres execute", () => {
   it("runs the query in a transaction with a statement timeout", async () => {
     const statements: { sql: string; params?: unknown[] }[] = []

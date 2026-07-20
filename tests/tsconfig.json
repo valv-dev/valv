@@ -11,7 +11,8 @@
       "@valv/core": ["../packages/core/src/index.ts"],
       "@valv/prisma": ["../packages/prisma/src/index.ts"],
       "@valv/clickhouse": ["../packages/clickhouse/src/index.ts"],
-      "@valv/postgres": ["../packages/postgres/src/index.ts"]
+      "@valv/postgres": ["../packages/postgres/src/index.ts"],
+      "@valv/mysql": ["../packages/mysql/src/index.ts"]
     }
   },
   "include": ["**/*.ts"]

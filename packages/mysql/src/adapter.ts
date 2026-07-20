@@ -5,6 +5,8 @@ import { introspectMysql, type MySqlClient } from "./introspection"
 export interface MySqlAdapterOptions {
   /** Declare the schema by hand instead of querying information_schema. */
   schema?: SchemaMap
+  /** Database to introspect and qualify tables with. Defaults to the connection's current database. */
+  database?: string
 }
 
 // Per-query wall-clock cap so a structurally-valid query (e.g. a join that scans
@@ -24,12 +26,13 @@ export class MySqlAdapter implements ValvAdapter {
   ) {}
 
   async introspect(): Promise<SchemaMap> {
-    this.schemaCache ??= this.options.schema ?? (await introspectMysql(this.client))
+    this.schemaCache ??=
+      this.options.schema ?? (await introspectMysql(this.client, this.options.database))
     return this.schemaCache
   }
 
   compile(query: Query, catalog: SchemaMap): CompiledQuery {
-    return emit(query, catalog, mysqlDialect)
+    return emit(query, catalog, mysqlDialect, { database: this.options.database })
   }
 
   functions(): Record<string, FnDef> {

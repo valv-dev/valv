@@ -6,6 +6,8 @@ import type { PostgresSql } from "./introspection"
 type CreateConfig<TContext> = Omit<ValvConfig<TContext, string>, "adapter"> & {
   /** `"introspect"` the live database, or supply a hand-defined schema. */
   schema: "introspect" | SchemaMap
+  /** Postgres schema to introspect and qualify tables with. Defaults to `public`. */
+  namespace?: string
 }
 
 /**
@@ -17,10 +19,13 @@ export async function createValv<TContext = DefaultContext>(
   sql: PostgresSql,
   config: CreateConfig<TContext>,
 ): Promise<Valv<TContext, string>> {
-  const { schema, ...rest } = config
+  const { schema, namespace, ...rest } = config
   const valv = new Valv<TContext, string>({
     ...rest,
-    adapter: new PostgresAdapter(sql, { schema: schema === "introspect" ? undefined : schema }),
+    adapter: new PostgresAdapter(sql, {
+      schema: schema === "introspect" ? undefined : schema,
+      namespace,
+    }),
   })
   await valv.loadSchema()
   return valv

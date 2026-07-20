@@ -6,6 +6,8 @@ import type { MySqlClient } from "./introspection"
 type CreateConfig<TContext> = Omit<ValvConfig<TContext, string>, "adapter"> & {
   /** `"introspect"` the live database, or supply a hand-defined schema. */
   schema: "introspect" | SchemaMap
+  /** Database to introspect and qualify tables with. Defaults to the connection's current database. */
+  database?: string
 }
 
 /**
@@ -18,10 +20,13 @@ export async function createValv<TContext = DefaultContext>(
   client: MySqlClient,
   config: CreateConfig<TContext>,
 ): Promise<Valv<TContext, string>> {
-  const { schema, ...rest } = config
+  const { schema, database, ...rest } = config
   const valv = new Valv<TContext, string>({
     ...rest,
-    adapter: new MySqlAdapter(client, { schema: schema === "introspect" ? undefined : schema }),
+    adapter: new MySqlAdapter(client, {
+      schema: schema === "introspect" ? undefined : schema,
+      database,
+    }),
   })
   await valv.loadSchema()
   return valv

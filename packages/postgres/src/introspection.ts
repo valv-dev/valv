@@ -8,12 +8,6 @@ export interface PostgresSql {
   begin<T>(callback: (sql: PostgresSql) => Promise<T>): Promise<T>
 }
 
-// Only the `public` schema is introspected. Resource names are the bare table
-// name, and the emitter quotes `tableName` as a single identifier — a
-// schema-qualified table would need `schema.table` handling it doesn't do. This
-// covers the common case; widen when a real multi-schema need appears.
-const SCHEMA = "public"
-
 interface ColumnRow {
   table_name: string
   column_name: string
@@ -35,7 +29,17 @@ interface FkRow {
   foreign_column_name: string
 }
 
-export async function introspectPostgres(sql: PostgresSql): Promise<SchemaMap> {
+// Introspect a single Postgres schema (`namespace`, default `public`). Resource
+// names are the bare table name; when a non-default namespace is used the adapter
+// qualifies emitted tables as `"namespace"."table"` (via emit's `database`
+// option). Still single-schema: `resources[tableName]` keying and FK matching
+// assume table names are unique within the introspected namespace. `namespace` is
+// a trusted config value (never user input), so inlining it into the SQL adds no
+// injection surface — same as the old hardcoded constant.
+export async function introspectPostgres(
+  sql: PostgresSql,
+  namespace = "public",
+): Promise<SchemaMap> {
   const [columns, pks, fks] = await Promise.all([
     sql.unsafe(`
       select c.table_name, c.column_name, c.data_type, c.is_nullable,
@@ -43,7 +47,7 @@ export async function introspectPostgres(sql: PostgresSql): Promise<SchemaMap> {
       from information_schema.columns c
       join information_schema.tables t
         on t.table_schema = c.table_schema and t.table_name = c.table_name
-      where t.table_type = 'BASE TABLE' and c.table_schema = '${SCHEMA}'
+      where t.table_type = 'BASE TABLE' and c.table_schema = '${namespace}'
       order by c.table_name, c.ordinal_position
     `) as Promise<ColumnRow[]>,
     // Primary keys from pg_catalog, not information_schema.table_constraints:
@@ -58,7 +62,7 @@ export async function introspectPostgres(sql: PostgresSql): Promise<SchemaMap> {
       join pg_namespace n on n.oid = c.relnamespace
       join lateral unnest(con.conkey) with ordinality as k(attnum, ord) on true
       join pg_attribute a on a.attrelid = c.oid and a.attnum = k.attnum
-      where con.contype = 'p' and n.nspname = '${SCHEMA}'
+      where con.contype = 'p' and n.nspname = '${namespace}'
       order by c.relname, k.ord
     `) as Promise<PkRow[]>,
     // Foreign keys from pg_catalog for the same reason. unnest with ordinality
@@ -74,7 +78,7 @@ export async function introspectPostgres(sql: PostgresSql): Promise<SchemaMap> {
       join lateral unnest(con.conkey, con.confkey) with ordinality as k(conkey, confkey, ord) on true
       join pg_attribute a on a.attrelid = c.oid and a.attnum = k.conkey
       join pg_attribute fa on fa.attrelid = fc.oid and fa.attnum = k.confkey
-      where con.contype = 'f' and n.nspname = '${SCHEMA}'
+      where con.contype = 'f' and n.nspname = '${namespace}'
       order by c.relname, con.conname, k.ord
     `) as Promise<FkRow[]>,
   ])
