@@ -23,4 +23,11 @@ export interface Dialect {
   // (Postgres, Cockroach, ClickHouse). Dialects with no ILIKE keyword — MySQL and
   // SQLite, where plain LIKE is already case-insensitive — set this to "LIKE".
   ilike?: string
+
+  // Extract a nested value from a JSON column, for fields carrying a `jsonPath`.
+  // `columnRef` is the already-quoted, alias-qualified base column; `path` is the
+  // catalog-authored key sequence (never model input); `type` is the field's
+  // nativeType, for dialects that must cast the result. Only needed by dialects
+  // whose catalogs declare jsonPath fields; the emitter fails closed without it.
+  jsonExtract?(columnRef: string, path: string[], type: string): string
 }

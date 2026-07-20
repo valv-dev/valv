@@ -26,6 +26,11 @@ export interface FieldSchema {
   enumValues?: string[] // when type is "enum"
   description?: string
   sensitive?: boolean // stripped from the model's view before policy runs
+  // Marks the field as a value extracted from a JSON column, not a physical column.
+  // Allowlisted and policy-gated by `name` like any field; only its emitted SQL
+  // differs. `path` is catalog-authored (never model input), so nested keys are
+  // exposed one at a time. Needs a dialect with `jsonExtract` or it fails at emit.
+  jsonPath?: { column: string; path: string[] }
 }
 
 export interface RelationSchema {

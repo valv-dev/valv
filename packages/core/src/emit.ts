@@ -13,15 +13,20 @@ import { resolveJoins, aliasForPath, ROOT_ALIAS, type JoinNode } from "./joins"
 // in validate.ts. Anything that reaches SQL as a literal does so only after one
 // of those checks, never by string interpolation of attacker input.
 
+// What emit reads off a field: its native type (for param typing) and, when the
+// field is JSON-extracted rather than physical, where to extract it from. The
+// full FieldSchema is what's passed in at runtime; this is the slice we use.
+type FieldMeta = { nativeType: string; jsonPath?: { column: string; path: string[] } }
+
 // One table in scope at emit time: its columns (for param typing) and the
 // quoted, db-qualified name to put in FROM/JOIN.
 interface TableScope {
-  fields: Record<string, { nativeType: string }>
+  fields: Record<string, FieldMeta>
   ref: string
 }
 
 interface EmitContext {
-  fields: Record<string, { nativeType: string }>
+  fields: Record<string, FieldMeta>
   dialect: Dialect
   params: BoundParam[]
   // Present only when the query joins. When set, columns emit alias-qualified
@@ -135,18 +140,26 @@ function emitGroupKey(
   return colRef(ctx, key.rel, key.col)
 }
 
-// Qualify a column to its table's alias when joining; bare otherwise.
+// Qualify a column to its table's alias when joining; bare otherwise. A
+// JSON-extracted field renders through the dialect from its source column instead
+// of its own name (which is logical, not a real column).
 function colRef(ctx: EmitContext, rel: string[] | undefined, name: string): string {
   const q = (id: string) => ctx.dialect.quoteId(id)
-  if (!ctx.tables) return q(name)
-  return `${q(rel?.length ? aliasForPath(rel) : ROOT_ALIAS)}.${q(name)}`
+  const alias = ctx.tables ? q(rel?.length ? aliasForPath(rel) : ROOT_ALIAS) : undefined
+  const field = fieldsFor(ctx, rel)[name]
+  if (field?.jsonPath) {
+    if (!ctx.dialect.jsonExtract) {
+      throw new Error(`[valv] dialect cannot extract JSON path for field "${name}"`)
+    }
+    const col = field.jsonPath.column
+    const columnRef = alias ? `${alias}.${q(col)}` : q(col)
+    return ctx.dialect.jsonExtract(columnRef, field.jsonPath.path, field.nativeType)
+  }
+  return alias ? `${alias}.${q(name)}` : q(name)
 }
 
 // The fields of the table a column belongs to — for typing bound params.
-function fieldsFor(
-  ctx: EmitContext,
-  rel: string[] | undefined,
-): Record<string, { nativeType: string }> {
+function fieldsFor(ctx: EmitContext, rel: string[] | undefined): Record<string, FieldMeta> {
   if (!ctx.tables) return ctx.fields
   return ctx.tables.get(rel?.length ? aliasForPath(rel) : ROOT_ALIAS)?.fields ?? ctx.fields
 }
@@ -213,8 +226,12 @@ function emitSelectItem(
   }
   const expr = colRef(ctx, item.rel, item.col)
   // A joined column with no explicit alias gets a deterministic one
-  // ("customer_name") so result keys stay unique across tables and stable.
-  const alias = item.as ?? (item.rel?.length ? `${item.rel.join("_")}_${item.col}` : undefined)
+  // ("customer_name") so result keys stay unique across tables and stable. A
+  // JSON-extracted field aliases to its logical name, else the key is raw SQL.
+  const jsonField = fieldsFor(ctx, item.rel)[item.col]?.jsonPath !== undefined
+  const alias =
+    item.as ??
+    (item.rel?.length ? `${item.rel.join("_")}_${item.col}` : jsonField ? item.col : undefined)
   return alias ? `${expr} AS ${q(alias)}` : expr
 }
 
