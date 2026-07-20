@@ -44,7 +44,7 @@
     "@clack/prompts": "^1.6.0",
     "@clickhouse/client": "^1.0.0",
     "@prisma/client": "^5.0.0",
-    "@valv/clickhouse": "^0.7.0",
+    "@valv/clickhouse": "^0.7.1",
     "@valv/core": "^0.8.1",
     "@valv/mcp-sdk": "^0.5.1",
     "@valv/prisma": "^0.8.0",
