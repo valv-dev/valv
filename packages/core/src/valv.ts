@@ -1,7 +1,15 @@
 import type { SchemaMap } from "./catalog"
 import type { PolicyFn, PolicyResult, DefaultContext } from "./policy"
 import type { ValvAdapter } from "./adapter"
-import { parseQuery, parseInsert, parseUpdate, parseDelete } from "./grammar"
+import type { Query, Insert, Update, Delete } from "./ast"
+import type { FnDef } from "./functions"
+import {
+  parseQuery as parseQueryInput,
+  parseInsert as parseInsertInput,
+  parseUpdate as parseUpdateInput,
+  parseDelete as parseDeleteInput,
+} from "./grammar"
+import { buildQuerySchema, mutationSchema as buildMutationSchema } from "./tools/query-schema"
 import { assertWithinLimits } from "./limits"
 import { evaluateRead, evaluateWrite, type WriteOp, type EvaluatedPolicy } from "./evaluate"
 import { validateQuery, validateMutation, type ScopedTable } from "./validate"
@@ -161,13 +169,12 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
   }
 
   private async executeWrite(op: WriteOp, input: unknown, ctx: TContext): Promise<MutationResult> {
-    assertWithinLimits(input)
     const mutation =
       op === "create"
-        ? parseInsert(input)
+        ? this.parseInsert(input)
         : op === "update"
-          ? parseUpdate(input)
-          : parseDelete(input)
+          ? this.parseUpdate(input)
+          : this.parseDelete(input)
 
     const catalog = await this.loadSchema()
     if (!hasOwn(catalog.resources, mutation.from)) {
@@ -199,8 +206,86 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
    * after createValv).
    */
   resultSchema(query: unknown): ResultColumn[] {
-    const parsed = parseQuery(query, this.adapter.functions())
+    const parsed = this.parseQuery(query)
     return deriveResultSchema(parsed, this.requireSchema(), this.adapter.functions())
+  }
+
+  /**
+   * This connection's function catalog — the base functions plus the adapter's
+   * dialect functions. The same registry that types the query grammar's function
+   * arguments.
+   */
+  get functions(): Record<string, FnDef> {
+    return this.adapter.functions()
+  }
+
+  /**
+   * The JSON Schema for the `query` tool's input, with this connection's function
+   * catalog baked into its description. Use it to embed the exact query grammar in
+   * your own tool (e.g. a chart tool that takes a `query` field) — it can't drift
+   * from what the `query` tool accepts.
+   */
+  querySchema(): object {
+    return buildQuerySchema(this.adapter.functions())
+  }
+
+  /** The JSON Schema for a write tool's input (`create` / `update` / `delete`). */
+  mutationSchema(op: WriteOp): object {
+    return buildMutationSchema(op)
+  }
+
+  /**
+   * Parse and structurally validate a query in the grammar the model emits,
+   * returning the internal query. Throws on a malformed or oversized query — use
+   * it to validate a hand-built or stored query before {@link run}. Does not check
+   * columns/policy against a catalog; that happens at run time, scoped to `ctx`.
+   */
+  parseQuery(input: unknown): Query {
+    assertWithinLimits(input)
+    return parseQueryInput(input, this.adapter.functions())
+  }
+
+  /** Parse a `create` payload in the write grammar. See {@link parseQuery}. */
+  parseInsert(input: unknown): Insert {
+    assertWithinLimits(input)
+    return parseInsertInput(input)
+  }
+
+  /** Parse an `update` payload in the write grammar. See {@link parseQuery}. */
+  parseUpdate(input: unknown): Update {
+    assertWithinLimits(input)
+    return parseUpdateInput(input)
+  }
+
+  /** Parse a `delete` payload in the write grammar. See {@link parseQuery}. */
+  parseDelete(input: unknown): Delete {
+    assertWithinLimits(input)
+    return parseDeleteInput(input)
+  }
+
+  /**
+   * The real `query` tool as a composable unit: the exact grammar schema and
+   * description, bound to `ctx`, with an optional post-run `wrap` to transform the
+   * rows (draw a chart, save a widget, return a count). Override `name`/
+   * `description` to present it as your own tool. Because it reuses the query
+   * tool, its schema can't drift from what the model is told elsewhere.
+   */
+  queryTool(
+    ctx: TContext,
+    options?: {
+      name?: string
+      description?: string
+      wrap?: (rows: unknown, input: unknown) => unknown | Promise<unknown>
+    },
+  ): NeutralTool {
+    const base = this.neutralTools(ctx).find((t) => t.name === "query")!
+    const wrap = options?.wrap
+    return {
+      name: options?.name ?? base.name,
+      description: options?.description ?? base.description,
+      parameters: base.parameters,
+      execute: wrap ? async (input) => wrap(await base.execute(input), input) : base.execute,
+    }
   }
 
   /**
@@ -273,8 +358,7 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
   }
 
   private async runQuery(input: unknown, ctx: TContext): Promise<unknown> {
-    assertWithinLimits(input)
-    const query = parseQuery(input, this.adapter.functions())
+    const query = this.parseQuery(input)
     const catalog = await this.loadSchema()
     if (!hasOwn(catalog.resources, query.from)) {
       throw new ValidationError(`Unknown resource "${query.from}".`)

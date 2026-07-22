@@ -9,6 +9,19 @@ export type {
 export type { ValvAdapter, CompiledQuery, BoundParam, MutationResult } from "./adapter"
 export { parseQuery, parseInsert, parseUpdate, parseDelete } from "./grammar"
 export type {
+  QueryInput,
+  FilterInput,
+  FilterOperators,
+  SelectInput,
+  SelectValue,
+  FnArgInput,
+  OrderByInput,
+  ScalarInput,
+  InsertInput,
+  UpdateInput,
+  DeleteInput,
+} from "./grammar"
+export type {
   Query,
   Expr,
   SelectItem,

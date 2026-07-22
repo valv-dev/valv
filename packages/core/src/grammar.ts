@@ -14,6 +14,82 @@ import type {
   RelPath,
 } from "./ast"
 
+// ── Input types ──────────────────────────────────────────────────────────────
+// The Prisma-shaped input the grammar accepts — for callers hand-building a query
+// or typing a `query` field. Intentionally looser than the parser (dynamic field
+// and function keys defeat exhaustive typing), but enough for real authoring help.
+// The parser is the source of truth; these describe its accepted shape.
+
+export type ScalarInput = string | number | boolean | null
+
+export interface FilterOperators {
+  equals?: ScalarInput
+  not?: ScalarInput
+  gt?: ScalarInput
+  gte?: ScalarInput
+  lt?: ScalarInput
+  lte?: ScalarInput
+  in?: ScalarInput[]
+  notIn?: ScalarInput[]
+  contains?: string
+  startsWith?: string
+  endsWith?: string
+  mode?: "default" | "insensitive"
+}
+
+// A field maps to a value (equality), null (IS NULL), or an operator object;
+// AND/OR/NOT combine sub-filters. Field keys are dynamic, so the index signature
+// carries every possibility.
+export interface FilterInput {
+  [field: string]: ScalarInput | FilterOperators | FilterInput | FilterInput[] | undefined
+  AND?: FilterInput | FilterInput[]
+  OR?: FilterInput[]
+  NOT?: FilterInput | FilterInput[]
+}
+
+// A positional function argument: a column name, a literal, a `{ col }`, or a
+// predicate (a filter). A single value or `true` (no args) is the sugar form.
+export type FnArgInput =
+  | ScalarInput
+  | { col: string }
+  | FilterInput
+  | Array<ScalarInput | { col: string } | FilterInput>
+
+// A select entry: a plain column (`true`), a renamed/joined column (`{ col }`),
+// or a function call keyed by the function name.
+export type SelectValue = true | { col: string } | Record<string, FnArgInput | true>
+
+export type SelectInput = Record<string, SelectValue>
+
+export type OrderByInput = Record<string, "asc" | "desc"> | Array<Record<string, "asc" | "desc">>
+
+export interface QueryInput {
+  from: string
+  select: SelectInput
+  where?: FilterInput
+  groupBy?: string[]
+  orderBy?: OrderByInput
+  take?: number
+  /** Alias for `take`. */
+  limit?: number
+}
+
+export interface InsertInput {
+  from: string
+  data: Record<string, ScalarInput>
+}
+
+export interface UpdateInput {
+  from: string
+  data: Record<string, ScalarInput>
+  where: FilterInput
+}
+
+export interface DeleteInput {
+  from: string
+  where: FilterInput
+}
+
 // The Prisma-idiomatic input grammar: the surface the model actually writes,
 // parsed into the internal IR (ast.ts). Everything here is desugaring — a
 // familiar Prisma/SQL shape in, the tagged tree out — so the model rides shapes
