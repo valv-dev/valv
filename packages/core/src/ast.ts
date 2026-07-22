@@ -34,6 +34,7 @@ export type Expr =
   | { kind: "col"; name: string; rel?: RelPath }
   | { kind: "value"; value: unknown }
   | { kind: "cmp"; op: CmpOp; left: Expr; right: Expr }
+  | { kind: "null"; expr: Expr; negated: boolean } // IS NULL / IS NOT NULL
   | { kind: "and"; args: Expr[] }
   | { kind: "or"; args: Expr[] }
   | { kind: "not"; arg: Expr }

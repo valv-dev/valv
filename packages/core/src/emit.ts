@@ -304,6 +304,8 @@ function emitExpr(expr: Expr, ctx: EmitContext): string {
       const op = like ? (expr.op === "ilike" ? (ctx.dialect.ilike ?? "ILIKE") : "LIKE") : expr.op
       return `(${emitOperand(expr.left, ctx, type)} ${op} ${emitOperand(expr.right, ctx, type)})`
     }
+    case "null":
+      return `(${emitExpr(expr.expr, ctx)} IS ${expr.negated ? "NOT " : ""}NULL)`
     case "and":
       return `(${expr.args.map((a) => emitExpr(a, ctx)).join(" AND ")})`
     case "or":

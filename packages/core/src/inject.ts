@@ -42,6 +42,8 @@ function qualify(expr: Expr, rel: string[]): Expr {
       return expr
     case "cmp":
       return { ...expr, left: qualify(expr.left, rel), right: qualify(expr.right, rel) }
+    case "null":
+      return { ...expr, expr: qualify(expr.expr, rel) }
     case "and":
       return { kind: "and", args: expr.args.map((a) => qualify(a, rel)) }
     case "or":

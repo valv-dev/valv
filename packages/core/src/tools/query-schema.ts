@@ -17,8 +17,9 @@ const filterSchema = {
   description:
     "Prisma-style filter. { field: value } is equality; { field: { gte: x, lt: y } } applies " +
     "operators (equals, not, gt, gte, lt, lte, in, notIn, contains, startsWith, endsWith, mode: " +
-    '"insensitive"). Combine with AND / OR / NOT (arrays of filters). A dotted key reads a joined ' +
-    'column: { "customer.region": "EU" }. Scope filters are added server-side — never add your own.',
+    '"insensitive"). { field: null } tests IS NULL; { field: { not: null } } tests IS NOT NULL. ' +
+    "Combine with AND / OR / NOT (arrays of filters). A dotted key reads a joined column: " +
+    '{ "customer.region": "EU" }. Scope filters are added server-side — never add your own.',
 } as const
 
 const dataSchema = {

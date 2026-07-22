@@ -84,6 +84,10 @@ export function validateExpr(input: unknown): Expr {
     }
     case "value":
       return { kind: "value", value: input.value }
+    case "null":
+      if (typeof input.negated !== "boolean")
+        throw new ValidationError("A null node needs a boolean `negated`.")
+      return { kind: "null", expr: validateExpr(input.expr), negated: input.negated }
     case "cmp":
       if (typeof input.op !== "string" || !CMP_OPS.has(input.op))
         throw new ValidationError("Invalid comparison operator.")
@@ -111,6 +115,12 @@ function isStringArray(v: unknown): v is string[] {
 
 function cmp(op: CmpOp, ref: { col: string; rel?: RelPath }, v: unknown): Expr {
   return { kind: "cmp", op, left: col(ref), right: value(v) }
+}
+
+// col IS NULL / col IS NOT NULL — a null is not a comparable value in SQL, so it
+// gets its own node rather than a `= NULL` that silently matches nothing.
+function nullCheck(ref: { col: string; rel?: RelPath }, negated: boolean): Expr {
+  return { kind: "null", expr: col(ref), negated }
 }
 
 // ── where: Prisma filter → Expr ──────────────────────────────────────────────
@@ -154,8 +164,10 @@ function parseFilterList(val: unknown, key: string): Expr[] {
   })
 }
 
-// A field's value is either a scalar (equality) or an operator object.
+// A field's value is either null (IS NULL), a scalar (equality), or an operator
+// object.
 function fieldConditionToExpr(ref: { col: string; rel?: RelPath }, cond: unknown): Expr {
+  if (cond === null) return nullCheck(ref, false)
   if (isScalar(cond)) return cmp("=", ref, cond)
   if (isObject(cond)) return operatorsToExpr(ref, cond)
   throw new ValidationError(
@@ -184,14 +196,18 @@ function operatorToExpr(
   insensitive: boolean,
 ): Expr {
   if (op in RANGE) {
-    if (!isScalar(val)) throw new ValidationError(`"${op}" on "${ref.col}" needs a value.`)
+    if (val === null || !isScalar(val))
+      throw new ValidationError(`"${op}" on "${ref.col}" needs a non-null value.`)
     return cmp(RANGE[op], ref, val)
   }
   switch (op) {
     case "equals":
+      // { equals: null } / { not: null } are the explicit IS [NOT] NULL forms.
+      if (val === null) return nullCheck(ref, false)
       requireScalar(ref, op, val)
       return cmp("=", ref, val)
     case "not":
+      if (val === null) return nullCheck(ref, true)
       requireScalar(ref, op, val)
       return cmp("!=", ref, val)
     case "in":

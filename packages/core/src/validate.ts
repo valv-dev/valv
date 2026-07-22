@@ -195,6 +195,9 @@ function walkColumns(expr: Expr, visit: (rel: string[] | undefined, name: string
       walkColumns(expr.left, visit)
       walkColumns(expr.right, visit)
       break
+    case "null":
+      walkColumns(expr.expr, visit)
+      break
     case "and":
     case "or":
       expr.args.forEach((a) => walkColumns(a, visit))

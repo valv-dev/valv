@@ -104,6 +104,31 @@ describe("grammar — where", () => {
     expect(sql).toMatch(/`region` ILIKE \{p0:String}/)
   })
 
+  it("tests IS NULL from a bare null or { equals: null }", async () => {
+    expect(await sqlOf({ select: { region: true }, where: { region: null } })).toContain(
+      "WHERE (`region` IS NULL)",
+    )
+    expect(
+      await sqlOf({ select: { region: true }, where: { region: { equals: null } } }),
+    ).toContain("WHERE (`region` IS NULL)")
+  })
+
+  it("tests IS NOT NULL from { not: null }", async () => {
+    expect(await sqlOf({ select: { region: true }, where: { region: { not: null } } })).toContain(
+      "WHERE (`region` IS NOT NULL)",
+    )
+  })
+
+  it("binds no parameter for a null check", async () => {
+    expect(await paramsOf({ select: { region: true }, where: { region: null } })).toEqual([])
+  })
+
+  it("rejects null for a range operator", async () => {
+    await expect(
+      sqlOf({ select: { region: true }, where: { latency: { gt: null } } }),
+    ).rejects.toThrow(/needs a non-null value/)
+  })
+
   it("treats an empty filter as no constraint", async () => {
     const sql = await sqlOf({ select: { region: true }, where: {} })
     expect(sql).not.toContain("WHERE")

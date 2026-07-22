@@ -196,6 +196,8 @@ function columnsInExpr(expr: Expr): string[] {
       return []
     case "cmp":
       return [...columnsInExpr(expr.left), ...columnsInExpr(expr.right)]
+    case "null":
+      return columnsInExpr(expr.expr)
     case "and":
     case "or":
       return expr.args.flatMap(columnsInExpr)
