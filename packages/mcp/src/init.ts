@@ -218,7 +218,11 @@ async function collectFromFields(p: Clack): Promise<Connection | null> {
   }
   const url = buildConnectionString(provider, parts)
   // ClickHouse takes the database via VALV_DATABASE, not the URL.
-  return { url, provider, database: provider === "clickhouse" ? parts.database || undefined : undefined }
+  return {
+    url,
+    provider,
+    database: provider === "clickhouse" ? parts.database || undefined : undefined,
+  }
 }
 
 interface ConnectionParts {
@@ -342,7 +346,10 @@ async function maybeCopyMapPrompt(p: Clack, serverName: string): Promise<void> {
 
   const prompt = mapPrompt(serverName)
   const copied = copyToClipboard(prompt)
-  p.note(prompt.trimEnd(), copied ? "Prompt — copied to your clipboard" : "Prompt — copy this into your agent")
+  p.note(
+    prompt.trimEnd(),
+    copied ? "Prompt — copied to your clipboard" : "Prompt — copy this into your agent",
+  )
 }
 
 // Pipe text to the platform clipboard tool; returns false if none is available.
