@@ -7,12 +7,18 @@ export interface PostgresAdapterOptions {
   schema?: SchemaMap
   /** Postgres schema to introspect and qualify tables with. Defaults to `public`. */
   namespace?: string
+  /**
+   * Per-query wall-clock cap in milliseconds (`SET LOCAL statement_timeout`).
+   * Defaults to 10000. Raise it for heavier analytical workloads; keep it low to
+   * stop a structurally-valid but expensive query from running away on the server.
+   */
+  statementTimeoutMs?: number
 }
 
-// Per-query wall-clock cap so a structurally-valid query (e.g. a join that scans
-// far more than expected) can't run away on the server. Applied via
-// `SET LOCAL statement_timeout` inside the transaction that runs the query.
-const STATEMENT_TIMEOUT_MS = 10_000
+// Default per-query wall-clock cap so a structurally-valid query (e.g. a join
+// that scans far more than expected) can't run away on the server. Override per
+// instance with `statementTimeoutMs`.
+const DEFAULT_STATEMENT_TIMEOUT_MS = 10_000
 
 // Postgres reports a `statement_timeout` cancellation as SQLSTATE 57014. In this
 // adapter the timeout we set is the only cancellation source, so 57014 means the
@@ -37,6 +43,10 @@ export class PostgresAdapter implements ValvAdapter {
     private options: PostgresAdapterOptions = {},
   ) {}
 
+  private get timeoutMs(): number {
+    return this.options.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS
+  }
+
   async introspect(): Promise<SchemaMap> {
     this.schemaCache ??=
       this.options.schema ?? (await introspectPostgres(this.sql, this.options.namespace))
@@ -57,7 +67,7 @@ export class PostgresAdapter implements ValvAdapter {
     } catch (err) {
       if (isStatementTimeout(err)) {
         throw new ValidationError(
-          `Query timed out after ${STATEMENT_TIMEOUT_MS / 1000}s — it scanned too much data. ` +
+          `Query timed out after ${this.timeoutMs / 1000}s — it scanned too much data. ` +
             "Narrow it with a `where` filter, aggregate over a smaller slice, or reduce `take`, then retry.",
         )
       }
@@ -67,9 +77,10 @@ export class PostgresAdapter implements ValvAdapter {
 
   private runInTx(sql: string, parameters: unknown[]): Promise<unknown[]> {
     return this.sql.begin(async (tx) => {
-      // SET LOCAL scopes both settings to this transaction. Values are our own
-      // hardcoded literals (never user input), so inlining them is safe.
-      await tx.unsafe(`SET LOCAL statement_timeout = ${STATEMENT_TIMEOUT_MS}`)
+      // SET LOCAL scopes both settings to this transaction. The timeout is a
+      // numeric config value and the zone is a literal — neither is model input,
+      // and a number can't carry SQL, so inlining them is safe.
+      await tx.unsafe(`SET LOCAL statement_timeout = ${this.timeoutMs}`)
       // Pin the session to UTC so date_trunc (and any other tz-sensitive
       // operator) on a `timestamptz` truncates to UTC boundaries instead of the
       // server's local zone. Without this, dateTrunc buckets shift by the

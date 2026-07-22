@@ -8,6 +8,8 @@ type CreateConfig<TContext> = Omit<ValvConfig<TContext, string>, "adapter"> & {
   schema: "introspect" | SchemaMap
   /** Postgres schema to introspect and qualify tables with. Defaults to `public`. */
   namespace?: string
+  /** Per-query wall-clock cap in milliseconds (`statement_timeout`). Defaults to 10000. */
+  statementTimeoutMs?: number
 }
 
 /**
@@ -19,12 +21,13 @@ export async function createValv<TContext = DefaultContext>(
   sql: PostgresSql,
   config: CreateConfig<TContext>,
 ): Promise<Valv<TContext, string>> {
-  const { schema, namespace, ...rest } = config
+  const { schema, namespace, statementTimeoutMs, ...rest } = config
   const valv = new Valv<TContext, string>({
     ...rest,
     adapter: new PostgresAdapter(sql, {
       schema: schema === "introspect" ? undefined : schema,
       namespace,
+      statementTimeoutMs,
     }),
   })
   await valv.loadSchema()

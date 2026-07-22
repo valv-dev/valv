@@ -8,6 +8,8 @@ type CreateConfig<TContext> = Omit<ValvConfig<TContext, string>, "adapter"> & {
   schema: "introspect" | SchemaMap
   /** Database to introspect and qualify tables with. Defaults to the connection's current database. */
   database?: string
+  /** Per-query wall-clock cap in milliseconds (`max_execution_time`). Defaults to 10000. */
+  statementTimeoutMs?: number
 }
 
 /**
@@ -20,12 +22,13 @@ export async function createValv<TContext = DefaultContext>(
   client: MySqlClient,
   config: CreateConfig<TContext>,
 ): Promise<Valv<TContext, string>> {
-  const { schema, database, ...rest } = config
+  const { schema, database, statementTimeoutMs, ...rest } = config
   const valv = new Valv<TContext, string>({
     ...rest,
     adapter: new MySqlAdapter(client, {
       schema: schema === "introspect" ? undefined : schema,
       database,
+      statementTimeoutMs,
     }),
   })
   await valv.loadSchema()

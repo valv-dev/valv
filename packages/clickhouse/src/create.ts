@@ -18,12 +18,13 @@ export async function createValv<TContext = DefaultContext>(
   client: ClickHouseClient,
   config: CreateConfig<TContext>,
 ): Promise<Valv<TContext, string>> {
-  const { database, schema, ...rest } = config
+  const { database, schema, statementTimeoutMs, ...rest } = config
   const valv = new Valv<TContext, string>({
     ...rest,
     adapter: new ClickHouseAdapter(client, {
       database,
       schema: schema === "introspect" ? undefined : schema,
+      statementTimeoutMs,
     }),
   })
   await valv.loadSchema()

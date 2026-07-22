@@ -7,18 +7,27 @@ export interface MySqlAdapterOptions {
   schema?: SchemaMap
   /** Database to introspect and qualify tables with. Defaults to the connection's current database. */
   database?: string
+  /**
+   * Per-query wall-clock cap in milliseconds (`max_execution_time`, which MySQL
+   * enforces for read-only SELECTs). Defaults to 10000. Raise it for heavier
+   * analytical workloads; keep it low to bound a runaway query.
+   */
+  statementTimeoutMs?: number
 }
 
-// Per-query wall-clock cap so a structurally-valid query (e.g. a join that scans
-// far more than expected) can't run away on the server. Applied via
-// `max_execution_time` (milliseconds), which MySQL enforces for read-only
-// SELECTs — exactly this adapter's queries.
-const STATEMENT_TIMEOUT_MS = 10_000
+// Default per-query wall-clock cap so a structurally-valid query (e.g. a join
+// that scans far more than expected) can't run away on the server. Override per
+// instance with `statementTimeoutMs`.
+const DEFAULT_STATEMENT_TIMEOUT_MS = 10_000
 
 // Read-only adapter: no `mutate`, so core refuses writes. Adding writes is
 // emit{Insert,Update,Delete} over the same driver, when a real need appears.
 export class MySqlAdapter implements ValvAdapter {
   private schemaCache: SchemaMap | null = null
+
+  private get timeoutMs(): number {
+    return this.options.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS
+  }
 
   constructor(
     private client: MySqlClient,
@@ -40,15 +49,16 @@ export class MySqlAdapter implements ValvAdapter {
   }
 
   async execute(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
-    // Pin the session before the query runs. Both settings are our own hardcoded
-    // literals (never user input), so inlining them is safe:
+    // Pin the session before the query runs. The timeout is a numeric config
+    // value and the zone is a literal — neither is model input, and a number
+    // can't carry SQL, so inlining them is safe:
     //  - max_execution_time caps read-only SELECT wall-clock.
     //  - time_zone '+00:00' forces DATE_FORMAT bucketing (and any tz-sensitive
     //    read of a TIMESTAMP column, which MySQL converts from UTC storage to the
     //    session zone) to land on UTC boundaries, stable across environments.
     // These are session statements, so they need a dedicated connection — the
     // consumer passes one per request, not a shared pool (see MySqlClient).
-    await this.client.query(`SET SESSION max_execution_time = ${STATEMENT_TIMEOUT_MS}`)
+    await this.client.query(`SET SESSION max_execution_time = ${this.timeoutMs}`)
     await this.client.query(`SET time_zone = '+00:00'`)
     const [result] = await this.client.query(sql, parameters)
     return (result ?? []) as unknown[]

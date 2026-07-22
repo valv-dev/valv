@@ -15,14 +15,20 @@ export interface ClickHouseAdapterOptions {
   database?: string
   /** Declare the schema by hand instead of querying system.* to introspect it. */
   schema?: SchemaMap
+  /**
+   * Per-query wall-clock cap in milliseconds (`max_execution_time`). Defaults to
+   * 30000. Raise it for heavier analytical workloads; keep it low to bound a
+   * query that would otherwise full-scan a huge table.
+   */
+  statementTimeoutMs?: number
 }
 
-// Per-query safety caps so a structurally-valid query can't run away on the
-// server. They bound wall-clock and result size — a tiny `WHERE col > x` that
-// would otherwise full-scan a billion-row table is killed at 30s. Conservative
-// defaults; raise per deployment if real analytics needs more headroom.
-const QUERY_SETTINGS = {
-  max_execution_time: 30,
+const DEFAULT_STATEMENT_TIMEOUT_MS = 30_000
+
+// Result-size caps so a structurally-valid query can't run away on the server —
+// they bound how much a single query may return. The wall-clock cap
+// (`max_execution_time`) is added per query from `statementTimeoutMs`.
+const RESULT_CAPS = {
   max_result_rows: 10000,
   max_result_bytes: 100_000_000,
   result_overflow_mode: "throw",
@@ -75,7 +81,12 @@ export class ClickHouseAdapter implements ValvAdapter {
     const result = await this.client.query({
       query: sql,
       format: "JSONEachRow",
-      clickhouse_settings: QUERY_SETTINGS,
+      // ClickHouse takes max_execution_time in seconds; the option is in ms.
+      clickhouse_settings: {
+        ...RESULT_CAPS,
+        max_execution_time:
+          (this.options.statementTimeoutMs ?? DEFAULT_STATEMENT_TIMEOUT_MS) / 1000,
+      },
       ...(parameters.length ? { query_params: toQueryParams(parameters) } : {}),
     })
     return (await result.json()) as unknown[]
