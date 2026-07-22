@@ -1,5 +1,5 @@
 import type { ValvAdapter, SchemaMap, Query, CompiledQuery, FnDef } from "@valv/core"
-import { emit, BASE_FUNCTIONS, postgresDialect } from "@valv/core"
+import { emit, BASE_FUNCTIONS, postgresDialect, ValidationError } from "@valv/core"
 import { introspectPostgres, type PostgresSql } from "./introspection"
 
 export interface PostgresAdapterOptions {
@@ -13,6 +13,19 @@ export interface PostgresAdapterOptions {
 // far more than expected) can't run away on the server. Applied via
 // `SET LOCAL statement_timeout` inside the transaction that runs the query.
 const STATEMENT_TIMEOUT_MS = 10_000
+
+// Postgres reports a `statement_timeout` cancellation as SQLSTATE 57014. In this
+// adapter the timeout we set is the only cancellation source, so 57014 means the
+// query ran too long — surface that as an actionable ValidationError (which core
+// passes through to the caller intact) instead of letting a raw driver error be
+// redacted to a generic "could not be processed", which reads to a model like a
+// grammar mistake and sends it guessing at syntax.
+function isStatementTimeout(err: unknown): boolean {
+  const code = (err as { code?: unknown })?.code
+  if (code === "57014") return true
+  const message = (err as { message?: unknown })?.message
+  return typeof message === "string" && /statement timeout/i.test(message)
+}
 
 // Read-only adapter: no `mutate`, so core refuses writes. Adding writes is
 // emit{Insert,Update,Delete} over the same driver, when a real need appears.
@@ -39,6 +52,20 @@ export class PostgresAdapter implements ValvAdapter {
   }
 
   async execute(sql: string, parameters: unknown[] = []): Promise<unknown[]> {
+    try {
+      return await this.runInTx(sql, parameters)
+    } catch (err) {
+      if (isStatementTimeout(err)) {
+        throw new ValidationError(
+          `Query timed out after ${STATEMENT_TIMEOUT_MS / 1000}s — it scanned too much data. ` +
+            "Narrow it with a `where` filter, aggregate over a smaller slice, or reduce `take`, then retry.",
+        )
+      }
+      throw err
+    }
+  }
+
+  private runInTx(sql: string, parameters: unknown[]): Promise<unknown[]> {
     return this.sql.begin(async (tx) => {
       // SET LOCAL scopes both settings to this transaction. Values are our own
       // hardcoded literals (never user input), so inlining them is safe.
