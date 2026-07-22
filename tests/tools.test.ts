@@ -83,23 +83,21 @@ describe("tool layer", () => {
     ).toEqual(["query"])
   })
 
-  it("enumerates the available functions in the query tool's `fn` field", async () => {
+  it("enumerates the available functions in the query tool's select description", async () => {
     const { valv } = await setup()
     const query = valv.tools.neutral(ctx).find((t) => t.name === "query")!
     const params = query.parameters as any
-    const fnVariant = params.properties.select.items.anyOf.find((v: any) => v.properties?.fn)
-    expect(fnVariant.properties.fn.enum).toContain("count")
-    expect(fnVariant.properties.fn.enum).toContain("quantileTiming")
+    expect(params.properties.select.description).toContain("count(")
+    expect(params.properties.select.description).toContain("quantileTiming(")
   })
 
-  it("spells out functions' fixed-value (enum) arguments in the `fn` description", async () => {
+  it("spells out functions' fixed-value (enum) arguments in the select description", async () => {
     const { valv } = await setup()
     const query = valv.tools.neutral(ctx).find((t) => t.name === "query")!
     const params = query.parameters as any
-    const fnVariant = params.properties.select.items.anyOf.find((v: any) => v.properties?.fn)
     // ClickHouse's toStartOfInterval takes an enum unit — it must be advertised so
     // the model picks a valid one without first triggering an error.
-    expect(fnVariant.properties.fn.description).toMatch(/toStartOfInterval\([^)]*hour[^)]*\)/)
+    expect(params.properties.select.description).toMatch(/toStartOfInterval\([^)]*hour[^)]*\)/)
   })
 
   it("formats per provider (anthropic shape)", async () => {
@@ -142,7 +140,7 @@ describe("tool layer", () => {
 
   it("runTool('query', …) runs the query pipeline", async () => {
     const { valv, calls } = await setup()
-    const rows = await valv.runTool("query", { from: "orders", select: [{ col: "status" }] }, ctx)
+    const rows = await valv.runTool("query", { from: "orders", select: { status: true } }, ctx)
     expect(rows).toEqual([{ status: "paid" }])
     expect(calls[0].query).toContain("WHERE (`tenant_id` = {p0:String})")
   })
@@ -158,7 +156,7 @@ describe("tool layer", () => {
     expect(Object.keys(tools).sort()).toEqual(["describe_resource", "query"])
 
     const query = tools.query as unknown as { execute: (input: unknown) => Promise<unknown> }
-    const rows = await query.execute({ from: "orders", select: [{ col: "status" }] })
+    const rows = await query.execute({ from: "orders", select: { status: true } })
     expect(rows).toEqual([{ status: "paid" }])
     expect(calls[0].query).toContain("WHERE (`tenant_id` = {p0:String})")
   })

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { createValv } from "@valv/clickhouse"
-import type { SchemaMap, DefaultContext, FieldSchema, Query } from "@valv/core"
+import type { SchemaMap, DefaultContext, FieldSchema } from "@valv/core"
 import { fakeClient } from "./helpers"
 
 const f = (name: string, type: FieldSchema["type"], nativeType: string): FieldSchema => ({
@@ -27,9 +27,6 @@ const schema: SchemaMap = {
   },
 }
 
-const col = (name: string) => ({ kind: "col" as const, name })
-const val = (value: string | number) => ({ kind: "value" as const, value })
-
 async function setup() {
   const client = fakeClient([{ plan: "pro" }])
   const valv = await createValv<DefaultContext>(client, { schema })
@@ -45,7 +42,7 @@ const ctxFor = (tenant: string): DefaultContext => ({
 describe("run() — the read primitive", () => {
   it("runs a query through the full pipeline, returning serialized rows", async () => {
     const { valv, calls } = await setup()
-    const query: Query = { from: "events", select: [{ col: "plan" }] }
+    const query = { from: "events", select: { plan: true } }
     const rows = await valv.run(query, ctxFor("acme"))
 
     expect(rows).toEqual([{ plan: "pro" }])
@@ -57,7 +54,7 @@ describe("run() — the read primitive", () => {
   it("re-scopes a stored query to the current context on every replay (saved-query path)", async () => {
     const { valv, calls } = await setup()
     // The same stored query object, replayed under two different tenants.
-    const query: Query = { from: "events", select: [{ col: "plan" }] }
+    const query = { from: "events", select: { plan: true } }
     await valv.run(query, ctxFor("acme"))
     await valv.run(query, ctxFor("globex"))
 
@@ -71,13 +68,13 @@ describe("resultSchema() — predicted output shape", () => {
     const { valv, calls } = await setup()
     const cols = valv.resultSchema({
       from: "events",
-      select: [
-        { col: "plan" },
-        { fn: "count", args: [], as: "hits" },
-        { fn: "toStartOfInterval", args: [col("ts"), val(1), val("hour")], as: "bucket" },
-        { fn: "max", args: [col("latency")], as: "peak" }, // passthrough → number
-        { fn: "max", args: [col("plan")], as: "top" }, // passthrough → string
-      ],
+      select: {
+        plan: true,
+        hits: { count: true },
+        bucket: { toStartOfInterval: ["ts", 1, "hour"] },
+        peak: { max: "latency" }, // passthrough → number
+        top: { max: "plan" }, // passthrough → string
+      },
     })
 
     expect(cols).toEqual([
@@ -90,16 +87,16 @@ describe("resultSchema() — predicted output shape", () => {
     expect(calls).toHaveLength(0) // never touched the database
   })
 
-  it("falls back to the function name when an aggregate isn't aliased", async () => {
+  it("names each aggregate by its select key", async () => {
     const { valv } = await setup()
-    expect(valv.resultSchema({ from: "events", select: [{ fn: "count", args: [] }] })).toEqual([
-      { name: "count", type: "number" },
+    expect(valv.resultSchema({ from: "events", select: { total: { count: true } } })).toEqual([
+      { name: "total", type: "number" },
     ])
   })
 
   it("throws on an unknown resource", async () => {
     const { valv } = await setup()
-    expect(() => valv.resultSchema({ from: "nope", select: [{ col: "plan" }] })).toThrow(
+    expect(() => valv.resultSchema({ from: "nope", select: { plan: true } })).toThrow(
       /Unknown resource/,
     )
   })

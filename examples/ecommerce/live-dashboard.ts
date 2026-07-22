@@ -1,5 +1,5 @@
 import "dotenv/config"
-import type { DefaultContext, Query } from "@valv/core"
+import type { DefaultContext } from "@valv/core"
 import { prisma, getValv } from "./valv"
 
 // Live dashboard via a *saved query*.
@@ -16,15 +16,15 @@ const ctx: DefaultContext = { user: { id: "user-alice", role: "admin" }, tenant:
 
 // The query an agent would emit for "revenue by order status". Stored as plain
 // data — re-run forever, re-scoped every time.
-const dashboardQuery: Query = {
+const dashboardQuery = {
   from: "order",
-  select: [
-    { col: "status" },
-    { fn: "count", args: [], as: "orders" },
-    { fn: "sum", args: [{ kind: "col", name: "total" }], as: "revenue" },
-  ],
+  select: {
+    status: true,
+    orders: { count: true },
+    revenue: { sum: "total" },
+  },
   groupBy: ["status"],
-  orderBy: [{ col: "revenue", dir: "desc" }],
+  orderBy: { revenue: "desc" },
 }
 
 interface SeriesRow {

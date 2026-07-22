@@ -49,14 +49,6 @@ const schema: SchemaMap = {
 }
 
 const ctx: DefaultContext = { user: { id: "u1", role: "member" }, tenant: { id: "acme" } }
-const col = (name: string) => ({ kind: "col" as const, name })
-const val = (value: string | number | null) => ({ kind: "value" as const, value })
-const eq = (name: string, value: string | number | null) => ({
-  kind: "cmp" as const,
-  op: "=" as const,
-  left: col(name),
-  right: val(value),
-})
 
 const pgDialect: Dialect = { quoteId: (id) => `"${id}"`, placeholder: (i) => `$${i + 1}` }
 
@@ -110,7 +102,7 @@ describe("enum value validation", () => {
     await expect(
       valv.runTool(
         "query",
-        { from: "orders", select: [{ col: "id" }], where: eq("status", "shippd") },
+        { from: "orders", select: { id: true }, where: { status: "shippd" } },
         ctx,
       ),
     ).rejects.toThrow(/Invalid value for "status"\. Allowed values: pending, shipped, delivered\./)
@@ -121,7 +113,7 @@ describe("enum value validation", () => {
     await expect(
       valv.runTool(
         "query",
-        { from: "orders", select: [{ col: "id" }], where: eq("status", "shipped") },
+        { from: "orders", select: { id: true }, where: { status: "shipped" } },
         ctx,
       ),
     ).resolves.not.toThrow()
@@ -132,7 +124,7 @@ describe("enum value validation", () => {
     await expect(
       valv.runTool(
         "query",
-        { from: "orders", select: [{ col: "id" }], where: eq("priority", null) },
+        { from: "orders", select: { id: true }, where: { priority: null } },
         ctx,
       ),
     ).resolves.not.toThrow()
@@ -140,39 +132,36 @@ describe("enum value validation", () => {
 
   it("rejects a bad enum value nested in AND/OR/NOT", async () => {
     const valv = await chValv()
-    const where = {
-      kind: "or" as const,
-      args: [{ kind: "not" as const, arg: eq("status", "lost") }, eq("total", 5)],
-    }
+    const where = { OR: [{ NOT: { status: "lost" } }, { total: 5 }] }
     await expect(
-      valv.runTool("query", { from: "orders", select: [{ col: "id" }], where }, ctx),
+      valv.runTool("query", { from: "orders", select: { id: true }, where }, ctx),
     ).rejects.toThrow(/Invalid value for "status"/)
   })
 
   it("rejects a bad enum value on insert", async () => {
     const { valv } = pgValv()
     await expect(
-      valv.create({ from: "orders", values: { status: "nope", total: 1 } }, ctx),
+      valv.create({ from: "orders", data: { status: "nope", total: 1 } }, ctx),
     ).rejects.toThrow(/Invalid value for "status"\. Allowed values: pending, shipped, delivered\./)
   })
 
   it("rejects a bad enum value on update set", async () => {
     const { valv } = pgValv()
     await expect(
-      valv.update({ from: "orders", set: { status: "nope" }, where: eq("id", "o1") }, ctx),
+      valv.update({ from: "orders", data: { status: "nope" }, where: { id: "o1" } }, ctx),
     ).rejects.toThrow(/Invalid value for "status"/)
   })
 
   it("rejects a bad enum value in an update/delete where", async () => {
     const { valv } = pgValv()
-    await expect(valv.delete({ from: "orders", where: eq("status", "nope") }, ctx)).rejects.toThrow(
+    await expect(valv.delete({ from: "orders", where: { status: "nope" } }, ctx)).rejects.toThrow(
       /Invalid value for "status"/,
     )
   })
 
   it("accepts a valid enum value on insert", async () => {
     const { valv, writes } = pgValv()
-    await valv.create({ from: "orders", values: { status: "pending", total: 1 } }, ctx)
+    await valv.create({ from: "orders", data: { status: "pending", total: 1 } }, ctx)
     expect(writes).toHaveLength(1)
   })
 

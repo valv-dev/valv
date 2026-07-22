@@ -1,13 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { createValv } from "@valv/clickhouse"
-import {
-  Valv,
-  emit,
-  emitInsert,
-  emitUpdate,
-  emitDelete,
-  BASE_FUNCTIONS,
-} from "@valv/core"
+import { Valv, emit, emitInsert, emitUpdate, emitDelete, BASE_FUNCTIONS } from "@valv/core"
 import type {
   SchemaMap,
   DefaultContext,
@@ -61,7 +54,7 @@ async function readWith(rule: unknown) {
 describe("policy predicates — read (Expr passthrough)", () => {
   it("compiles an operator predicate into the WHERE", async () => {
     const { valv, calls } = await readWith(cmp(">", "total", 100))
-    await valv.runTool("query", { from: "orders", select: [{ col: "total" }] }, ctx)
+    await valv.runTool("query", { from: "orders", select: { total: true } }, ctx)
     expect(calls[0]!.query).toMatch(/`total` >/)
     expect(Object.values(calls[0]!.query_params ?? {})).toContain(100)
   })
@@ -69,7 +62,7 @@ describe("policy predicates — read (Expr passthrough)", () => {
   it("compiles an OR predicate (the union case)", async () => {
     const rule: Expr = { kind: "or", args: [cmp("=", "region", "EU"), cmp("=", "region", "US")] }
     const { valv, calls } = await readWith(rule)
-    await valv.runTool("query", { from: "orders", select: [{ col: "region" }] }, ctx)
+    await valv.runTool("query", { from: "orders", select: { region: true } }, ctx)
     expect(calls[0]!.query).toContain(" OR ")
     const params = Object.values(calls[0]!.query_params ?? {})
     expect(params).toEqual(expect.arrayContaining(["EU", "US"]))
@@ -77,7 +70,7 @@ describe("policy predicates — read (Expr passthrough)", () => {
 
   it("still supports the scalar-equality shorthand", async () => {
     const { valv, calls } = await readWith({ tenant_id: "acme" })
-    await valv.runTool("query", { from: "orders", select: [{ col: "region" }] }, ctx)
+    await valv.runTool("query", { from: "orders", select: { region: true } }, ctx)
     expect(calls[0]!.query).toMatch(/`tenant_id` =/)
     expect(Object.values(calls[0]!.query_params ?? {})).toContain("acme")
   })
@@ -85,14 +78,14 @@ describe("policy predicates — read (Expr passthrough)", () => {
   it("rejects a bare column (not a boolean predicate)", async () => {
     const { valv } = await readWith(col("total"))
     await expect(
-      valv.runTool("query", { from: "orders", select: [{ col: "total" }] }, ctx),
+      valv.runTool("query", { from: "orders", select: { total: true } }, ctx),
     ).rejects.toThrow(/boolean expression/)
   })
 
   it("rejects a structurally invalid expression", async () => {
     const { valv } = await readWith({ kind: "cmp", op: "XYZ", left: col("total"), right: val(1) })
     await expect(
-      valv.runTool("query", { from: "orders", select: [{ col: "total" }] }, ctx),
+      valv.runTool("query", { from: "orders", select: { total: true } }, ctx),
     ).rejects.toThrow(/not a valid expression/)
   })
 })
@@ -136,21 +129,18 @@ describe("policy predicates — write path", () => {
   it("rejects an Expr rule on create (can't force a comparison onto a row)", async () => {
     const { valv } = pgValv(() => ({ create: cmp("=", "tenant_id", "acme") }))
     await expect(
-      valv.create({ from: "orders", values: { region: "EU", total: 1 } }, ctx),
+      valv.create({ from: "orders", data: { region: "EU", total: 1 } }, ctx),
     ).rejects.toThrow(/scalar \{ field: value \} form/)
   })
 
   it("AND-injects an Expr update scope and keeps its columns server-owned", async () => {
     const { valv, writes } = pgValv(() => ({ read: true, update: cmp("=", "tenant_id", "acme") }))
-    await valv.update(
-      { from: "orders", set: { region: "US" }, where: cmp("=", "id", "o1") },
-      ctx,
-    )
+    await valv.update({ from: "orders", data: { region: "US" }, where: { id: "o1" } }, ctx)
     expect(writes[0]!.sql).toContain('"tenant_id" = $')
 
     // tenant_id is referenced by the scope predicate, so the model can't set it.
     await expect(
-      valv.update({ from: "orders", set: { tenant_id: "evil" }, where: cmp("=", "id", "o1") }, ctx),
+      valv.update({ from: "orders", data: { tenant_id: "evil" }, where: { id: "o1" } }, ctx),
     ).rejects.toThrow()
   })
 })

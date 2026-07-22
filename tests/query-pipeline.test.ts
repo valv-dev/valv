@@ -44,14 +44,9 @@ describe("query pipeline (slice 1)", () => {
       "query",
       {
         from: "events",
-        select: [{ col: "plan" }, { col: "latency" }],
-        where: {
-          kind: "cmp",
-          op: ">",
-          left: { kind: "col", name: "latency" },
-          right: { kind: "value", value: 10 },
-        },
-        limit: 50,
+        select: { plan: true, latency: true },
+        where: { latency: { gt: 10 } },
+        take: 50,
       },
       ctx,
     )
@@ -67,7 +62,7 @@ describe("query pipeline (slice 1)", () => {
 
   it("applies ClickHouse cost caps on every query", async () => {
     const { valv, calls } = await setup()
-    await valv.runTool("query", { from: "events", select: [{ col: "plan" }] }, ctx)
+    await valv.runTool("query", { from: "events", select: { plan: true } }, ctx)
     expect(calls[0].clickhouse_settings).toMatchObject({
       max_execution_time: 30,
       result_overflow_mode: "throw",
@@ -77,20 +72,20 @@ describe("query pipeline (slice 1)", () => {
   it("rejects a sensitive field", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool("query", { from: "events", select: [{ col: "secret" }] }, ctx),
+      valv.runTool("query", { from: "events", select: { secret: true } }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
   it("rejects an unknown column (same message as a denied one)", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool("query", { from: "events", select: [{ col: "nope" }] }, ctx),
+      valv.runTool("query", { from: "events", select: { nope: true } }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
   it("defaults the limit and always injects the tenant filter", async () => {
     const { valv, calls } = await setup()
-    await valv.runTool("query", { from: "events", select: [{ col: "plan" }] }, ctx)
+    await valv.runTool("query", { from: "events", select: { plan: true } }, ctx)
     expect(calls[0].query).toBe(
       "SELECT `plan` FROM `events_t` WHERE (`tenant_id` = {p0:String}) LIMIT 100",
     )

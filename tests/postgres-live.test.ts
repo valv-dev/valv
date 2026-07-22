@@ -59,19 +59,12 @@ describe("postgres live: dateTrunc + group by date", () => {
     const rows = (await valv.run(
       {
         from: "users",
-        select: [
-          {
-            fn: "dateTrunc",
-            args: [
-              { kind: "col", name: "created_at" },
-              { kind: "value", value: "month" },
-            ],
-            as: "bucket",
-          },
-          { fn: "count", args: [], as: "signups" },
-        ],
+        select: {
+          bucket: { dateTrunc: ["created_at", "month"] },
+          signups: { count: true },
+        },
         groupBy: ["bucket"],
-        orderBy: [{ col: "bucket", dir: "asc" }],
+        orderBy: { bucket: "asc" },
       },
       {},
     )) as Array<{ bucket: unknown; signups: unknown }>
@@ -87,9 +80,9 @@ describe("postgres live: dateTrunc + group by date", () => {
     const rows = (await valv.run(
       {
         from: "users",
-        select: [{ col: "created_at" }, { fn: "count", args: [], as: "n" }],
-        groupBy: [{ col: "created_at" }],
-        orderBy: [{ col: "created_at", dir: "asc" }],
+        select: { created_at: true, n: { count: true } },
+        groupBy: ["created_at"],
+        orderBy: { created_at: "asc" },
       },
       {},
     )) as Array<{ created_at: unknown; n: unknown }>
@@ -102,25 +95,13 @@ describe("postgres live: dateTrunc + group by date", () => {
     const rows = (await valv.run(
       {
         from: "users",
-        select: [
-          {
-            fn: "dateTrunc",
-            args: [
-              { kind: "col", name: "created_at" },
-              { kind: "value", value: "month" },
-            ],
-            as: "bucket",
-          },
-          { fn: "count", args: [], as: "signups" },
-        ],
-        where: {
-          kind: "cmp",
-          op: ">=",
-          left: { kind: "col", name: "created_at" },
-          right: { kind: "value", value: "2024-02-01T00:00:00Z" },
+        select: {
+          bucket: { dateTrunc: ["created_at", "month"] },
+          signups: { count: true },
         },
+        where: { created_at: { gte: "2024-02-01T00:00:00Z" } },
         groupBy: ["bucket"],
-        orderBy: [{ col: "bucket", dir: "asc" }],
+        orderBy: { bucket: "asc" },
       },
       {},
     )) as Array<{ bucket: unknown; signups: unknown }>
@@ -156,45 +137,36 @@ describe("postgres live: LIKE / ILIKE pattern matching", () => {
     await ldb.close()
   })
 
-  const names = async (op: "like" | "ilike", pattern: string): Promise<string[]> => {
+  const names = async (cond: Record<string, unknown>): Promise<string[]> => {
     const rows = (await lvalv.run(
-      {
-        from: "people",
-        select: [{ col: "name" }],
-        where: {
-          kind: "cmp",
-          op,
-          left: { kind: "col", name: "name" },
-          right: { kind: "value", value: pattern },
-        },
-        orderBy: [{ col: "name", dir: "asc" }],
-      },
+      { from: "people", select: { name: true }, where: { name: cond }, orderBy: { name: "asc" } },
       {},
     )) as Array<{ name: string }>
     return rows.map((r) => r.name)
   }
 
-  it("LIKE is a prefix/wildcard match and case-sensitive", async () => {
-    // % matches any run, so "Al%" catches the capitalized names but not "alice".
-    expect(await names("like", "Al%")).toEqual(["Alice", "Alison"])
-    // Exact string, no wildcard → only the exact-case row.
-    expect(await names("like", "Bob")).toEqual(["Bob"])
-    // _ matches exactly one character: "Bob__" needs two trailing chars.
-    expect(await names("like", "Bob__")).toEqual(["Bobby"])
+  it("startsWith / endsWith / contains are case-sensitive substring matches", async () => {
+    expect(await names({ startsWith: "Al" })).toEqual(["Alice", "Alison"]) // not "alice"
+    expect(await names({ endsWith: "y" })).toEqual(["Bobby"])
+    expect(await names({ contains: "li" })).toEqual(["Alice", "Alison", "alice"])
   })
 
-  it("ILIKE matches case-insensitively", async () => {
-    expect(await names("ilike", "al%")).toEqual(["Alice", "Alison", "alice"])
-    expect(await names("ilike", "BOB%")).toEqual(["Bob", "Bobby"])
+  it("insensitive mode matches regardless of case", async () => {
+    expect(await names({ startsWith: "bob", mode: "insensitive" })).toEqual(["Bob", "Bobby"])
+    expect(await names({ contains: "al", mode: "insensitive" })).toEqual([
+      "Alice",
+      "Alison",
+      "alice",
+    ])
   })
 
-  it("treats a literal % in the pattern as the wildcard (bound, not injected)", async () => {
-    // The bound pattern's % is a wildcard: "100%" matches the row starting "100".
-    expect(await names("like", "100%")).toEqual(["100% cotton"])
+  it("treats a literal % as text, not a wildcard (escaped, bound, never injected)", async () => {
+    // The % is escaped, so it matches the literal "100%" substring — not "anything".
+    expect(await names({ contains: "100%" })).toEqual(["100% cotton"])
   })
 
   it("a non-matching pattern returns nothing", async () => {
-    expect(await names("like", "Zed%")).toEqual([])
+    expect(await names({ startsWith: "Zed" })).toEqual([])
   })
 })
 
@@ -289,12 +261,9 @@ describe("postgres live: non-public schema (namespace option)", () => {
     const rows = (await svalv.run(
       {
         from: "orders",
-        select: [
-          { col: "customer_id" },
-          { fn: "sum", args: [{ kind: "col", name: "total" }], as: "total" },
-        ],
-        groupBy: [{ col: "customer_id" }],
-        orderBy: [{ col: "customer_id", dir: "asc" }],
+        select: { customer_id: true, total: { sum: "total" } },
+        groupBy: ["customer_id"],
+        orderBy: { customer_id: "asc" },
       },
       {},
     )) as Array<{ customer_id: number; total: unknown }>

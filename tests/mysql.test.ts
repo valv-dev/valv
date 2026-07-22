@@ -266,7 +266,7 @@ describe("mysql createValv end to end", () => {
     const valv = await createValv<DefaultContext>(client, { schema, defaultPolicy: "deny-all" })
     valv.policy("orders", (c) => ({ read: { tenant_id: c.tenant!.id } }))
 
-    await valv.runTool("query", { from: "orders", select: [{ col: "region" }] }, ctx)
+    await valv.runTool("query", { from: "orders", select: { region: true } }, ctx)
 
     const queryCall = client.calls.find((c) => c.sql.startsWith("SELECT"))!
     expect(queryCall.sql).toContain("`region`")

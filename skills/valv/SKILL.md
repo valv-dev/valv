@@ -31,24 +31,30 @@ shows what the caller is allowed to read.
 - `search_resources` — find a resource by name/keyword.
 - `describe_resource` — columns and types for one resource. **Always describe before
   querying** so you use real column names and don't guess.
-- `query` — run one structured query. The model emits JSON (columns, filters,
-  aggregates, grouping, ordering, limit) — **never raw SQL**. valv validates it,
-  injects the policy's row filter, compiles it, and returns rows.
+- `query` — run one structured query. The model emits JSON in a **Prisma-idiomatic**
+  shape (columns, filters, aggregates, grouping, ordering, `take`) — **never raw SQL**.
+  valv validates it, injects the policy's row filter, compiles it, and returns rows.
 
 A query is plain JSON, e.g. revenue per status:
 
 ```jsonc
 {
   "from": "orders",
-  "select": [
-    { "col": "status" },
-    { "fn": "sum", "args": [{ "kind": "col", "name": "total" }], "as": "revenue" }
-  ],
+  "select": {
+    "status": true,                 // a plain column
+    "revenue": { "sum": "total" }   // an aggregate; the key names the output
+  },
+  "where": { "created_at": { "gte": "2026-06-01" } },
   "groupBy": ["status"],
-  "orderBy": [{ "col": "revenue", "dir": "desc" }],
-  "limit": 20
+  "orderBy": { "revenue": "desc" },
+  "take": 20
 }
 ```
+
+`select` is keyed by output name: `true` for a plain column, `{ "col": "path" }` to
+rename or read a joined column (dotted path, e.g. `"customer.name"`), `{ fn: args }` to
+aggregate. `where` is a Prisma filter: `{ field: value }` for equality,
+`{ field: { gte, lt, in, contains } }` for operators, combined with `AND`/`OR`/`NOT`.
 
 For time series, bucket with a function and group by the alias (e.g.
 `toStartOfInterval` / `date_trunc`, depending on the dialect surfaced by

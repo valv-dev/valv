@@ -110,7 +110,7 @@ async function run(valv: Valv<DefaultContext>, query: unknown) {
 describe("json-path fields", () => {
   it("emits a single-key extraction, aliased to the logical name", async () => {
     const { valv, sql } = await valvFor(pgJson)
-    await run(valv, { from: "events", select: [{ col: "browser" }] })
+    await run(valv, { from: "events", select: { browser: true } })
     expect(sql()).toContain(`("properties" ->> '$browser') AS "browser"`)
   })
 
@@ -118,8 +118,8 @@ describe("json-path fields", () => {
     const { valv, sql, params } = await valvFor(pgJson)
     await run(valv, {
       from: "events",
-      select: [{ col: "event" }],
-      where: { kind: "cmp", op: ">", left: { col: "loaded_ms" }, right: { kind: "value", value: 500 } },
+      select: { event: true },
+      where: { loaded_ms: { gt: 500 } },
     })
     expect(sql()).toContain(`("properties" -> 'timing' ->> 'load')::Int64 > $1`)
     // Param is typed by the field, not defaulted to String.
@@ -128,13 +128,18 @@ describe("json-path fields", () => {
 
   it("alias-qualifies the source column of a joined json field", async () => {
     const { valv, sql } = await valvFor(pgJson)
-    await run(valv, { from: "events", select: [{ col: "event" }, { col: "country", rel: ["person"] }] })
-    expect(sql()).toContain(`("j_person"."properties" ->> '$geoip_country_name') AS "person_country"`)
+    await run(valv, {
+      from: "events",
+      select: { event: true, person_country: { col: "person.country" } },
+    })
+    expect(sql()).toContain(
+      `("j_person"."properties" ->> '$geoip_country_name') AS "person_country"`,
+    )
   })
 
   it("rejects a sensitive json field, same as a sensitive column", async () => {
     const { valv } = await valvFor(pgJson)
-    await expect(run(valv, { from: "events", select: [{ col: "email" }] })).rejects.toThrow(
+    await expect(run(valv, { from: "events", select: { email: true } })).rejects.toThrow(
       /not accessible/,
     )
   })
@@ -142,7 +147,7 @@ describe("json-path fields", () => {
   it("honors a policy field deny on a json field", async () => {
     const { valv } = await valvFor(pgJson)
     valv.policy("events", () => ({ read: {}, fields: { deny: ["browser"] } }))
-    await expect(run(valv, { from: "events", select: [{ col: "browser" }] })).rejects.toThrow(
+    await expect(run(valv, { from: "events", select: { browser: true } })).rejects.toThrow(
       /not accessible/,
     )
   })
@@ -150,6 +155,6 @@ describe("json-path fields", () => {
   it("fails closed when the dialect can't extract json", async () => {
     const noJson: Dialect = { quoteId: (id) => `"${id}"`, placeholder: (i) => `$${i + 1}` }
     const { valv } = await valvFor(noJson)
-    await expect(run(valv, { from: "events", select: [{ col: "browser" }] })).rejects.toThrow()
+    await expect(run(valv, { from: "events", select: { browser: true } })).rejects.toThrow()
   })
 })

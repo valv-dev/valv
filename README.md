@@ -67,39 +67,38 @@ The agent gets four tools — `list_resources`, `search_resources`, `describe_re
 
 ## What the agent can express
 
-One `query` tool covers the whole read surface. The model composes a query from columns, filters, and an allow-listed set of functions:
+One `query` tool covers the whole read surface. The grammar is **Prisma-idiomatic** — a shape models already know cold — and desugars server-side into a checked query:
 
 ```jsonc
 {
   "from": "orders",
-  "select": [
-    { "col": "status" },
-    { "fn": "count", "args": [], "as": "orders" },
-    { "fn": "sum", "args": [{ "col": "total" }], "as": "revenue" }
-  ],
-  "where": { "kind": "cmp", "op": ">=", "left": { "kind": "col", "name": "created_at" },
-             "right": { "kind": "value", "value": "2026-06-01" } },
+  "select": {
+    "status": true,                       // a plain column
+    "orders": { "count": true },          // count(*) — the key names the output
+    "revenue": { "sum": "total" }         // an aggregate
+  },
+  "where": { "created_at": { "gte": "2026-06-01" } },
   "groupBy": ["status"],
-  "orderBy": [{ "col": "revenue", "dir": "desc" }],
-  "limit": 10
+  "orderBy": { "revenue": "desc" },
+  "take": 10
 }
 ```
 
-That's enough for real analytics — **filters** (arbitrary `and`/`or`/`not` trees, with `like`/`ilike` for pattern matching), **aggregates**, **time-series** (bucket with a function and group by the alias), **top-N** (order by an aggregate), and **conditional aggregation** (`countIf`, `sumIf`). ClickHouse adds dialect functions like `quantileTiming` and `toStartOfInterval`; every function is type-checked and its literals parameterized.
+That's enough for real analytics — **filters** (`{ field: value }` equality, operator objects like `{ gte, lt, in, contains }`, and `AND`/`OR`/`NOT` trees), **aggregates**, **time-series** (bucket with a function and group by the alias), **top-N** (order by an aggregate), and **conditional aggregation** (`countIf`, `sumIf`). ClickHouse adds dialect functions like `quantileTiming` and `toStartOfInterval`; every function is type-checked and its literals parameterized.
 
 ### Joins
 
-To read a related resource, qualify a column with `rel` — a relation path from the root. The model can only follow relations declared in your schema; valv derives the joins, picks the keys, and **composes the policy of every table it touches** — each joined table is scoped by its own policy and field allowlist, so a join can never reach a hidden column or another tenant's rows.
+To read a related resource, reference its column with a **dotted path** from the root. The model can only follow relations declared in your schema; valv derives the joins, picks the keys, and **composes the policy of every table it touches** — each joined table is scoped by its own policy and field allowlist, so a join can never reach a hidden column or another tenant's rows.
 
 ```jsonc
 {
   "from": "orders",
-  "select": [
-    { "col": "name", "rel": ["customer"] },              // one hop: orders → customer
-    { "col": "name", "rel": ["customer", "region"] },    // multi-hop: → customer → region
-    { "fn": "sum", "args": [{ "col": "total" }], "as": "revenue" }
-  ],
-  "groupBy": [{ "col": "name", "rel": ["customer"] }]
+  "select": {
+    "customer_name": { "col": "customer.name" },        // one hop: orders → customer
+    "region": { "col": "customer.region.name" },        // multi-hop: → customer → region
+    "revenue": { "sum": "total" }
+  },
+  "groupBy": ["customer.name"]
 }
 ```
 
@@ -193,14 +192,13 @@ Workflow:
 2. Before querying an unfamiliar resource, call describe_resource to get its exact column names,
    types, and relations. Don't guess column names.
 3. Query with the `query` tool. Do the work in the query — filter with `where`, aggregate with
-   functions, `groupBy`, `orderBy`, `limit` — rather than pulling raw rows and reducing yourself.
-4. Read a joined resource's columns by setting `rel` to its relation path from the root; only
-   declared relations join.
-
-Grammar reminders (the tool schemas have the full shapes): a column is never a bare string — in
-`select` it is { "col": "name" }, and inside a function's `args` or in `where` it is the Expr
-node { "kind": "col", "name": "name" }. `where` is an Expr tree of cmp/and/or/not nodes over
-`col` and `value` leaves, not a raw string.
+   functions, `groupBy`, `orderBy`, `take` — rather than pulling raw rows and reducing yourself.
+4. The grammar is Prisma-like. `select` is an object keyed by output name: `true` for a plain
+   column, { "col": "path" } to rename or reach a joined column, { fn: args } to aggregate (e.g.
+   { "revenue": { "sum": "amount" } }). `where` uses { field: value } for equality and
+   { field: { gte, lt, in, contains } } for operators, combined with AND/OR/NOT.
+5. Read a joined resource's column with a dotted path from the root — "customer.name" — in a
+   select `col` or a where key. A root column takes no dot; only declared relations join.
 
 If a call is rejected, read the error and fix the query — don't retry the same shape.
 
@@ -222,8 +220,8 @@ valv.policy("orders", (ctx) => ({
   fields: { readOnly: ["status"] },       // readable, not writable
 }))
 
-await valv.create({ from: "orders", values: { status: "pending", total: 1200 } }, ctx)
-await valv.update({ from: "orders", set: { status: "shipped" }, where: { /* …Expr */ } }, ctx)
+await valv.create({ from: "orders", data: { status: "pending", total: 1200 } }, ctx)
+await valv.update({ from: "orders", data: { status: "shipped" }, where: { /* …Prisma filter */ } }, ctx)
 ```
 
 - **`create`** force-injects the policy's owned fields (`tenant_id`) onto the row — the model can't choose, omit, or override them.
@@ -268,7 +266,7 @@ A worked example. The agent asks for revenue per status and emits:
 
 ```jsonc
 { "from": "orders",
-  "select": [{ "col": "status" }, { "fn": "sum", "args": [{ "col": "total" }], "as": "revenue" }],
+  "select": { "status": true, "revenue": { "sum": "total" } },
   "groupBy": ["status"] }
 ```
 

@@ -1,6 +1,7 @@
 import type { PolicyFn, PolicyResult, FieldPolicy } from "./policy"
 import type { ResourceSchema } from "./catalog"
-import { ExprSchema, type Expr, type Scalar } from "./ast"
+import type { Expr, Scalar } from "./ast"
+import { validateExpr } from "./grammar"
 import { PolicyViolationError } from "./errors"
 
 // A predicate rule is either an Expr node (has `kind`) or the scalar-equality
@@ -75,11 +76,14 @@ export function evaluateRead<TContext>(
 // emit a meaningless `field = NULL` filter that would silently drop the scoping.
 function ruleToExpr(rule: Record<string, unknown>): Expr {
   if (isExpr(rule)) {
-    const parsed = ExprSchema.safeParse(rule)
-    if (!parsed.success) {
-      throw new PolicyViolationError(`Policy predicate is not a valid expression: ${parsed.error.message}`)
+    let expr: Expr
+    try {
+      expr = validateExpr(rule)
+    } catch (error) {
+      throw new PolicyViolationError(
+        `Policy predicate is not a valid expression: ${(error as Error).message}`,
+      )
     }
-    const expr = parsed.data
     if (expr.kind === "col" || expr.kind === "value") {
       throw new PolicyViolationError(
         `Policy predicate must be a boolean expression (cmp/and/or/not), got a bare "${expr.kind}".`,

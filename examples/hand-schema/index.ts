@@ -8,7 +8,7 @@
  *   npm start    (from this folder)
  */
 import { createValv, type ClickHouseClient } from "@valv/clickhouse"
-import type { SchemaMap, DefaultContext, Query } from "@valv/core"
+import type { SchemaMap, DefaultContext } from "@valv/core"
 
 // ── 1. The schema you hand-define ─────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ async function main() {
   valv.policy("events", (ctx) => ({ read: { tenant_id: ctx.tenant!.id } }))
   valv.policy("users", (ctx) => ({ read: { tenant_id: ctx.tenant!.id } }))
 
-  const run = async (label: string, query: Query) => {
+  const run = async (label: string, query: object) => {
     console.log(`\n▶ ${label}`)
     try {
       const rows = await valv.run(query, ctx)
@@ -77,25 +77,25 @@ async function main() {
 
   await run("slow events (watch the tenant filter get injected)", {
     from: "events",
-    select: [{ col: "event_type" }, { col: "latency_ms" }],
-    where: { kind: "cmp", op: ">", left: { kind: "col", name: "latency_ms" }, right: { kind: "value", value: 500 } },
-    limit: 10,
+    select: { event_type: true, latency_ms: true },
+    where: { latency_ms: { gt: 500 } },
+    take: 10,
   })
 
   await run("reading a sensitive column is rejected", {
     from: "users",
-    select: [{ col: "email" }, { col: "password_hash" }],
+    select: { email: true, password_hash: true },
   })
 
   // p95 latency per event type — an aggregate over a computed percentile.
-  const dashboard: Query = {
+  const dashboard = {
     from: "events",
-    select: [
-      { col: "event_type" },
-      { fn: "quantileTiming", args: [{ kind: "value", value: 0.95 }, { kind: "col", name: "latency_ms" }], as: "p95_ms" },
-    ],
+    select: {
+      event_type: true,
+      p95_ms: { quantileTiming: [0.95, "latency_ms"] },
+    },
     groupBy: ["event_type"],
-    orderBy: [{ col: "p95_ms", dir: "desc" }],
+    orderBy: { p95_ms: "desc" },
   }
   await run("p95 latency per event type (group + order by the aggregate)", dashboard)
 

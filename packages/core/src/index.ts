@@ -7,7 +7,7 @@ export type {
   ValvConfig,
 } from "./valv"
 export type { ValvAdapter, CompiledQuery, BoundParam, MutationResult } from "./adapter"
-export { QuerySchema, ExprSchema, InsertSchema, UpdateSchema, DeleteSchema } from "./ast"
+export { parseQuery, parseInsert, parseUpdate, parseDelete } from "./grammar"
 export type {
   Query,
   Expr,

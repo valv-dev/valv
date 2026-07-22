@@ -49,7 +49,7 @@ describe("security hardening", () => {
   it("fails closed when a policy filter value is undefined (no leak)", async () => {
     const { valv, calls } = await setup()
     await expect(
-      valv.runTool("query", { from: "events", select: [{ col: "plan" }] }, ctx(undefined)),
+      valv.runTool("query", { from: "events", select: { plan: true } }, ctx(undefined)),
     ).rejects.toThrow(/refusing to run an unscoped query/)
     expect(calls).toHaveLength(0) // never reached the database
   })
@@ -59,11 +59,7 @@ describe("security hardening", () => {
     for (let i = 0; i < 3000; i++) node = { kind: "not", arg: node }
     const { valv } = await setup()
     await expect(
-      valv.runTool(
-        "query",
-        { from: "events", select: [{ col: "plan" }], where: node },
-        ctx("acme"),
-      ),
+      valv.runTool("query", { from: "events", select: { plan: true }, where: node }, ctx("acme")),
     ).rejects.toThrow(/too deeply nested|too large/)
   })
 
@@ -73,7 +69,7 @@ describe("security hardening", () => {
     await expect(
       valv.runTool(
         "query",
-        { from: "events", select: [{ col: "plan" }], where: { kind: "and", args } },
+        { from: "events", select: { plan: true }, where: { kind: "and", args } },
         ctx("acme"),
       ),
     ).rejects.toThrow(/too large|too deeply nested/)
@@ -84,16 +80,7 @@ describe("security hardening", () => {
     await expect(
       valv.runTool(
         "query",
-        {
-          from: "events",
-          select: [{ col: "plan" }],
-          where: {
-            kind: "cmp",
-            op: "=",
-            left: { kind: "col", name: "plan" },
-            right: { kind: "value", value: {} },
-          },
-        },
+        { from: "events", select: { plan: true }, where: { plan: { equals: {} } } },
         ctx("acme"),
       ),
     ).rejects.toThrow()
@@ -111,7 +98,7 @@ describe("security hardening", () => {
     valv.policy("events", (c) => ({ read: { tenant_id: c.tenant?.id } }))
 
     await expect(
-      valv.runTool("query", { from: "events", select: [{ col: "plan" }] }, ctx("acme")),
+      valv.runTool("query", { from: "events", select: { plan: true } }, ctx("acme")),
     ).rejects.toThrow(/could not be processed/)
     expect(logged?.message).toMatch(/CH internal/) // raw error preserved server-side
   })
@@ -119,10 +106,10 @@ describe("security hardening", () => {
   it("handles dangerous prototype keys cleanly", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool("query", { from: "constructor", select: [{ col: "plan" }] }, ctx("acme")),
+      valv.runTool("query", { from: "constructor", select: { plan: true } }, ctx("acme")),
     ).rejects.toThrow(/Unknown resource/)
     await expect(
-      valv.runTool("query", { from: "events", select: [{ col: "toString" }] }, ctx("acme")),
+      valv.runTool("query", { from: "events", select: { toString: true } }, ctx("acme")),
     ).rejects.toThrow(/not accessible/)
   })
 
@@ -133,7 +120,7 @@ describe("security hardening", () => {
     const valv = await createValv<DefaultContext>(client, { schema })
     valv.policy("events", (c) => ({ read: { tenant_id: c.tenant?.id } }))
     await expect(
-      valv.runTool("query", { from: "events", select: [{ col: "plan" }] }, ctx("acme")),
+      valv.runTool("query", { from: "events", select: { plan: true } }, ctx("acme")),
     ).rejects.toThrow()
   })
 
@@ -169,16 +156,7 @@ describe("security hardening", () => {
     await expect(
       valv.runTool(
         "query",
-        {
-          from: "events",
-          select: [{ col: "plan" }],
-          where: {
-            kind: "cmp",
-            op: "=",
-            left: { kind: "col", name: "plan" },
-            right: { kind: "value", value: "x" },
-          },
-        },
+        { from: "events", select: { plan: true }, where: { plan: "x" } },
         ctx("acme"),
       ),
     ).rejects.toThrow()
@@ -187,16 +165,12 @@ describe("security hardening", () => {
   it("rejects a malformed alias and empty boolean groups", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool(
-        "query",
-        { from: "events", select: [{ col: "plan", as: "x); DROP" }] },
-        ctx("acme"),
-      ),
+      valv.runTool("query", { from: "events", select: { "x); DROP": true } }, ctx("acme")),
     ).rejects.toThrow()
     await expect(
       valv.runTool(
         "query",
-        { from: "events", select: [{ col: "plan" }], where: { kind: "and", args: [] } },
+        { from: "events", select: { plan: true }, where: { AND: [] } },
         ctx("acme"),
       ),
     ).rejects.toThrow()
@@ -208,24 +182,8 @@ describe("security hardening", () => {
       "query",
       {
         from: "events",
-        select: [{ col: "plan" }],
-        where: {
-          kind: "or",
-          args: [
-            {
-              kind: "cmp",
-              op: "=",
-              left: { kind: "col", name: "plan" },
-              right: { kind: "value", value: "free" },
-            },
-            {
-              kind: "cmp",
-              op: "=",
-              left: { kind: "col", name: "plan" },
-              right: { kind: "value", value: "pro" },
-            },
-          ],
-        },
+        select: { plan: true },
+        where: { OR: [{ plan: "free" }, { plan: "pro" }] },
       },
       ctx("acme"),
     )
@@ -240,13 +198,8 @@ describe("security hardening", () => {
       "query",
       {
         from: "events",
-        select: [{ col: "plan" }],
-        where: {
-          kind: "cmp",
-          op: "ilike",
-          left: { kind: "col", name: "plan" },
-          right: { kind: "value", value: "%pro%" },
-        },
+        select: { plan: true },
+        where: { plan: { contains: "pro", mode: "insensitive" } },
       },
       ctx("acme"),
     )
@@ -261,19 +214,17 @@ describe("security hardening", () => {
   it("rejects a LIKE against a denied column, like any other operator", async () => {
     const client = fakeClient([])
     const valv = await createValv<DefaultContext>(client, { schema })
-    valv.policy("events", (c) => ({ read: { tenant_id: c.tenant?.id }, fields: { deny: ["plan"] } }))
+    valv.policy("events", (c) => ({
+      read: { tenant_id: c.tenant?.id },
+      fields: { deny: ["plan"] },
+    }))
     await expect(
       valv.runTool(
         "query",
         {
           from: "events",
-          select: [{ col: "tenant_id" }],
-          where: {
-            kind: "cmp",
-            op: "like",
-            left: { kind: "col", name: "plan" },
-            right: { kind: "value", value: "%x%" },
-          },
+          select: { tenant_id: true },
+          where: { plan: { contains: "x" } },
         },
         ctx("acme"),
       ),

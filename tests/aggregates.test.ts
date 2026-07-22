@@ -37,9 +37,6 @@ async function setup() {
   return { valv, calls: client.calls }
 }
 
-const col = (name: string) => ({ kind: "col" as const, name })
-const val = (value: string | number) => ({ kind: "value" as const, value })
-
 describe("aggregates (slice 2)", () => {
   it("emits a grouped query with a parametric ClickHouse function, ordering, and the tenant filter", async () => {
     const { valv, calls } = await setup()
@@ -47,12 +44,9 @@ describe("aggregates (slice 2)", () => {
       "query",
       {
         from: "events",
-        select: [
-          { col: "plan" },
-          { fn: "quantileTiming", args: [val(0.95), col("latency")], as: "p95" },
-        ],
+        select: { plan: true, p95: { quantileTiming: [0.95, "latency"] } },
         groupBy: ["plan"],
-        orderBy: [{ col: "plan", dir: "desc" }],
+        orderBy: { plan: "desc" },
       },
       ctx,
     )
@@ -66,11 +60,7 @@ describe("aggregates (slice 2)", () => {
 
   it("emits count(*) for a column-less aggregate", async () => {
     const { valv, calls } = await setup()
-    await valv.runTool(
-      "query",
-      { from: "events", select: [{ fn: "count", args: [], as: "n" }] },
-      ctx,
-    )
+    await valv.runTool("query", { from: "events", select: { n: { count: true } } }, ctx)
     expect(calls[0].query).toBe(
       "SELECT count(*) AS `n` FROM `events_t` WHERE (`tenant_id` = {p0:String}) LIMIT 100",
     )
@@ -82,10 +72,10 @@ describe("aggregates (slice 2)", () => {
       "query",
       {
         from: "events",
-        select: [
-          { fn: "toStartOfInterval", args: [col("latency"), val(1), val("hour")], as: "bucket" },
-          { fn: "uniqExact", args: [col("plan")], as: "plans" },
-        ],
+        select: {
+          bucket: { toStartOfInterval: ["latency", 1, "hour"] },
+          plans: { uniqExact: "plan" },
+        },
         groupBy: ["plan"],
       },
       ctx,
@@ -100,16 +90,7 @@ describe("aggregates (slice 2)", () => {
     const { valv, calls } = await setup()
     await valv.runTool(
       "query",
-      {
-        from: "events",
-        select: [
-          {
-            fn: "countIf",
-            args: [{ kind: "cmp", op: ">", left: col("latency"), right: val(500) }],
-            as: "slow",
-          },
-        ],
-      },
+      { from: "events", select: { slow: { countIf: { latency: { gt: 500 } } } } },
       ctx,
     )
     // The literal 500 binds as a param (p0); the tenant filter follows (p1).
@@ -125,10 +106,7 @@ describe("aggregates (slice 2)", () => {
     await expect(
       valv.runTool(
         "query",
-        {
-          from: "events",
-          select: [{ fn: "toStartOfInterval", args: [col("latency"), val(1), val("century")] }],
-        },
+        { from: "events", select: { bucket: { toStartOfInterval: ["latency", 1, "century"] } } },
         ctx,
       ),
     ).rejects.toThrow(/expects one of/)
@@ -139,11 +117,7 @@ describe("aggregates (slice 2)", () => {
   it("rejects a sensitive column reached through an aggregate", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool(
-        "query",
-        { from: "events", select: [{ fn: "avg", args: [col("secret")] }] },
-        ctx,
-      ),
+      valv.runTool("query", { from: "events", select: { x: { avg: "secret" } } }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
@@ -152,15 +126,7 @@ describe("aggregates (slice 2)", () => {
     await expect(
       valv.runTool(
         "query",
-        {
-          from: "events",
-          select: [
-            {
-              fn: "countIf",
-              args: [{ kind: "cmp", op: "!=", left: col("secret"), right: val("") }],
-            },
-          ],
-        },
+        { from: "events", select: { x: { countIf: { secret: { not: "" } } } } },
         ctx,
       ),
     ).rejects.toThrow(/not accessible/)
@@ -172,12 +138,12 @@ describe("aggregates (slice 2)", () => {
       "query",
       {
         from: "events",
-        select: [
-          { fn: "toStartOfInterval", args: [col("latency"), val(1), val("hour")], as: "bucket" },
-          { fn: "count", args: [], as: "hits" },
-        ],
+        select: {
+          bucket: { toStartOfInterval: ["latency", 1, "hour"] },
+          hits: { count: true },
+        },
         groupBy: ["bucket"],
-        orderBy: [{ col: "bucket", dir: "asc" }],
+        orderBy: { bucket: "asc" },
       },
       ctx,
     )
@@ -193,10 +159,10 @@ describe("aggregates (slice 2)", () => {
       "query",
       {
         from: "events",
-        select: [{ col: "plan" }, { fn: "count", args: [], as: "hits" }],
+        select: { plan: true, hits: { count: true } },
         groupBy: ["plan"],
-        orderBy: [{ col: "hits", dir: "desc" }],
-        limit: 10,
+        orderBy: { hits: "desc" },
+        take: 10,
       },
       ctx,
     )
@@ -215,9 +181,9 @@ describe("aggregates (slice 2)", () => {
         "query",
         {
           from: "events",
-          select: [{ col: "plan" }, { fn: "count", args: [], as: "hits" }],
+          select: { plan: true, hits: { count: true } },
           groupBy: ["plan"],
-          orderBy: [{ col: "secret", dir: "desc" }],
+          orderBy: { secret: "desc" },
         },
         ctx,
       ),
@@ -227,11 +193,7 @@ describe("aggregates (slice 2)", () => {
   it("rejects a denied/unknown column in groupBy", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool(
-        "query",
-        { from: "events", select: [{ col: "plan" }], groupBy: ["secret"] },
-        ctx,
-      ),
+      valv.runTool("query", { from: "events", select: { plan: true }, groupBy: ["secret"] }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
@@ -240,7 +202,7 @@ describe("aggregates (slice 2)", () => {
     await expect(
       valv.runTool(
         "query",
-        { from: "events", select: [{ col: "plan" }], orderBy: [{ col: "secret", dir: "asc" }] },
+        { from: "events", select: { plan: true }, orderBy: { secret: "asc" } },
         ctx,
       ),
     ).rejects.toThrow(/not accessible/)
@@ -249,34 +211,30 @@ describe("aggregates (slice 2)", () => {
   it("rejects an unknown function name", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool("query", { from: "events", select: [{ fn: "evil", args: [col("plan")] }] }, ctx),
-    ).rejects.toThrow(/not available/)
+      valv.runTool("query", { from: "events", select: { x: { evil: "plan" } } }, ctx),
+    ).rejects.toThrow(/Unknown function/)
   })
 
   it("rejects a prototype-key function name (allowlist isn't bypassable)", async () => {
     const { valv } = await setup()
     for (const fn of ["constructor", "toString", "hasOwnProperty"]) {
       await expect(
-        valv.runTool("query", { from: "events", select: [{ fn, args: [] }] }, ctx),
-      ).rejects.toThrow(/not available/)
+        valv.runTool("query", { from: "events", select: { x: { [fn]: "plan" } } }, ctx),
+      ).rejects.toThrow(/Unknown function/)
     }
   })
 
   it("rejects a function called with the wrong arity", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool(
-        "query",
-        { from: "events", select: [{ fn: "quantileTiming", args: [col("latency")] }] },
-        ctx,
-      ),
+      valv.runTool("query", { from: "events", select: { x: { quantileTiming: "latency" } } }, ctx),
     ).rejects.toThrow(/argument/)
   })
 
   it("rejects a non-column where a column argument is expected", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool("query", { from: "events", select: [{ fn: "sum", args: [val(5)] }] }, ctx),
+      valv.runTool("query", { from: "events", select: { x: { sum: 5 } } }, ctx),
     ).rejects.toThrow(/expects a column/)
   })
 
@@ -286,56 +244,41 @@ describe("aggregates (slice 2)", () => {
       await expect(
         valv.runTool(
           "query",
-          {
-            from: "events",
-            select: [{ fn: "quantileTiming", args: [val(level), col("latency")] }],
-          },
+          { from: "events", select: { x: { quantileTiming: [level, "latency"] } } },
           ctx,
         ),
       ).rejects.toThrow(/within \[0, 1\]/)
     }
   })
 
-  // A column inside a function's args may be written with the bare `{ col }`
-  // shorthand (the same shape used in `select`), not only the verbose col Expr.
-  it("accepts the bare { col } shorthand inside a function arg", async () => {
-    const { valv, calls } = await setup()
-    await valv.runTool(
+  // A column argument may be written as a bare name (the canonical form) or the
+  // { col } object — both normalize to the same column reference.
+  it("accepts a bare column name and the { col } object identically", async () => {
+    const bare = await setup()
+    await bare.valv.runTool(
       "query",
-      { from: "events", select: [{ fn: "avg", args: [{ col: "latency" }], as: "avg_latency" }] },
+      { from: "events", select: { avg_latency: { avg: "latency" } } },
       ctx,
     )
-    expect(calls[0].query).toBe(
+    expect(bare.calls[0].query).toBe(
       "SELECT avg(`latency`) AS `avg_latency` FROM `events_t` WHERE (`tenant_id` = {p0:String}) LIMIT 100",
     )
-  })
 
-  it("compiles the { col } shorthand identically to the verbose col Expr", async () => {
-    const shorthand = await setup()
-    await shorthand.valv.runTool(
+    const obj = await setup()
+    await obj.valv.runTool(
       "query",
-      { from: "events", select: [{ fn: "avg", args: [{ col: "latency" }] }] },
+      { from: "events", select: { avg_latency: { avg: { col: "latency" } } } },
       ctx,
     )
-    const verbose = await setup()
-    await verbose.valv.runTool(
-      "query",
-      { from: "events", select: [{ fn: "avg", args: [col("latency")] }] },
-      ctx,
-    )
-    expect(shorthand.calls[0].query).toBe(verbose.calls[0].query)
+    expect(obj.calls[0].query).toBe(bare.calls[0].query)
   })
 
-  // The shorthand is normalized before policy runs, so a denied column can't
-  // sneak through it either.
-  it("still policy-checks a denied column written with the shorthand", async () => {
+  // Column args are normalized before policy runs, so a denied column can't sneak
+  // through as a function argument either.
+  it("still policy-checks a denied column passed as a function arg", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool(
-        "query",
-        { from: "events", select: [{ fn: "avg", args: [{ col: "secret" }] }] },
-        ctx,
-      ),
+      valv.runTool("query", { from: "events", select: { x: { avg: "secret" } } }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 })

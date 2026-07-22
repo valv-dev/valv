@@ -1,7 +1,7 @@
 import type { SchemaMap } from "./catalog"
 import type { PolicyFn, PolicyResult, DefaultContext } from "./policy"
 import type { ValvAdapter } from "./adapter"
-import { QuerySchema, InsertSchema, UpdateSchema, DeleteSchema } from "./ast"
+import { parseQuery, parseInsert, parseUpdate, parseDelete } from "./grammar"
 import { assertWithinLimits } from "./limits"
 import { evaluateRead, evaluateWrite, type WriteOp, type EvaluatedPolicy } from "./evaluate"
 import { validateQuery, validateMutation, type ScopedTable } from "./validate"
@@ -164,10 +164,10 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
     assertWithinLimits(input)
     const mutation =
       op === "create"
-        ? InsertSchema.parse(input)
+        ? parseInsert(input)
         : op === "update"
-          ? UpdateSchema.parse(input)
-          : DeleteSchema.parse(input)
+          ? parseUpdate(input)
+          : parseDelete(input)
 
     const catalog = await this.loadSchema()
     if (!hasOwn(catalog.resources, mutation.from)) {
@@ -199,7 +199,7 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
    * after createValv).
    */
   resultSchema(query: unknown): ResultColumn[] {
-    const parsed = QuerySchema.parse(query)
+    const parsed = parseQuery(query, this.adapter.functions())
     return deriveResultSchema(parsed, this.requireSchema(), this.adapter.functions())
   }
 
@@ -274,7 +274,7 @@ export class Valv<TContext = DefaultContext, TResources extends string = string>
 
   private async runQuery(input: unknown, ctx: TContext): Promise<unknown> {
     assertWithinLimits(input)
-    const query = QuerySchema.parse(input)
+    const query = parseQuery(input, this.adapter.functions())
     const catalog = await this.loadSchema()
     if (!hasOwn(catalog.resources, query.from)) {
       throw new ValidationError(`Unknown resource "${query.from}".`)

@@ -46,14 +46,6 @@ const schema: SchemaMap = {
 }
 
 const ctx: DefaultContext = { user: { id: "u1", role: "member" }, tenant: { id: "acme" } }
-const col = (name: string) => ({ kind: "col" as const, name })
-const val = (value: string | number) => ({ kind: "value" as const, value })
-const eq = (name: string, value: string | number) => ({
-  kind: "cmp" as const,
-  op: "=" as const,
-  left: col(name),
-  right: val(value),
-})
 
 // A minimal Postgres-like adapter that records emitted writes, so we can assert
 // the SQL the full core pipeline produces (incl. injected scope).
@@ -98,7 +90,7 @@ function pgValv() {
 describe("writes — full pipeline", () => {
   it("forces server-owned fields onto an insert", async () => {
     const { valv, writes } = pgValv()
-    await valv.create({ from: "orders", values: { status: "pending", total: 100 } }, ctx)
+    await valv.create({ from: "orders", data: { status: "pending", total: 100 } }, ctx)
     expect(writes[0].sql).toBe(
       'INSERT INTO "orders" ("status", "total", "tenant_id") VALUES ($1, $2, $3)',
     )
@@ -107,7 +99,7 @@ describe("writes — full pipeline", () => {
 
   it("AND-injects the scope predicate into an update's WHERE", async () => {
     const { valv, writes } = pgValv()
-    await valv.update({ from: "orders", set: { status: "shipped" }, where: eq("id", "o1") }, ctx)
+    await valv.update({ from: "orders", data: { status: "shipped" }, where: { id: "o1" } }, ctx)
     expect(writes[0].sql).toBe(
       'UPDATE "orders" SET "status" = $1 WHERE (("id" = $2) AND ("tenant_id" = $3))',
     )
@@ -116,7 +108,7 @@ describe("writes — full pipeline", () => {
 
   it("AND-injects the scope predicate into a delete's WHERE", async () => {
     const { valv, writes } = pgValv()
-    await valv.delete({ from: "orders", where: eq("id", "o1") }, ctx)
+    await valv.delete({ from: "orders", where: { id: "o1" } }, ctx)
     expect(writes[0].sql).toBe('DELETE FROM "orders" WHERE (("id" = $1) AND ("tenant_id" = $2))')
     expect(writes[0].params.map((p) => p.value)).toEqual(["o1", "acme"])
   })
@@ -129,30 +121,27 @@ describe("writes — full pipeline", () => {
   it("can't set the scope column (no escaping your tenant)", async () => {
     const { valv } = pgValv()
     await expect(
-      valv.update({ from: "orders", set: { tenant_id: "other" }, where: eq("id", "o1") }, ctx),
+      valv.update({ from: "orders", data: { tenant_id: "other" }, where: { id: "o1" } }, ctx),
     ).rejects.toThrow(/not writable/)
   })
 
   it("can't set a sensitive column", async () => {
     const { valv } = pgValv()
     await expect(
-      valv.create(
-        { from: "orders", values: { status: "x", total: 1, internal_notes: "leak" } },
-        ctx,
-      ),
+      valv.create({ from: "orders", data: { status: "x", total: 1, internal_notes: "leak" } }, ctx),
     ).rejects.toThrow(/not writable/)
   })
 
   it("can't filter a write by a column it can't read", async () => {
     const { valv } = pgValv()
     await expect(
-      valv.update({ from: "orders", set: { status: "x" }, where: eq("internal_notes", "y") }, ctx),
+      valv.update({ from: "orders", data: { status: "x" }, where: { internal_notes: "y" } }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
   it("rejects an insert missing a required column", async () => {
     const { valv } = pgValv()
-    await expect(valv.create({ from: "orders", values: { status: "x" } }, ctx)).rejects.toThrow(
+    await expect(valv.create({ from: "orders", data: { status: "x" } }, ctx)).rejects.toThrow(
       /required/,
     )
   })
@@ -180,7 +169,7 @@ describe("writes — full pipeline", () => {
     const valv = new Valv<DefaultContext>({ adapter, defaultPolicy: "deny-all" })
     valv.policy("orders", (c) => ({ read: { tenant_id: c.tenant!.id } })) // read only — no create
     await expect(
-      valv.create({ from: "orders", values: { status: "x", total: 1 } }, ctx),
+      valv.create({ from: "orders", data: { status: "x", total: 1 } }, ctx),
     ).rejects.toThrow(/denied/)
     expect(writes).toHaveLength(0)
   })
@@ -196,7 +185,7 @@ describe("writes — ClickHouse (insert only)", () => {
     const { client, inserts } = chValv()
     const valv = await createValv<DefaultContext>(client, { schema, defaultPolicy: "deny-all" })
     valv.policy("orders", (c) => ({ create: { tenant_id: c.tenant!.id } }))
-    await valv.create({ from: "orders", values: { status: "pending", total: 100 } }, ctx)
+    await valv.create({ from: "orders", data: { status: "pending", total: 100 } }, ctx)
     expect(inserts[0].table).toBe("orders")
     expect(inserts[0].values).toEqual([{ status: "pending", total: 100, tenant_id: "acme" }])
   })
@@ -209,7 +198,7 @@ describe("writes — ClickHouse (insert only)", () => {
       update: { tenant_id: c.tenant!.id },
     }))
     await expect(
-      valv.update({ from: "orders", set: { status: "x" }, where: eq("id", "o1") }, ctx),
+      valv.update({ from: "orders", data: { status: "x" }, where: { id: "o1" } }, ctx),
     ).rejects.toThrow(/inserts only/)
   })
 })
@@ -217,7 +206,7 @@ describe("writes — ClickHouse (insert only)", () => {
 describe("write tools are opt-in", () => {
   it("omits write tools by default, includes them when toggled", async () => {
     const { valv } = pgValv()
-    await valv.run({ from: "orders", select: [{ col: "status" }] }, ctx) // prime the schema cache
+    await valv.run({ from: "orders", select: { status: true } }, ctx) // prime the schema cache
     expect(valv.tools.neutral(ctx).map((t) => t.name)).not.toContain("create")
     const withWrites = valv.tools
       .neutral(ctx, { create: true, update: true, delete: true })

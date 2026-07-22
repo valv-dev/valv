@@ -120,11 +120,11 @@ describe("joins — emit", () => {
       "query",
       {
         from: "orders",
-        select: [
-          { col: "name", rel: ["customer"] },
-          { fn: "sum", args: [{ kind: "col", name: "total" }], as: "revenue" },
-        ],
-        groupBy: [{ col: "name", rel: ["customer"] }],
+        select: {
+          customer_name: { col: "customer.name" },
+          revenue: { sum: "total" },
+        },
+        groupBy: ["customer.name"],
       },
       ctx,
     )
@@ -144,11 +144,11 @@ describe("joins — emit", () => {
       "query",
       {
         from: "customers",
-        select: [
-          { col: "name" },
-          { fn: "count", args: [{ kind: "col", name: "id", rel: ["orders"] }], as: "order_count" },
-        ],
-        groupBy: [{ col: "name" }],
+        select: {
+          name: true,
+          order_count: { count: "orders.id" },
+        },
+        groupBy: ["name"],
       },
       ctx,
     )
@@ -167,11 +167,11 @@ describe("joins — emit", () => {
       "query",
       {
         from: "order_items",
-        select: [
-          { col: "name", rel: ["order", "customer"] },
-          { fn: "sum", args: [{ kind: "col", name: "quantity" }], as: "units" },
-        ],
-        groupBy: [{ col: "name", rel: ["order", "customer"] }],
+        select: {
+          order_customer_name: { col: "order.customer.name" },
+          units: { sum: "quantity" },
+        },
+        groupBy: ["order.customer.name"],
       },
       ctx,
     )
@@ -191,7 +191,7 @@ describe("joins — emit", () => {
 
   it("leaves single-table queries unqualified (back-compat)", async () => {
     const { valv, calls } = await setup()
-    await valv.runTool("query", { from: "orders", select: [{ col: "total" }] }, ctx)
+    await valv.runTool("query", { from: "orders", select: { total: true } }, ctx)
     expect(calls[0].query).toBe(
       "SELECT `total` FROM `orders_t` WHERE (`tenant_id` = {p0:String}) LIMIT 100",
     )
@@ -202,7 +202,7 @@ describe("joins — policy composition (security)", () => {
   it("refuses a join to a denied resource", async () => {
     const { valv, calls } = await setup()
     await expect(
-      valv.runTool("query", { from: "orders", select: [{ col: "secret", rel: ["vault"] }] }, ctx),
+      valv.runTool("query", { from: "orders", select: { secret: { col: "vault.secret" } } }, ctx),
     ).rejects.toThrow(/denied|not accessible/)
     expect(calls).toHaveLength(0)
   })
@@ -212,7 +212,7 @@ describe("joins — policy composition (security)", () => {
     await expect(
       valv.runTool(
         "query",
-        { from: "orders", select: [{ col: "internal_notes", rel: ["customer"] }] },
+        { from: "orders", select: { notes: { col: "customer.internal_notes" } } },
         ctx,
       ),
     ).rejects.toThrow(/not accessible/)
@@ -227,7 +227,7 @@ describe("joins — policy composition (security)", () => {
       })),
     )
     await expect(
-      valv.runTool("query", { from: "orders", select: [{ col: "name", rel: ["customer"] }] }, ctx),
+      valv.runTool("query", { from: "orders", select: { name: { col: "customer.name" } } }, ctx),
     ).rejects.toThrow(/not accessible/)
     expect(calls).toHaveLength(0)
   })
@@ -235,14 +235,14 @@ describe("joins — policy composition (security)", () => {
   it("refuses an undeclared relation", async () => {
     const { valv } = await setup()
     await expect(
-      valv.runTool("query", { from: "orders", select: [{ col: "x", rel: ["nope"] }] }, ctx),
+      valv.runTool("query", { from: "orders", select: { x: { col: "nope.x" } } }, ctx),
     ).rejects.toThrow(/not accessible/)
   })
 
   it("refuses a join through a many-to-many relation (not supported yet)", async () => {
     const { valv, calls } = await setup()
     await expect(
-      valv.runTool("query", { from: "customers", select: [{ col: "name", rel: ["peers"] }] }, ctx),
+      valv.runTool("query", { from: "customers", select: { name: { col: "peers.name" } } }, ctx),
     ).rejects.toThrow(/many-to-many/)
     expect(calls).toHaveLength(0)
   })
@@ -256,7 +256,7 @@ describe("joins — limits", () => {
         "query",
         {
           from: "order_items",
-          select: [{ col: "name", rel: ["order", "customer", "region", "country"] }],
+          select: { name: { col: "order.customer.region.country.name" } },
         },
         ctx,
       ),
@@ -270,13 +270,13 @@ describe("joins — limits", () => {
         "query",
         {
           from: "order_items",
-          select: [
-            { col: "id", rel: ["order"] },
-            { col: "name", rel: ["order", "customer"] },
-            { col: "id", rel: ["order", "items"] },
-            { col: "name", rel: ["order", "customer", "region"] },
-            { col: "id", rel: ["order", "customer", "orders"] },
-          ],
+          select: {
+            a: { col: "order.id" },
+            b: { col: "order.customer.name" },
+            c: { col: "order.items.id" },
+            d: { col: "order.customer.region.name" },
+            e: { col: "order.customer.orders.id" },
+          },
         },
         ctx,
       ),
@@ -290,15 +290,11 @@ describe("joins — limits", () => {
         "query",
         {
           from: "customers",
-          select: [
-            { fn: "count", args: [{ kind: "col", name: "id", rel: ["orders"] }], as: "a" },
-            { fn: "count", args: [{ kind: "col", name: "id", rel: ["orders", "items"] }], as: "b" },
-            {
-              fn: "count",
-              args: [{ kind: "col", name: "id", rel: ["orders", "items", "refunds"] }],
-              as: "c",
-            },
-          ],
+          select: {
+            a: { count: "orders.id" },
+            b: { count: "orders.items.id" },
+            c: { count: "orders.items.refunds.id" },
+          },
         },
         ctx,
       ),

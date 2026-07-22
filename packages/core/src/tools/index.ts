@@ -30,33 +30,21 @@ export interface BuildToolsArgs<TContext> {
 }
 
 const QUERY_DESCRIPTION =
-  "Run a structured analytics query rooted at one resource (`from`). Provide `select` (columns " +
-  "and/or aggregate functions) and optionally `where`, `groupBy`, `orderBy`, and `limit`. A column " +
-  'is written `{ "col": "name" }`, both as a select item and inside a function\'s `args` — e.g. ' +
-  '`{ "fn": "sum", "args": [{ "col": "amount" }], "as": "total" }`. `count` over all rows takes no ' +
-  'args: `{ "fn": "count", "args": [], "as": "n" }`. Group or order by a select alias to bucket ' +
-  "over time or rank by an aggregate. A column that lives on the `from` (root) resource takes NO " +
-  '`rel` — write it plainly as `{ "col": "name" }`. Set `rel` only to read a *different* ' +
-  'resource\'s columns, passing the relation path from the root, e.g. `{ "col": "name", "rel": ' +
-  '["customer"] }` or, multiple hops, `{ "col": "name", "rel": ["order", "customer"] }`; the path ' +
-  "segments are relation names, never the root resource itself. The join is built automatically " +
-  "from the schema's relations — only declared relations are joinable. If a column is reported " +
-  '"not accessible", first try it with no `rel` (it is likely a root column) rather than resending ' +
-  "the same shape or guessing `rel` paths. Use describe_resource to learn a resource's exact " +
-  "columns and relations before querying.\n\n" +
-  '`where` is an Expr tree, not a raw string: a comparison is `{ "kind": "cmp", "op": ">=", ' +
-  '"left": { "col": "amount" }, "right": 100 }` — operands are Exprs, a column as `{ "col": ' +
-  '"name" }` and a literal as a bare scalar — composable with `{ "kind": "and"/"or", "args": ' +
-  '[...] }` and `{ "kind": "not", "arg": ... }`. For pattern matching use `op` "like" ' +
-  '(case-sensitive) or "ilike" (case-insensitive) with a string pattern, where % matches any ' +
-  'run of characters and _ matches one — e.g. `{ "kind": "cmp", "op": "ilike", "left": { "col": ' +
-  '"name" }, "right": "%acme%" }`; wrap in a "not" node to exclude.\n' +
+  "Run a structured analytics query rooted at one resource (`from`), in a Prisma-like shape. " +
+  "`select` is an object keyed by result name: `true` selects the column of that name, " +
+  '{ "col": "path" } renames or reads a joined column, and { fn: args } aggregates or computes ' +
+  "(the key names the output). Filter with `where`, and use `groupBy`, `orderBy`, and `take` — do " +
+  "the work in the query rather than pulling raw rows and reducing yourself. Use describe_resource " +
+  "to learn a resource's exact columns and relations before querying.\n\n" +
+  "`where` is a Prisma filter: { field: value } is equality, { field: { gte: x, lt: y } } applies " +
+  "operators (gt/gte/lt/lte, in, notIn, not, and contains/startsWith/endsWith for text, with " +
+  '`mode: "insensitive"` for case-insensitive), and AND/OR/NOT combine sub-filters. Reach a joined ' +
+  'column with a dotted key ("customer.region"); only declared relations join. Scope filters are ' +
+  "enforced server-side — never add tenant/owner filters yourself.\n\n" +
   "Example — total revenue per paid day, busiest first:\n" +
-  '`{ "from": "order", "select": [' +
-  '{ "fn": "dateTrunc", "args": [{ "col": "created_at" }, "day"], "as": "day" }, ' +
-  '{ "fn": "sum", "args": [{ "col": "amount" }], "as": "revenue" }], ' +
-  '"where": { "kind": "cmp", "op": "=", "left": { "col": "status" }, "right": "paid" }, ' +
-  '"groupBy": ["day"], "orderBy": [{ "col": "revenue", "dir": "desc" }] }`'
+  '{ "from": "order", ' +
+  '"select": { "day": { "dateTrunc": ["created_at", "day"] }, "revenue": { "sum": "amount" } }, ' +
+  '"where": { "status": "paid" }, "groupBy": ["day"], "orderBy": { "revenue": "desc" } }'
 
 const LIST_DESCRIPTION = "List the resources you can query, each with a short description."
 
@@ -66,21 +54,20 @@ const SEARCH_DESCRIPTION =
 
 const DESCRIBE_DESCRIPTION =
   "Describe a resource: its columns and types, and its relations to other resources. Call this " +
-  'before querying to learn the exact column names — each is referenced as `{ "col": "name" }`.'
+  "before querying to learn the exact column names to use in `select` and `where`."
 
 const CREATE_DESCRIPTION =
-  "Insert a row into a resource. Provide `from` and `values` (column → value). Server-owned " +
+  "Insert a row into a resource. Provide `from` and `data` (column → value). Server-owned " +
   "fields are set automatically; you can't set columns you aren't allowed to write."
 
 const UPDATE_DESCRIPTION =
-  "Update rows. Provide `from`, `set` (column → value), and a `where` filter (required). `where` " +
-  "is the same Expr tree the query tool uses, e.g. " +
-  '`{ "kind": "cmp", "op": "=", "left": { "col": "id" }, "right": 42 }`. Only rows within your ' +
-  "access are affected, regardless of the filter."
+  "Update rows. Provide `from`, `data` (column → value), and a `where` filter (required) — the " +
+  'same Prisma filter the query tool uses, e.g. { "id": 42 }. Only rows within your access are ' +
+  "affected, regardless of the filter."
 
 const DELETE_DESCRIPTION =
-  "Delete rows matching a required `where` filter (the same Expr tree the query tool uses). Only " +
-  "rows within your access are affected."
+  "Delete rows matching a required `where` filter (the same Prisma filter the query tool uses). " +
+  "Only rows within your access are affected."
 
 // A drop-in system-prompt block explaining how to drive the valv tools. The
 // tool schemas already carry the query grammar; this is the workflow around
@@ -95,19 +82,15 @@ export const AGENT_INSTRUCTIONS =
   "2. Before querying an unfamiliar resource, call describe_resource to get its exact column names, " +
   "types, and relations. Don't guess column names.\n" +
   "3. Query with the `query` tool. Do the work in the query — filter with `where`, aggregate with " +
-  "functions, `groupBy`, `orderBy`, `limit` — rather than pulling raw rows and reducing yourself.\n" +
-  "4. A column on the `from` (root) resource takes NO `rel` — write it as just `{ \"col\": " +
-  '"name" }`. `rel` is only the join path to reach a *different* resource\'s columns (e.g. ' +
-  '`{ "col": "name", "rel": ["customer"] }`), and its segments are relation names, never the ' +
-  "root resource itself. Only declared relations join.\n" +
-  '5. If a column comes back "not accessible", first retry it with no `rel` (it is probably a ' +
-  "root column) — do NOT resubmit the same shape or guess other `rel` paths; if it still fails, " +
-  "call describe_resource to confirm the column exists and where it lives.\n\n" +
-  "Grammar reminders (the tool schemas have the full shapes): a column is always `{ \"col\": " +
-  '"name" }` — never a bare string — everywhere it appears (select, function `args`, `where`). ' +
-  "`where` is an Expr tree of `cmp`/`and`/`or`/`not` nodes over columns and literal values, not a " +
-  "raw string. A `cmp` op is one of =, !=, >, <, >=, <=, or \"like\"/\"ilike\" for pattern matching " +
-  "(% = any run, _ = one char; \"ilike\" is case-insensitive).\n\n" +
+  "functions, `groupBy`, `orderBy`, `take` — rather than pulling raw rows and reducing yourself.\n" +
+  "4. The grammar is Prisma-like. `select` is an object keyed by output name: `true` for a plain " +
+  'column, { "col": "path" } to rename or reach a joined column, { fn: args } to aggregate (e.g. ' +
+  '{ "revenue": { "sum": "amount" } }). `where` uses { field: value } for equality and ' +
+  "{ field: { gte, lt, in, contains } } for operators, combined with AND/OR/NOT.\n" +
+  '5. Read a joined resource\'s column with a dotted path from the root — "customer.name" — in a ' +
+  "select `col` or a where key. A root column takes no dot; only declared relations join. If a " +
+  'column comes back "not accessible", drop the relation prefix (it may be a root column) or call ' +
+  "describe_resource to confirm where it lives — don't resubmit the same shape.\n\n" +
   "If a call is rejected, read the error and fix the query — don't retry the same shape."
 
 const NO_INPUT = { type: "object", properties: {}, additionalProperties: false } as const
